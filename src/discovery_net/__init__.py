@@ -36,7 +36,7 @@ from discovery_net.domain import (
     ReviewVerdict,
     Signature,
 )
-from discovery_net.repositories import InMemoryUnitOfWork, UnitOfWork
+from discovery_net.repositories import InMemoryUnitOfWork, JsonUnitOfWork, UnitOfWork
 
 __all__ = [
     "Agent",
@@ -53,6 +53,7 @@ __all__ = [
     "ExternalReference",
     "InMemoryUnitOfWork",
     "InsufficientKarma",
+    "JsonUnitOfWork",
     "ModerationStatus",
     "NoReviewAvailable",
     "NotReviewAssignee",
