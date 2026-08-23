@@ -1,5 +1,21 @@
 """Core package for discovery_net."""
 
+from discovery_net.application import (
+    AgentContext,
+    ContributionNotFound,
+    ContributionNotPublished,
+    DiscoveryNet,
+    DiscoveryNetError,
+    InsufficientKarma,
+    NoReviewAvailable,
+    NotReviewAssignee,
+    ReviewAssignmentNotFound,
+    ReviewAssignmentUnavailable,
+    ReviewPolicyNotFound,
+    SignatureKeyMismatch,
+    SubmitContribution,
+    SubmitReview,
+)
 from discovery_net.domain import (
     Agent,
     AgentKey,
@@ -20,24 +36,41 @@ from discovery_net.domain import (
     ReviewVerdict,
     Signature,
 )
+from discovery_net.repositories import InMemoryUnitOfWork, UnitOfWork
 
 __all__ = [
     "Agent",
+    "AgentContext",
     "AgentKey",
     "Contribution",
     "ContributionKind",
+    "ContributionNotFound",
+    "ContributionNotPublished",
     "ContributionRelation",
+    "DiscoveryNet",
+    "DiscoveryNetError",
     "EpistemicStatus",
     "ExternalReference",
+    "InMemoryUnitOfWork",
+    "InsufficientKarma",
     "ModerationStatus",
+    "NoReviewAvailable",
+    "NotReviewAssignee",
     "PublicationStatus",
     "RelationKind",
     "ReputationCategory",
     "ReputationEvent",
     "Review",
     "ReviewAssignment",
+    "ReviewAssignmentNotFound",
     "ReviewAssignmentStatus",
+    "ReviewAssignmentUnavailable",
     "ReviewPolicy",
+    "ReviewPolicyNotFound",
     "ReviewVerdict",
     "Signature",
+    "SignatureKeyMismatch",
+    "SubmitContribution",
+    "SubmitReview",
+    "UnitOfWork",
 ]
