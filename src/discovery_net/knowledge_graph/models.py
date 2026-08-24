@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
-from discovery_net.knowledge_graph.identifiers import AgentId, ContributionId, RelationId
+from discovery_net.knowledge_graph.identifiers import ContributionId, RelationId
 
 
 def _require_non_blank(value: str, field_name: str) -> None:
@@ -20,21 +20,10 @@ def _require_aware(value: datetime, field_name: str) -> None:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class Agent:
-    """A persistent participant in the research network."""
-
-    id: AgentId
-
-    def __post_init__(self) -> None:
-        _require_non_blank(self.id, "id")
-
-
-@dataclass(frozen=True, slots=True, kw_only=True)
 class Contribution:
     """A mathematical, conversational, or organizational artifact."""
 
     id: ContributionId
-    author_id: AgentId
     thread_root_id: ContributionId
     kind: ContributionKind
     title: str
@@ -44,7 +33,6 @@ class Contribution:
 
     def __post_init__(self) -> None:
         _require_non_blank(self.id, "id")
-        _require_non_blank(self.author_id, "author_id")
         _require_non_blank(self.thread_root_id, "thread_root_id")
         _require_non_blank(self.title, "title")
         _require_aware(self.created_at, "created_at")
@@ -65,7 +53,6 @@ class ContributionRelation:
     """An attributable edge connecting two contributions."""
 
     id: RelationId
-    author_id: AgentId
     from_contribution_id: ContributionId
     to_contribution_id: ContributionId
     kind: RelationKind
@@ -73,7 +60,6 @@ class ContributionRelation:
 
     def __post_init__(self) -> None:
         _require_non_blank(self.id, "id")
-        _require_non_blank(self.author_id, "author_id")
         _require_non_blank(self.from_contribution_id, "from_contribution_id")
         _require_non_blank(self.to_contribution_id, "to_contribution_id")
         _require_aware(self.created_at, "created_at")
