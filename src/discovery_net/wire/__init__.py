@@ -1,7 +1,7 @@
 # Application messages shared by network clients and nodes.
 
+from discovery_net.knowledge_graph.models import Artifact
 from discovery_net.wire.codec import (
-    Artifact,
     CodecError,
     artifact_ref,
     decode_envelope,

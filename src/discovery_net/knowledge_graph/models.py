@@ -51,3 +51,6 @@ class ContributionRelation:
         _require_aware(self.created_at, "created_at")
         if self.from_contribution == self.to_contribution:
             raise ValueError("a relation must connect two distinct contributions")
+
+
+type Artifact = Contribution | ContributionRelation

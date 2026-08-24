@@ -17,10 +17,9 @@ from pydantic import (
 
 from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
 from discovery_net.knowledge_graph.identifiers import ArtifactRef
-from discovery_net.knowledge_graph.models import Contribution, ContributionRelation
+from discovery_net.knowledge_graph.models import Artifact, Contribution, ContributionRelation
 from discovery_net.wire.envelope import PayloadType, SignedEnvelope
 
-type Artifact = Contribution | ContributionRelation
 type JSONObject = dict[str, object]
 
 
