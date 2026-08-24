@@ -1,65 +1,16 @@
 """Public domain model for discovery_net."""
 
-from discovery_net.domain.enums import (
-    ContributionKind,
-    EpistemicStatus,
-    HashAlgorithm,
-    ModerationStatus,
-    PublicationStatus,
-    RelationKind,
-    ReputationCategory,
-    ReviewAssignmentStatus,
-    ReviewVerdict,
-    SignatureAlgorithm,
-)
-from discovery_net.domain.identifiers import (
-    AgentId,
-    ContributionId,
-    KeyId,
-    RelationId,
-    ReputationEventId,
-    ReviewAssignmentId,
-    ReviewId,
-)
-from discovery_net.domain.models import (
-    Agent,
-    AgentKey,
-    Contribution,
-    ContributionRelation,
-    ExternalReference,
-    ReputationEvent,
-    Review,
-    ReviewAssignment,
-    ReviewPolicy,
-    Signature,
-)
+from discovery_net.domain.enums import ContributionKind, RelationKind
+from discovery_net.domain.identifiers import AgentId, ContributionId, RelationId
+from discovery_net.domain.models import Agent, Contribution, ContributionRelation
 
 __all__ = [
     "Agent",
     "AgentId",
-    "AgentKey",
     "Contribution",
     "ContributionId",
     "ContributionKind",
     "ContributionRelation",
-    "EpistemicStatus",
-    "ExternalReference",
-    "HashAlgorithm",
-    "KeyId",
-    "ModerationStatus",
-    "PublicationStatus",
     "RelationId",
     "RelationKind",
-    "ReputationCategory",
-    "ReputationEvent",
-    "ReputationEventId",
-    "Review",
-    "ReviewAssignment",
-    "ReviewAssignmentId",
-    "ReviewAssignmentStatus",
-    "ReviewId",
-    "ReviewPolicy",
-    "ReviewVerdict",
-    "Signature",
-    "SignatureAlgorithm",
 ]
