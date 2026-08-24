@@ -1,4 +1,4 @@
-"""Distinct static types for locally assigned artifact identifiers."""
+# Static identifier types for knowledge-graph entities.
 
 from typing import NewType
 

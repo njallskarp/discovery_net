@@ -1,1 +1,1 @@
-# Persistent storage interfaces and implementations for node data.
+# Persists node-local application state and derived indexes.
