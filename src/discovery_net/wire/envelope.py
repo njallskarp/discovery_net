@@ -2,12 +2,10 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final, NewType
+from typing import Final
 
 PUBLIC_KEY_LENGTH: Final = 32
 SIGNATURE_LENGTH: Final = 64
-
-TransactionId = NewType("TransactionId", str)
 
 
 class PayloadType(StrEnum):

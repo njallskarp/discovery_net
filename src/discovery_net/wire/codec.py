@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from hashlib import sha256
-from typing import cast
+
+from multiformats import CID, multihash
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    StrictStr,
+    ValidationError,
+    field_validator,
+)
 
 from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
-from discovery_net.knowledge_graph.identifiers import ContributionId, RelationId
+from discovery_net.knowledge_graph.identifiers import ArtifactRef
 from discovery_net.knowledge_graph.models import Contribution, ContributionRelation
-from discovery_net.wire.envelope import PayloadType, SignedEnvelope, TransactionId
+from discovery_net.wire.envelope import PayloadType, SignedEnvelope
 
 type Artifact = Contribution | ContributionRelation
 type JSONObject = dict[str, object]
@@ -20,30 +28,89 @@ class CodecError(ValueError):
     """Raised when application bytes do not follow the canonical wire format."""
 
 
+class _WireModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class _ContributionPayload(_WireModel):
+    body: StrictStr
+    created_at: AwareDatetime
+    kind: ContributionKind
+    parent: StrictStr | None
+    title: StrictStr
+
+    @field_validator("parent")
+    @classmethod
+    def validate_parent(cls, value: str | None) -> str | None:
+        if value is not None:
+            parse_artifact_ref(value)
+        return value
+
+
+class _RelationPayload(_WireModel):
+    created_at: AwareDatetime
+    from_contribution: StrictStr
+    kind: RelationKind
+    to_contribution: StrictStr
+
+    @field_validator("from_contribution", "to_contribution")
+    @classmethod
+    def validate_contribution_ref(cls, value: str) -> str:
+        parse_artifact_ref(value)
+        return value
+
+
+class _EnvelopePayload(_WireModel):
+    network_id: StrictStr
+    payload: dict[str, object]
+    payload_type: PayloadType
+    signature: StrictStr
+    signer_public_key: StrictStr
+
+    @field_validator("network_id")
+    @classmethod
+    def validate_network_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("network_id must not be blank")
+        return value
+
+    @field_validator("signature")
+    @classmethod
+    def validate_signature(cls, value: str) -> str:
+        _validate_lower_hex(value, "signature", 64)
+        return value
+
+    @field_validator("signer_public_key")
+    @classmethod
+    def validate_signer_public_key(cls, value: str) -> str:
+        _validate_lower_hex(value, "signer_public_key", 32)
+        return value
+
+
 def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
     """Encode a supported knowledge-graph artifact into canonical JSON bytes."""
 
-    if isinstance(artifact, Contribution):
-        value: JSONObject = {
-            "body": artifact.body,
-            "created_at": _encode_datetime(artifact.created_at),
-            "id": artifact.id,
-            "kind": artifact.kind.value,
-            "parent_id": artifact.parent_id,
-            "thread_root_id": artifact.thread_root_id,
-            "title": artifact.title,
-        }
-        return PayloadType.CONTRIBUTION, _canonical_json(value)
+    try:
+        if isinstance(artifact, Contribution):
+            model = _ContributionPayload(
+                body=artifact.body,
+                created_at=artifact.created_at,
+                kind=artifact.kind,
+                parent=artifact.parent,
+                title=artifact.title,
+            )
+            return PayloadType.CONTRIBUTION, _canonical_json(_contribution_value(model))
 
-    if isinstance(artifact, ContributionRelation):
-        value = {
-            "created_at": _encode_datetime(artifact.created_at),
-            "from_contribution_id": artifact.from_contribution_id,
-            "id": artifact.id,
-            "kind": artifact.kind.value,
-            "to_contribution_id": artifact.to_contribution_id,
-        }
-        return PayloadType.CONTRIBUTION_RELATION, _canonical_json(value)
+        if isinstance(artifact, ContributionRelation):
+            relation = _RelationPayload(
+                created_at=artifact.created_at,
+                from_contribution=artifact.from_contribution,
+                kind=artifact.kind,
+                to_contribution=artifact.to_contribution,
+            )
+            return PayloadType.CONTRIBUTION_RELATION, _canonical_json(_relation_value(relation))
+    except ValidationError as error:
+        raise CodecError("artifact fields are invalid") from error
 
     raise TypeError("artifact must be a Contribution or ContributionRelation")
 
@@ -51,51 +118,31 @@ def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
 def decode_payload(payload_type: PayloadType, data: bytes) -> Artifact:
     """Decode one canonical knowledge-graph payload."""
 
-    value = _load_object(data, "payload")
+    if not isinstance(data, bytes):
+        raise TypeError("payload data must be bytes")
 
     try:
         if payload_type is PayloadType.CONTRIBUTION:
-            _require_keys(
-                value,
-                {
-                    "body",
-                    "created_at",
-                    "id",
-                    "kind",
-                    "parent_id",
-                    "thread_root_id",
-                    "title",
-                },
-            )
+            model = _ContributionPayload.model_validate_json(data)
             artifact: Artifact = Contribution(
-                id=ContributionId(_require_string(value, "id")),
-                thread_root_id=ContributionId(_require_string(value, "thread_root_id")),
-                kind=ContributionKind(_require_string(value, "kind")),
-                title=_require_string(value, "title"),
-                body=_require_string(value, "body"),
-                created_at=_decode_datetime(_require_string(value, "created_at")),
-                parent_id=_optional_contribution_id(value, "parent_id"),
+                kind=model.kind,
+                title=model.title,
+                body=model.body,
+                created_at=model.created_at,
+                parent=ArtifactRef(model.parent) if model.parent is not None else None,
             )
         elif payload_type is PayloadType.CONTRIBUTION_RELATION:
-            _require_keys(
-                value,
-                {
-                    "created_at",
-                    "from_contribution_id",
-                    "id",
-                    "kind",
-                    "to_contribution_id",
-                },
-            )
+            relation = _RelationPayload.model_validate_json(data)
             artifact = ContributionRelation(
-                id=RelationId(_require_string(value, "id")),
-                from_contribution_id=ContributionId(_require_string(value, "from_contribution_id")),
-                to_contribution_id=ContributionId(_require_string(value, "to_contribution_id")),
-                kind=RelationKind(_require_string(value, "kind")),
-                created_at=_decode_datetime(_require_string(value, "created_at")),
+                from_contribution=ArtifactRef(relation.from_contribution),
+                to_contribution=ArtifactRef(relation.to_contribution),
+                kind=relation.kind,
+                created_at=relation.created_at,
             )
         else:
             raise CodecError("payload type is not supported")
+    except ValidationError as error:
+        raise CodecError("payload fields are invalid") from error
     except (TypeError, ValueError) as error:
         if isinstance(error, CodecError):
             raise
@@ -110,38 +157,33 @@ def decode_payload(payload_type: PayloadType, data: bytes) -> Artifact:
 def encode_signing_payload(envelope: SignedEnvelope) -> bytes:
     """Encode exactly the envelope fields covered by its signer signature."""
 
-    return _canonical_json(_envelope_object(envelope, include_signature=False))
+    return _canonical_json(_envelope_value(envelope, include_signature=False))
 
 
 def encode_envelope(envelope: SignedEnvelope) -> bytes:
     """Encode a signed envelope into its unique wire representation."""
 
-    return _canonical_json(_envelope_object(envelope, include_signature=True))
+    return _canonical_json(_envelope_value(envelope, include_signature=True))
 
 
 def decode_envelope(data: bytes) -> SignedEnvelope:
     """Decode one complete canonical signed envelope."""
 
-    value = _load_object(data, "envelope")
-    _require_keys(
-        value,
-        {"network_id", "payload", "payload_type", "signature", "signer_public_key"},
-    )
-    payload_value = value["payload"]
-    if not isinstance(payload_value, dict):
-        raise CodecError("payload must be a JSON object")
+    if not isinstance(data, bytes):
+        raise TypeError("envelope data must be bytes")
 
     try:
+        model = _EnvelopePayload.model_validate_json(data)
         envelope = SignedEnvelope(
-            network_id=_require_string(value, "network_id"),
-            payload_type=PayloadType(_require_string(value, "payload_type")),
-            payload=_canonical_json(payload_value),
-            signer_public_key=bytes.fromhex(_require_string(value, "signer_public_key")),
-            signature=bytes.fromhex(_require_string(value, "signature")),
+            network_id=model.network_id,
+            payload_type=model.payload_type,
+            payload=_canonical_json(model.payload),
+            signer_public_key=bytes.fromhex(model.signer_public_key),
+            signature=bytes.fromhex(model.signature),
         )
+    except ValidationError as error:
+        raise CodecError("envelope fields are invalid") from error
     except (TypeError, ValueError) as error:
-        if isinstance(error, CodecError):
-            raise
         raise CodecError("envelope fields are invalid") from error
 
     decode_payload(envelope.payload_type, envelope.payload)
@@ -150,23 +192,78 @@ def decode_envelope(data: bytes) -> SignedEnvelope:
     return envelope
 
 
-def transaction_id(envelope: SignedEnvelope) -> TransactionId:
-    """Derive the transaction identifier from the complete signed envelope."""
+def artifact_ref(envelope: SignedEnvelope) -> ArtifactRef:
+    """Derive a canonical CIDv1 reference from the complete signed envelope."""
 
-    return TransactionId(sha256(encode_envelope(envelope)).hexdigest())
+    digest = multihash.digest(encode_envelope(envelope), "sha2-256")
+    return ArtifactRef(str(CID("base32", 1, "raw", digest)))
 
 
-def _envelope_object(envelope: SignedEnvelope, *, include_signature: bool) -> JSONObject:
-    payload = _load_object(envelope.payload, "payload")
-    decode_payload(envelope.payload_type, envelope.payload)
+def parse_artifact_ref(value: str) -> ArtifactRef:
+    """Validate and return a canonical Discovery Net artifact reference."""
+
+    if not isinstance(value, str):
+        raise TypeError("artifact reference must be a string")
+    try:
+        cid = CID.decode(value)
+    except (KeyError, ValueError) as error:
+        raise ValueError("artifact reference must be a valid CID") from error
+    if (
+        cid.version != 1
+        or cid.base.name != "base32"
+        or cid.codec.name != "raw"
+        or cid.hashfun.name != "sha2-256"
+        or str(cid) != value
+    ):
+        raise ValueError("artifact reference must be canonical CIDv1 raw sha2-256 base32")
+    return ArtifactRef(value)
+
+
+def _contribution_value(model: _ContributionPayload) -> JSONObject:
+    return {
+        "body": model.body,
+        "created_at": _encode_datetime(model.created_at),
+        "kind": model.kind.value,
+        "parent": model.parent,
+        "title": model.title,
+    }
+
+
+def _relation_value(model: _RelationPayload) -> JSONObject:
+    return {
+        "created_at": _encode_datetime(model.created_at),
+        "from_contribution": model.from_contribution,
+        "kind": model.kind.value,
+        "to_contribution": model.to_contribution,
+    }
+
+
+def _envelope_value(envelope: SignedEnvelope, *, include_signature: bool) -> JSONObject:
+    artifact = decode_payload(envelope.payload_type, envelope.payload)
+    if isinstance(artifact, Contribution):
+        payload_type, payload = encode_payload(artifact)
+        payload_model = _ContributionPayload.model_validate_json(payload)
+        payload_value = _contribution_value(payload_model)
+    else:
+        payload_type, payload = encode_payload(artifact)
+        relation_model = _RelationPayload.model_validate_json(payload)
+        payload_value = _relation_value(relation_model)
+
+    model = _EnvelopePayload(
+        network_id=envelope.network_id,
+        payload=payload_value,
+        payload_type=payload_type,
+        signature=envelope.signature.hex(),
+        signer_public_key=envelope.signer_public_key.hex(),
+    )
     value: JSONObject = {
-        "network_id": envelope.network_id,
-        "payload": payload,
-        "payload_type": envelope.payload_type.value,
-        "signer_public_key": envelope.signer_public_key.hex(),
+        "network_id": model.network_id,
+        "payload": model.payload,
+        "payload_type": model.payload_type.value,
+        "signer_public_key": model.signer_public_key,
     }
     if include_signature:
-        value["signature"] = envelope.signature.hex()
+        value["signature"] = model.signature
     return value
 
 
@@ -184,75 +281,12 @@ def _canonical_json(value: object) -> bytes:
     return encoded.encode("utf-8")
 
 
-def _load_object(data: bytes, label: str) -> JSONObject:
-    if not isinstance(data, bytes):
-        raise TypeError(f"{label} data must be bytes")
-
-    try:
-        value = json.loads(
-            data.decode("utf-8"),
-            object_pairs_hook=_unique_object,
-            parse_constant=_reject_json_constant,
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError, CodecError) as error:
-        raise CodecError(f"{label} is not valid JSON") from error
-    if not isinstance(value, dict):
-        raise CodecError(f"{label} must be a JSON object")
-    return cast(JSONObject, value)
-
-
-def _unique_object(pairs: list[tuple[str, object]]) -> JSONObject:
-    value: JSONObject = {}
-    for key, item in pairs:
-        if key in value:
-            raise CodecError(f"duplicate JSON key: {key}")
-        value[key] = item
-    return value
-
-
-def _reject_json_constant(value: str) -> object:
-    raise CodecError(f"invalid JSON constant: {value}")
-
-
-def _require_keys(value: JSONObject, expected: set[str]) -> None:
-    actual = set(value)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        unexpected = sorted(actual - expected)
-        details = []
-        if missing:
-            details.append(f"missing keys: {', '.join(missing)}")
-        if unexpected:
-            details.append(f"unexpected keys: {', '.join(unexpected)}")
-        raise CodecError("; ".join(details))
-
-
-def _require_string(value: JSONObject, key: str) -> str:
-    item = value[key]
-    if not isinstance(item, str):
-        raise CodecError(f"{key} must be a string")
-    return item
-
-
-def _optional_contribution_id(value: JSONObject, key: str) -> ContributionId | None:
-    item = value[key]
-    if item is None:
-        return None
-    if not isinstance(item, str):
-        raise CodecError(f"{key} must be a string or null")
-    return ContributionId(item)
+def _validate_lower_hex(value: str, field_name: str, byte_length: int) -> None:
+    if len(value) != byte_length * 2 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise ValueError(f"{field_name} must be lowercase hexadecimal for {byte_length} bytes")
 
 
 def _encode_datetime(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _decode_datetime(value: str) -> datetime:
-    normalized = f"{value[:-1]}+00:00" if value.endswith("Z") else value
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError as error:
-        raise CodecError("created_at must be an ISO 8601 datetime") from error
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise CodecError("created_at must include a UTC offset")
-    return parsed

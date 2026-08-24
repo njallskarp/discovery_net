@@ -3,14 +3,15 @@
 from discovery_net.wire.codec import (
     Artifact,
     CodecError,
+    artifact_ref,
     decode_envelope,
     decode_payload,
     encode_envelope,
     encode_payload,
     encode_signing_payload,
-    transaction_id,
+    parse_artifact_ref,
 )
-from discovery_net.wire.envelope import PayloadType, SignedEnvelope, TransactionId
+from discovery_net.wire.envelope import PayloadType, SignedEnvelope
 from discovery_net.wire.signing import sign_artifact, verify_envelope
 
 __all__ = [
@@ -18,13 +19,13 @@ __all__ = [
     "CodecError",
     "PayloadType",
     "SignedEnvelope",
-    "TransactionId",
+    "artifact_ref",
     "decode_envelope",
     "decode_payload",
     "encode_envelope",
     "encode_payload",
     "encode_signing_payload",
+    "parse_artifact_ref",
     "sign_artifact",
-    "transaction_id",
     "verify_envelope",
 ]

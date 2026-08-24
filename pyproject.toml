@@ -14,7 +14,11 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Typing :: Typed",
 ]
-dependencies = ["cryptography>=44.0"]
+dependencies = [
+  "cryptography>=44.0",
+  "multiformats>=0.3,<1",
+  "pydantic>=2.12,<3",
+]
 
 [project.optional-dependencies]
 dev = [

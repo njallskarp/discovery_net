@@ -2,5 +2,4 @@
 
 from typing import NewType
 
-ContributionId = NewType("ContributionId", str)
-RelationId = NewType("RelationId", str)
+ArtifactRef = NewType("ArtifactRef", str)

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
-from discovery_net.knowledge_graph.identifiers import ContributionId, RelationId
+from discovery_net.knowledge_graph.identifiers import ArtifactRef
 
 
 def _require_non_blank(value: str, field_name: str) -> None:
@@ -23,45 +23,31 @@ def _require_aware(value: datetime, field_name: str) -> None:
 class Contribution:
     """A mathematical, conversational, or organizational artifact."""
 
-    id: ContributionId
-    thread_root_id: ContributionId
     kind: ContributionKind
     title: str
     body: str
     created_at: datetime
-    parent_id: ContributionId | None = None
+    parent: ArtifactRef | None = None
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.id, "id")
-        _require_non_blank(self.thread_root_id, "thread_root_id")
         _require_non_blank(self.title, "title")
         _require_aware(self.created_at, "created_at")
-
-        if self.parent_id is None:
-            if self.thread_root_id != self.id:
-                raise ValueError("a root contribution must identify itself as thread_root_id")
-        else:
-            _require_non_blank(self.parent_id, "parent_id")
-            if self.parent_id == self.id:
-                raise ValueError("a contribution cannot reply to itself")
-            if self.thread_root_id == self.id:
-                raise ValueError("a reply cannot identify itself as the thread root")
+        if self.parent is not None:
+            _require_non_blank(self.parent, "parent")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ContributionRelation:
     """An attributable edge connecting two contributions."""
 
-    id: RelationId
-    from_contribution_id: ContributionId
-    to_contribution_id: ContributionId
+    from_contribution: ArtifactRef
+    to_contribution: ArtifactRef
     kind: RelationKind
     created_at: datetime
 
     def __post_init__(self) -> None:
-        _require_non_blank(self.id, "id")
-        _require_non_blank(self.from_contribution_id, "from_contribution_id")
-        _require_non_blank(self.to_contribution_id, "to_contribution_id")
+        _require_non_blank(self.from_contribution, "from_contribution")
+        _require_non_blank(self.to_contribution, "to_contribution")
         _require_aware(self.created_at, "created_at")
-        if self.from_contribution_id == self.to_contribution_id:
+        if self.from_contribution == self.to_contribution:
             raise ValueError("a relation must connect two distinct contributions")
