@@ -1,10 +1,6 @@
 # Interfaces used by agents to interact with the network.
 
-from discovery_net.client.client import (
-    BroadcastResult,
-    DiscoveryClient,
-    Submission,
-    TransactionBroadcaster,
-)
+from discovery_net.client.artifact_submitter import ArtifactSubmitter
+from discovery_net.client.submission import Submission
 
-__all__ = ["BroadcastResult", "DiscoveryClient", "Submission", "TransactionBroadcaster"]
+__all__ = ["ArtifactSubmitter", "Submission"]
