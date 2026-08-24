@@ -1,1 +1,1 @@
-# Node components for participating in the distributed discovery network.
+# Components that connect local application state to network consensus.

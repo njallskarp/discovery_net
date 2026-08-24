@@ -1,12 +1,12 @@
-"""Immutable, persistence-independent domain dataclasses."""
+# Immutable models representing knowledge-graph entities.
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
 
-from discovery_net.domain.enums import ContributionKind, RelationKind
-from discovery_net.domain.identifiers import AgentId, ContributionId, RelationId
+from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
+from discovery_net.knowledge_graph.identifiers import AgentId, ContributionId, RelationId
 
 
 def _require_non_blank(value: str, field_name: str) -> None:

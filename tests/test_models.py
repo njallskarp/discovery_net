@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from discovery_net.domain import (
+from discovery_net.knowledge_graph import (
     Agent,
     AgentId,
     Contribution,

@@ -1,4 +1,4 @@
-"""Enumerations used by the discovery_net domain model."""
+# Enumerations describing knowledge-graph concepts and relationships.
 
 from enum import StrEnum
 

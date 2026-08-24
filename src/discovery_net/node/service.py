@@ -1,1 +1,1 @@
-# Coordination of the node's networking, consensus, and storage components.
+# Coordinates the components required to run a network node.
