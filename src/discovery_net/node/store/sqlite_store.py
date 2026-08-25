@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterator
-from contextlib import closing, contextmanager
+from contextlib import contextmanager
 from pathlib import Path
 from typing import final
 
@@ -27,12 +27,12 @@ class SQLiteArtifactLedgerStore:
 
         path.parent.mkdir(parents=True, exist_ok=True)
         self._path = path
-        with closing(self._connect()) as connection, _transaction(connection, immediate=True):
+        with self._open_transaction(immediate=True) as connection:
             queries.create_schema(connection)
 
     def load(self) -> ArtifactLedgerSnapshot | None:
         """Load the latest committed snapshot, or return none before the first commit."""
-        with closing(self._connect()) as connection, _transaction(connection):
+        with self._open_transaction() as connection:
             return _read_snapshot(connection)
 
     def save(self, snapshot: ArtifactLedgerSnapshot) -> None:
@@ -40,7 +40,7 @@ class SQLiteArtifactLedgerStore:
         if not isinstance(snapshot, ArtifactLedgerSnapshot):
             raise TypeError("snapshot must be an ArtifactLedgerSnapshot")
 
-        with closing(self._connect()) as connection, _transaction(connection, immediate=True):
+        with self._open_transaction(immediate=True) as connection:
             persisted = _read_snapshot(connection)
             new_entries = _new_entries(persisted, snapshot)
             queries.insert_entries(
@@ -49,14 +49,24 @@ class SQLiteArtifactLedgerStore:
             )
             queries.upsert_committed_height(connection, snapshot.height)
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _open_transaction(
+        self,
+        *,
+        immediate: bool = False,
+    ) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self._path, isolation_level=None)
         try:
             connection.execute("PRAGMA synchronous = FULL")
+            connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
+            yield connection
+            connection.execute("COMMIT")
         except BaseException:
-            connection.close()
+            if connection.in_transaction:
+                connection.execute("ROLLBACK")
             raise
-        return connection
+        finally:
+            connection.close()
 
 
 def _read_snapshot(connection: sqlite3.Connection) -> ArtifactLedgerSnapshot | None:
@@ -110,19 +120,3 @@ def _new_entries(
     if any(entry.height <= persisted.height for entry in new_entries):
         raise ValueError("new entries must follow the committed height")
     return new_entries
-
-
-@contextmanager
-def _transaction(
-    connection: sqlite3.Connection,
-    *,
-    immediate: bool = False,
-) -> Iterator[None]:
-    connection.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
-    try:
-        yield
-        connection.execute("COMMIT")
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute("ROLLBACK")
-        raise
