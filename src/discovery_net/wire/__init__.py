@@ -1,4 +1,4 @@
-# Application messages shared by network clients and nodes.
+# Application messages shared by artifact submitters and nodes.
 
 from discovery_net.knowledge_graph.models import Artifact
 from discovery_net.wire.codec import (

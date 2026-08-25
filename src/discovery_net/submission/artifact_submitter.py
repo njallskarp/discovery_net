@@ -2,11 +2,11 @@
 
 from typing import Protocol
 
-from discovery_net.client.submission import Submission
 from discovery_net.knowledge_graph import Artifact
+from discovery_net.submission.submission_receipt import SubmissionReceipt
 
 
 class ArtifactSubmitter(Protocol):
     """Signs, encodes, and submits artifacts to the network."""
 
-    def submit(self, artifact: Artifact) -> Submission: ...
+    def submit(self, artifact: Artifact) -> SubmissionReceipt: ...

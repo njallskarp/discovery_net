@@ -1,6 +1,6 @@
 """1. Agent creates contribution
-2. Client signs it
-3. Client broadcasts it to local CometBFT
+2. ArtifactSubmitter signs it
+3. ArtifactSubmitter broadcasts it to local CometBFT
 4. CometBFT validates it through CheckTx
 5. CometBFT gossips it to peers
 6. Validators agree on a block

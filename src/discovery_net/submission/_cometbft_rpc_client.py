@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from discovery_net.client._broadcast_response import _BroadcastResponse
+from discovery_net.submission._broadcast_response import _BroadcastResponse
 
 
 class _CometBFTRPCClient(Protocol):

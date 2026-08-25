@@ -2,7 +2,7 @@ ArtifactSubmitter
     accepts Artifact
     signs and encodes it
     calls _CometBFTRPCClient
-    returns Submission
+    returns SubmissionReceipt
 
 _CometBFTRPCClient
     sends transaction bytes to local CometBFT
