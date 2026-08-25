@@ -24,11 +24,42 @@ class CometBFTABCIAdapter:
             last_block_app_hash=committed_head.state_hash,
         )
 
+    def init_chain(self, request: _abci.RequestInitChain) -> _abci.ResponseInitChain:
+        """Validate genesis configuration and return the initial application hash."""
+        _require_message(request, _abci.RequestInitChain)
+        app_hash = self._handler.initialize_chain(
+            chain_id=request.chain_id,
+            initial_height=request.initial_height,
+            genesis_state=request.app_state_bytes,
+        )
+        return _abci.ResponseInitChain(app_hash=app_hash)
+
     def check_tx(self, request: _abci.RequestCheckTx) -> _abci.ResponseCheckTx:
         """Validate one mempool transaction without changing application state."""
         _require_message(request, _abci.RequestCheckTx)
         result = self._handler.check_tx(request.tx)
         return _abci.ResponseCheckTx(code=result.code)
+
+    def prepare_proposal(
+        self,
+        request: _abci.RequestPrepareProposal,
+    ) -> _abci.ResponsePrepareProposal:
+        """Select the ordered transaction prefix that fits in the proposal."""
+        _require_message(request, _abci.RequestPrepareProposal)
+        transactions = self._handler.prepare_proposal(
+            transactions=request.txs,
+            maximum_transaction_bytes=request.max_tx_bytes,
+        )
+        return _abci.ResponsePrepareProposal(txs=transactions)
+
+    def process_proposal(
+        self,
+        request: _abci.RequestProcessProposal,
+    ) -> _abci.ResponseProcessProposal:
+        """Accept a proposal for deterministic execution during FinalizeBlock."""
+        _require_message(request, _abci.RequestProcessProposal)
+        # TODO: Reject proposals that violate deterministic knowledge-graph policies.
+        return _abci.ResponseProcessProposal(status=_abci.ResponseProcessProposal.ACCEPT)
 
     def finalize_block(
         self,

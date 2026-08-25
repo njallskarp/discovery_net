@@ -110,6 +110,32 @@ def test_info_recovers_the_last_persisted_height_and_hash() -> None:
     )
 
 
+def test_init_chain_returns_the_validated_initial_app_hash() -> None:
+    application, store = adapter()
+
+    response = application.init_chain(
+        abci.RequestInitChain(
+            chain_id=CHAIN_ID,
+            initial_height=1,
+        )
+    )
+
+    assert response == abci.ResponseInitChain(app_hash=LocalArtifactLedger().state_hash())
+    assert store.snapshot is None
+
+
+def test_init_chain_rejects_a_different_chain() -> None:
+    application, _ = adapter()
+
+    with pytest.raises(ValueError, match="configured chain"):
+        application.init_chain(
+            abci.RequestInitChain(
+                chain_id="discovery-net-mainnet",
+                initial_height=1,
+            )
+        )
+
+
 def test_check_tx_maps_validation_code_without_changing_state() -> None:
     application, store = adapter()
     encoded = transaction("First")
@@ -119,6 +145,35 @@ def test_check_tx_maps_validation_code_without_changing_state() -> None:
 
     assert accepted == abci.ResponseCheckTx(code=TransactionCode.ACCEPTED)
     assert invalid == abci.ResponseCheckTx(code=TransactionCode.INVALID_ENVELOPE)
+    assert store.snapshot is None
+
+
+def test_prepare_proposal_preserves_the_prefix_that_fits() -> None:
+    application, store = adapter()
+    transactions = (b"one", b"12345", b"x")
+
+    response = application.prepare_proposal(
+        abci.RequestPrepareProposal(
+            max_tx_bytes=8,
+            txs=transactions,
+        )
+    )
+
+    assert tuple(response.txs) == transactions[:2]
+    assert store.snapshot is None
+
+
+def test_process_proposal_returns_an_explicit_deterministic_acceptance() -> None:
+    application, store = adapter()
+
+    response = application.process_proposal(
+        abci.RequestProcessProposal(
+            height=1,
+            txs=(b"not-an-envelope",),
+        )
+    )
+
+    assert response.status == abci.ResponseProcessProposal.ACCEPT
     assert store.snapshot is None
 
 
@@ -161,7 +216,10 @@ def test_commit_persists_before_returning_an_acknowledgement() -> None:
     ("method_name", "message", "expected_type"),
     [
         ("info", abci.RequestCommit(), "RequestInfo"),
+        ("init_chain", abci.RequestInfo(), "RequestInitChain"),
         ("check_tx", abci.RequestInfo(), "RequestCheckTx"),
+        ("prepare_proposal", abci.RequestCheckTx(), "RequestPrepareProposal"),
+        ("process_proposal", abci.RequestPrepareProposal(), "RequestProcessProposal"),
         ("finalize_block", abci.RequestCheckTx(), "RequestFinalizeBlock"),
         ("commit", abci.RequestFinalizeBlock(), "RequestCommit"),
     ],

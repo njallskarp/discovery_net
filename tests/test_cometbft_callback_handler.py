@@ -111,6 +111,103 @@ def test_committed_head_changes_only_after_successful_commit() -> None:
     )
 
 
+def test_initialize_chain_validates_genesis_without_changing_state() -> None:
+    handler, store = callback_handler()
+    initial_head = handler.committed_head()
+
+    state_hash = handler.initialize_chain(
+        chain_id=CHAIN_ID,
+        initial_height=1,
+        genesis_state=b"",
+    )
+
+    assert state_hash == initial_head.state_hash
+    assert handler.committed_head() == initial_head
+    assert store.save_calls == 0
+    assert store.snapshot is None
+
+
+@pytest.mark.parametrize(
+    ("chain_id", "initial_height", "genesis_state", "error"),
+    [
+        ("discovery-net-mainnet", 1, b"", "configured chain"),
+        (CHAIN_ID, 2, b"", "initial height of 1"),
+        (CHAIN_ID, 1, b"{}", "application state is not supported"),
+    ],
+)
+def test_initialize_chain_rejects_unsupported_genesis(
+    chain_id: str,
+    initial_height: int,
+    genesis_state: bytes,
+    error: str,
+) -> None:
+    handler, _ = callback_handler()
+
+    with pytest.raises(ValueError, match=error):
+        handler.initialize_chain(
+            chain_id=chain_id,
+            initial_height=initial_height,
+            genesis_state=genesis_state,
+        )
+
+
+def test_initialize_chain_must_precede_block_execution() -> None:
+    handler, _ = callback_handler()
+    handler.finalize_block(height=1, transactions=())
+
+    with pytest.raises(RuntimeError, match="precede block execution"):
+        handler.initialize_chain(
+            chain_id=CHAIN_ID,
+            initial_height=1,
+            genesis_state=b"",
+        )
+
+
+def test_prepare_proposal_returns_the_longest_prefix_within_the_byte_limit() -> None:
+    handler, store = callback_handler()
+    transactions = (b"one", b"12345", b"x")
+
+    assert (
+        handler.prepare_proposal(
+            transactions=transactions,
+            maximum_transaction_bytes=8,
+        )
+        == transactions[:2]
+    )
+    assert (
+        handler.prepare_proposal(
+            transactions=transactions,
+            maximum_transaction_bytes=7,
+        )
+        == transactions[:1]
+    )
+    assert store.save_calls == 0
+    assert store.snapshot is None
+
+
+@pytest.mark.parametrize("maximum_transaction_bytes", [-1, 1 << 63])
+def test_prepare_proposal_rejects_an_invalid_byte_limit(
+    maximum_transaction_bytes: int,
+) -> None:
+    handler, _ = callback_handler()
+
+    with pytest.raises(ValueError, match="maximum_transaction_bytes"):
+        handler.prepare_proposal(
+            transactions=(),
+            maximum_transaction_bytes=maximum_transaction_bytes,
+        )
+
+
+def test_prepare_proposal_requires_bytes_transactions() -> None:
+    handler, _ = callback_handler()
+
+    with pytest.raises(TypeError, match="transactions must contain bytes"):
+        handler.prepare_proposal(
+            transactions=(b"valid", "invalid"),  # type: ignore[arg-type]
+            maximum_transaction_bytes=100,
+        )
+
+
 def test_finalize_block_executes_transactions_in_order_without_persisting() -> None:
     handler, store = callback_handler()
     first = transaction("First")

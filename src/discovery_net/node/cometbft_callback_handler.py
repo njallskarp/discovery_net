@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import final
+from typing import Final, final
 
 from discovery_net.node._ledger_from_snapshot import ledger_from_snapshot
 from discovery_net.node.local_artifact_ledger import (
@@ -23,6 +23,8 @@ from discovery_net.node.transaction_validator import (
     TransactionValidator,
 )
 from discovery_net.wire import decode_envelope
+
+_MAX_INT64: Final = (1 << 63) - 1
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -90,10 +92,55 @@ class CometBFTCallbackHandler:
                 state_hash=self._committed_ledger.state_hash(),
             )
 
+    def initialize_chain(
+        self,
+        *,
+        chain_id: str,
+        initial_height: int,
+        genesis_state: bytes,
+    ) -> bytes:
+        """Validate this node's supported genesis and return its initial state hash."""
+        if not isinstance(chain_id, str):
+            raise TypeError("chain_id must be a string")
+        _require_block_height(initial_height)
+        if not isinstance(genesis_state, bytes):
+            raise TypeError("genesis_state must be bytes")
+
+        with self._lock:
+            if self._committed_height != 0 or self._pending_block is not None:
+                raise RuntimeError("chain initialization must precede block execution")
+            if chain_id != self._validator.expected_chain_id:
+                raise ValueError("chain_id does not match the configured chain")
+            if initial_height != 1:
+                raise ValueError("only an initial height of 1 is supported")
+            if genesis_state:
+                raise ValueError("genesis application state is not supported")
+            return self._committed_ledger.state_hash()
+
     def check_tx(self, transaction: bytes) -> TransactionResult:
         """Validate a transaction against committed state without changing it."""
         with self._lock:
             return self._validator.validate(transaction, self._committed_ledger)
+
+    def prepare_proposal(
+        self,
+        *,
+        transactions: Sequence[bytes],
+        maximum_transaction_bytes: int,
+    ) -> tuple[bytes, ...]:
+        """Return the longest transaction prefix within the proposal byte limit."""
+        _require_nonnegative_int64(maximum_transaction_bytes, "maximum_transaction_bytes")
+        transaction_bytes = _transaction_bytes(transactions)
+        selected: list[bytes] = []
+        selected_size = 0
+
+        for transaction in transaction_bytes:
+            selected_size += len(transaction)
+            if selected_size > maximum_transaction_bytes:
+                break
+            selected.append(transaction)
+
+        return tuple(selected)
 
     def finalize_block(
         self,
@@ -103,6 +150,7 @@ class CometBFTCallbackHandler:
     ) -> FinalizeBlockResult:
         """Execute one decided block into pending, unpersisted state."""
         _require_block_height(height)
+        transaction_bytes = _transaction_bytes(transactions)
 
         with self._lock:
             if self._pending_block is not None:
@@ -114,7 +162,7 @@ class CometBFTCallbackHandler:
             new_entries: list[ArtifactLedgerEntry] = []
             transaction_results: list[TransactionResult] = []
 
-            for transaction_index, transaction in enumerate(tuple(transactions)):
+            for transaction_index, transaction in enumerate(transaction_bytes):
                 result = self._validator.validate(transaction, ledger)
                 transaction_results.append(result)
                 if result.code is not TransactionCode.ACCEPTED:
@@ -162,5 +210,19 @@ class CometBFTCallbackHandler:
 def _require_block_height(height: int) -> None:
     if not isinstance(height, int) or isinstance(height, bool):
         raise TypeError("height must be an integer")
-    if not 1 <= height <= (1 << 63) - 1:
+    if not 1 <= height <= _MAX_INT64:
         raise ValueError("height must be between 1 and the maximum signed 64-bit integer")
+
+
+def _require_nonnegative_int64(value: int, field_name: str) -> None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise TypeError(f"{field_name} must be an integer")
+    if not 0 <= value <= _MAX_INT64:
+        raise ValueError(f"{field_name} must be a nonnegative signed 64-bit integer")
+
+
+def _transaction_bytes(transactions: Sequence[bytes]) -> tuple[bytes, ...]:
+    transaction_bytes = tuple(transactions)
+    if any(not isinstance(transaction, bytes) for transaction in transaction_bytes):
+        raise TypeError("transactions must contain bytes")
+    return transaction_bytes
