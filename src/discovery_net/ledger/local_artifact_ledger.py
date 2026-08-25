@@ -19,7 +19,7 @@ class AppendOutcome(StrEnum):
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ArtifactLedgerEntry:
-    """A committed envelope at a block height and position within that block."""
+    """A signed envelope paired with its consensus-assigned block position."""
 
     envelope: SignedEnvelope
     height: int
@@ -27,7 +27,7 @@ class ArtifactLedgerEntry:
 
 
 class LocalArtifactLedger(Protocol):
-    """Records verified envelopes without signing, broadcasting, or persistence."""
+    """Maintains the ordered artifact entries accepted by this node."""
 
     def contains(self, artifact_ref: ArtifactRef) -> bool:
         """Return whether an artifact has already been recorded."""
@@ -35,13 +35,13 @@ class LocalArtifactLedger(Protocol):
 
     def append_artifact(
         self,
-        envelope: SignedEnvelope,
+        entry: ArtifactLedgerEntry,
     ) -> tuple[Self, AppendOutcome]:
         """Return the resulting ledger and append outcome."""
         ...
 
-    def artifact_refs(self) -> tuple[ArtifactRef, ...]:
-        """Return artifact references in canonical ledger order."""
+    def entries(self) -> tuple[ArtifactLedgerEntry, ...]:
+        """Return entries in canonical ledger order."""
         ...
 
     def state_hash(self) -> bytes:
