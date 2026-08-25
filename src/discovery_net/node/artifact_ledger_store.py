@@ -3,15 +3,15 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from discovery_net.node.local_artifact_ledger import LocalArtifactLedger
+from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class ArtifactLedgerSnapshot:
-    """The artifact ledger persisted at a committed block height."""
+    """The ordered ledger entries persisted at a committed block height."""
 
     height: int
-    ledger: LocalArtifactLedger
+    entries: tuple[ArtifactLedgerEntry, ...]
 
 
 class ArtifactLedgerStore(Protocol):

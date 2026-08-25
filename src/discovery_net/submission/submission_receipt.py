@@ -7,8 +7,7 @@ from discovery_net.knowledge_graph import ArtifactRef
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SubmissionReceipt:
-    """The immediate receipt returned by a local consensus node."""
+    """Reports whether a local node accepted an artifact for broadcast."""
 
     artifact_ref: ArtifactRef
-    transaction_hash: str
-    check_tx_code: int
+    accepted: bool
