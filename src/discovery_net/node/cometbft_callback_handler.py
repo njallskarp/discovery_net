@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from threading import RLock
 from typing import final
 
+from discovery_net.node._ledger_from_snapshot import ledger_from_snapshot
 from discovery_net.node.artifact_ledger_store import ArtifactLedgerSnapshot, ArtifactLedgerStore
 from discovery_net.node.local_artifact_ledger import (
     AppendOutcome,
@@ -18,7 +19,7 @@ from discovery_net.node.transaction_validator import (
     TransactionResult,
     TransactionValidator,
 )
-from discovery_net.wire import decode_envelope, encode_envelope
+from discovery_net.wire import decode_envelope
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -61,7 +62,7 @@ class CometBFTCallbackHandler:
             committed_ledger = LocalArtifactLedger()
         else:
             committed_height = snapshot.height
-            committed_ledger = _restore_ledger(snapshot, validator)
+            committed_ledger = ledger_from_snapshot(snapshot, validator)
 
         self._validator = validator
         self._store = store
@@ -137,26 +138,6 @@ class CometBFTCallbackHandler:
             self._committed_ledger = pending_block.ledger
             self._pending_block = None
             return pending_block.new_entries
-
-
-def _restore_ledger(
-    snapshot: ArtifactLedgerSnapshot,
-    validator: TransactionValidator,
-) -> LocalArtifactLedger:
-    ledger = LocalArtifactLedger()
-    for entry in snapshot.entries:
-        try:
-            transaction = encode_envelope(entry.envelope)
-        except (TypeError, ValueError) as error:
-            raise ValueError("stored snapshot contains an invalid envelope") from error
-
-        result = validator.validate(transaction, ledger)
-        if result.code is not TransactionCode.ACCEPTED:
-            raise ValueError(f"stored snapshot contains an invalid transaction: {result.code.name}")
-        ledger, outcome = ledger.append_artifact(entry)
-        if outcome is not AppendOutcome.ACCEPTED:
-            raise ValueError("stored snapshot contains a duplicate artifact")
-    return ledger
 
 
 def _require_block_height(height: int) -> None:
