@@ -1,8 +1,8 @@
 # Validates encoded network transactions without changing node state.
 
 from dataclasses import dataclass
+from enum import IntEnum
 
-from discovery_net.node.cometbft_callback_handler import TransactionCode, TransactionResult
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerLookup
 from discovery_net.wire import (
     CodecError,
@@ -10,6 +10,23 @@ from discovery_net.wire import (
     decode_envelope,
     verify_envelope,
 )
+
+
+class TransactionCode(IntEnum):
+    """Stable application codes returned to CometBFT for transactions."""
+
+    ACCEPTED = 0
+    INVALID_ENVELOPE = 1
+    WRONG_CHAIN = 2
+    INVALID_SIGNATURE = 3
+    DUPLICATE = 4
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TransactionResult:
+    """The deterministic application result for one transaction."""
+
+    code: TransactionCode
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

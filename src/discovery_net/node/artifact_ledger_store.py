@@ -13,6 +13,18 @@ class ArtifactLedgerSnapshot:
     height: int
     entries: tuple[ArtifactLedgerEntry, ...]
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.height, int) or isinstance(self.height, bool):
+            raise TypeError("height must be an integer")
+        if not 0 <= self.height <= (1 << 63) - 1:
+            raise ValueError("height must be a nonnegative signed 64-bit integer")
+        if not isinstance(self.entries, tuple):
+            raise TypeError("entries must be a tuple")
+        if any(not isinstance(entry, ArtifactLedgerEntry) for entry in self.entries):
+            raise TypeError("entries must contain ArtifactLedgerEntry values")
+        if any(entry.height > self.height for entry in self.entries):
+            raise ValueError("entry height must not exceed snapshot height")
+
 
 class ArtifactLedgerStore(Protocol):
     """Loads and atomically persists artifact-ledger snapshots."""
