@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from discovery_net.knowledge_graph import ArtifactRef
-from discovery_net.ledger import CommittedArtifact, LedgerState
+from discovery_net.ledger import (
+    AcceptedArtifact,
+    CommittedArtifact,
+    LocalArtifactLedger,
+)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -21,10 +25,10 @@ class FinalizeBlockResult:
     """The pending application result produced for an agreed block."""
 
     height: int
-    state: LedgerState
+    ledger: LocalArtifactLedger
     transaction_results: tuple[TransactionResult, ...]
-    accepted_artifacts: tuple[CommittedArtifact, ...]
-    app_hash: bytes
+    accepted_artifacts: tuple[AcceptedArtifact, ...]
+    state_hash: bytes
 
 
 class DiscoveryApplication(Protocol):

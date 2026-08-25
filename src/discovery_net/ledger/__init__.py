@@ -1,17 +1,17 @@
-# Public interface for deterministic ledger state.
+# Public interface for the node-local artifact ledger.
 
-from discovery_net.ledger.state import (
-    ApplyResult,
-    ApplyStatus,
+from discovery_net.ledger.local_artifact_ledger import (
+    AcceptedArtifact,
+    AppendOutcome,
     CommittedArtifact,
-    LedgerState,
-    ValidatedArtifact,
+    LocalArtifactLedger,
+    VerifiedArtifact,
 )
 
 __all__ = [
-    "ApplyResult",
-    "ApplyStatus",
+    "AcceptedArtifact",
+    "AppendOutcome",
     "CommittedArtifact",
-    "LedgerState",
-    "ValidatedArtifact",
+    "LocalArtifactLedger",
+    "VerifiedArtifact",
 ]

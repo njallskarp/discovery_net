@@ -3,20 +3,20 @@
 from dataclasses import dataclass
 from typing import Protocol
 
-from discovery_net.ledger import LedgerState
+from discovery_net.ledger import LocalArtifactLedger
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class StoredLedgerState:
-    """The latest atomically persisted application state."""
+class ArtifactLedgerSnapshot:
+    """The artifact ledger persisted at a committed block height."""
 
     height: int
-    state: LedgerState
+    ledger: LocalArtifactLedger
 
 
-class LedgerStore(Protocol):
-    """Loads and atomically persists committed ledger state."""
+class ArtifactLedgerStore(Protocol):
+    """Loads and atomically persists artifact-ledger snapshots."""
 
-    def load(self) -> StoredLedgerState | None: ...
+    def load(self) -> ArtifactLedgerSnapshot | None: ...
 
-    def save(self, stored_state: StoredLedgerState) -> None: ...
+    def save(self, snapshot: ArtifactLedgerSnapshot) -> None: ...

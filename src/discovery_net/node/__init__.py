@@ -5,12 +5,12 @@ from discovery_net.node.service import (
     FinalizeBlockResult,
     TransactionResult,
 )
-from discovery_net.node.storage import LedgerStore, StoredLedgerState
+from discovery_net.node.storage import ArtifactLedgerSnapshot, ArtifactLedgerStore
 
 __all__ = [
+    "ArtifactLedgerSnapshot",
+    "ArtifactLedgerStore",
     "DiscoveryApplication",
     "FinalizeBlockResult",
-    "LedgerStore",
-    "StoredLedgerState",
     "TransactionResult",
 ]

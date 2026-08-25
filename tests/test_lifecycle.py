@@ -11,8 +11,8 @@ def test_broadcast_lifecycle_is_fixed() -> None:
 5. CometBFT gossips it to peers
 6. Validators agree on a block
 7. Every CometBFT node calls its local Discovery Net app
-8. The app calls ledger_state.apply(...)
+8. The app calls local_artifact_ledger.append_artifact(...)
 9. CometBFT calls Commit
-10. Discovery Net persists the resulting state
+10. Discovery Net persists the resulting local artifact ledger
 11. Local graph indexers process the committed artifact"""
     )
