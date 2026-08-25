@@ -14,6 +14,7 @@ from discovery_net.node.local_artifact_ledger import (
     ArtifactLedgerLookup,
     LocalArtifactLedger,
 )
+from discovery_net.node.sqlite_artifact_ledger_store import SQLiteArtifactLedgerStore
 from discovery_net.node.transaction_validator import (
     TransactionCode,
     TransactionResult,
@@ -29,6 +30,7 @@ __all__ = [
     "CometBFTCallbackHandler",
     "FinalizeBlockResult",
     "LocalArtifactLedger",
+    "SQLiteArtifactLedgerStore",
     "TransactionCode",
     "TransactionResult",
     "TransactionValidator",
