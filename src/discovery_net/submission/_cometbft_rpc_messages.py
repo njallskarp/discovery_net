@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from typing import Final, Literal, Self
+from urllib.request import Request
 
 from pydantic import (
     BaseModel,
@@ -49,9 +50,14 @@ class _BroadcastRequest(_RPCMessage):
             )
         )
 
-    def encode(self) -> bytes:
-        """Serialize the request as compact UTF-8 JSON."""
-        return self.model_dump_json().encode()
+    def to_http_request(self, url: str) -> Request:
+        """Build the complete HTTP request for this JSON-RPC message."""
+        return Request(
+            url,
+            data=self.model_dump_json().encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
 
 
 class _BroadcastResult(BaseModel):
@@ -107,11 +113,10 @@ class _BroadcastRPCResponse(_RPCMessage):
 
     def outcome(self) -> _BroadcastResponse:
         """Translate the wire response into the submission-layer result."""
+        if self.error is not None and self.error.message:
+            raise SubmissionError(f"CometBFT RPC failed: {self.error.message}")
         if self.error is not None:
-            if self.error.message:
-                raise SubmissionError(f"CometBFT RPC failed: {self.error.message}")
             raise SubmissionError("CometBFT RPC failed")
-
         if self.result is None:
             raise RuntimeError("validated response has no outcome")
         return _BroadcastResponse(

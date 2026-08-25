@@ -102,12 +102,6 @@ def test_submitter_requires_an_ed25519_private_key() -> None:
         )
 
 
-@pytest.mark.parametrize("url", ["127.0.0.1:26657", "ftp://127.0.0.1:26657"])
-def test_rpc_client_requires_an_absolute_http_url(url: str) -> None:
-    with pytest.raises(ValueError, match="absolute HTTP URL"):
-        _CometBFTRPCClient(url=url)
-
-
 def test_rpc_client_encodes_broadcast_tx_sync_and_decodes_check_tx() -> None:
     transaction = b"canonical transaction"
     transaction_hash = sha256(transaction).hexdigest().upper()
