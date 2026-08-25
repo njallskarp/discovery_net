@@ -1,9 +1,5 @@
 # Peers ↔ CometBFT → CometBFTCallbackHandler → LocalArtifactLedger
 
-from discovery_net.node.artifact_ledger_store import (
-    ArtifactLedgerSnapshot,
-    ArtifactLedgerStore,
-)
 from discovery_net.node.cometbft_callback_handler import (
     CometBFTCallbackHandler,
     FinalizeBlockResult,
@@ -13,6 +9,11 @@ from discovery_net.node.local_artifact_ledger import (
     ArtifactLedgerEntry,
     ArtifactLedgerLookup,
     LocalArtifactLedger,
+)
+from discovery_net.node.store import (
+    ArtifactLedgerSnapshot,
+    ArtifactLedgerStore,
+    SQLiteArtifactLedgerStore,
 )
 from discovery_net.node.transaction_validator import (
     TransactionCode,
@@ -29,6 +30,7 @@ __all__ = [
     "CometBFTCallbackHandler",
     "FinalizeBlockResult",
     "LocalArtifactLedger",
+    "SQLiteArtifactLedgerStore",
     "TransactionCode",
     "TransactionResult",
     "TransactionValidator",
