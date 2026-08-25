@@ -16,6 +16,7 @@ classifiers = [
 ]
 dependencies = [
   "cryptography>=44.0",
+  "grpcio>=1.83,<2",
   "multiformats>=0.3,<1",
   "pydantic>=2.12,<3",
   "protobuf>=7.35.1,<8",
@@ -26,6 +27,7 @@ dev = [
   "mypy>=1.15",
   "pytest>=8.3",
   "ruff>=0.9",
+  "types-grpcio>=1.83,<2",
   "types-protobuf>=7.35.1,<8",
 ]
 

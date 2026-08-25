@@ -1,6 +1,7 @@
-# Peers ↔ CometBFT → CometBFTABCIAdapter → CometBFTCallbackHandler → LocalArtifactLedger
+# Peers ↔ CometBFT → CometBFTABCIServer → CometBFTABCIAdapter → CometBFTCallbackHandler
 
 from discovery_net.node.abci import CometBFTABCIAdapter
+from discovery_net.node.abci_server import CometBFTABCIServer
 from discovery_net.node.cometbft_callback_handler import (
     ArtifactLedgerHead,
     CometBFTCallbackHandler,
@@ -31,6 +32,7 @@ __all__ = [
     "ArtifactLedgerSnapshot",
     "ArtifactLedgerStore",
     "CometBFTABCIAdapter",
+    "CometBFTABCIServer",
     "CometBFTCallbackHandler",
     "FinalizeBlockResult",
     "LocalArtifactLedger",
