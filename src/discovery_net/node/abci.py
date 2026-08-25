@@ -1,1 +1,1 @@
-# Adapts consensus callbacks to the application state machine.
+# Adapts CometBFT protocol callbacks to the local callback handler.

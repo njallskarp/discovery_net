@@ -9,8 +9,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
+from discovery_net.knowledge_graph import Artifact
 from discovery_net.wire.codec import (
-    Artifact,
     decode_payload,
     encode_payload,
     encode_signing_payload,
