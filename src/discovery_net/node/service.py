@@ -8,8 +8,8 @@ from discovery_net.knowledge_graph import ArtifactRef
 from discovery_net.ledger import (
     ArtifactLedgerEntry,
     LocalArtifactLedger,
-    VerifiedTransaction,
 )
+from discovery_net.wire import SignedEnvelope
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -27,7 +27,7 @@ class FinalizeBlockResult:
     height: int
     ledger: LocalArtifactLedger
     transaction_results: tuple[TransactionResult, ...]
-    accepted_transactions: tuple[VerifiedTransaction, ...]
+    accepted_envelopes: tuple[SignedEnvelope, ...]
     state_hash: bytes
 
 

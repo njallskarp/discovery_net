@@ -4,12 +4,10 @@ from discovery_net.ledger.local_artifact_ledger import (
     AppendOutcome,
     ArtifactLedgerEntry,
     LocalArtifactLedger,
-    VerifiedTransaction,
 )
 
 __all__ = [
     "AppendOutcome",
     "ArtifactLedgerEntry",
     "LocalArtifactLedger",
-    "VerifiedTransaction",
 ]
