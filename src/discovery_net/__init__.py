@@ -1,7 +1,7 @@
 # Public interface for the Discovery Net knowledge graph.
 
 from discovery_net.knowledge_graph import (
-    Agent,
+    ArtifactRef,
     Contribution,
     ContributionKind,
     ContributionRelation,
@@ -9,7 +9,7 @@ from discovery_net.knowledge_graph import (
 )
 
 __all__ = [
-    "Agent",
+    "ArtifactRef",
     "Contribution",
     "ContributionKind",
     "ContributionRelation",
