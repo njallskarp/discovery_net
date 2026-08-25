@@ -22,6 +22,9 @@ dependencies = [
   "protobuf>=7.35.1,<8",
 ]
 
+[project.scripts]
+discovery-node = "discovery_net.node.process:main"
+
 [project.optional-dependencies]
 dev = [
   "mypy>=1.15",
