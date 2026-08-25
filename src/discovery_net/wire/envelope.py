@@ -19,17 +19,17 @@ class PayloadType(StrEnum):
 class SignedEnvelope:
     """A signed application payload ready for consensus ordering."""
 
-    network_id: str
+    chain_id: str
     payload_type: PayloadType
     payload: bytes
     signer_public_key: bytes
     signature: bytes
 
     def __post_init__(self) -> None:
-        if not isinstance(self.network_id, str):
-            raise TypeError("network_id must be a string")
-        if not self.network_id.strip():
-            raise ValueError("network_id must not be blank")
+        if not isinstance(self.chain_id, str):
+            raise TypeError("chain_id must be a string")
+        if not self.chain_id.strip():
+            raise ValueError("chain_id must not be blank")
         if not isinstance(self.payload_type, PayloadType):
             raise TypeError("payload_type must be a PayloadType")
         _require_bytes(self.payload, "payload")

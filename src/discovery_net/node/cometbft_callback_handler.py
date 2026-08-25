@@ -2,16 +2,27 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Protocol
 
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
+
+
+class TransactionCode(IntEnum):
+    """Stable application codes returned to CometBFT for transactions."""
+
+    ACCEPTED = 0
+    INVALID_ENVELOPE = 1
+    WRONG_CHAIN = 2
+    INVALID_SIGNATURE = 3
+    DUPLICATE = 4
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransactionResult:
     """The deterministic application result for one transaction."""
 
-    code: int
+    code: TransactionCode
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

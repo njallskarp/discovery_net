@@ -7,21 +7,27 @@ from discovery_net.node.artifact_ledger_store import (
 from discovery_net.node.cometbft_callback_handler import (
     CometBFTCallbackHandler,
     FinalizeBlockResult,
+    TransactionCode,
     TransactionResult,
 )
 from discovery_net.node.local_artifact_ledger import (
     AppendOutcome,
     ArtifactLedgerEntry,
+    ArtifactLedgerLookup,
     LocalArtifactLedger,
 )
+from discovery_net.node.transaction_validator import TransactionValidator
 
 __all__ = [
     "AppendOutcome",
     "ArtifactLedgerEntry",
+    "ArtifactLedgerLookup",
     "ArtifactLedgerSnapshot",
     "ArtifactLedgerStore",
     "CometBFTCallbackHandler",
     "FinalizeBlockResult",
     "LocalArtifactLedger",
+    "TransactionCode",
     "TransactionResult",
+    "TransactionValidator",
 ]

@@ -22,11 +22,11 @@ SIGNATURE_DOMAIN: Final = b"discovery-net:signed-envelope:\x00"
 
 def sign_artifact(
     *,
-    network_id: str,
+    chain_id: str,
     artifact: Artifact,
     private_key: Ed25519PrivateKey,
 ) -> SignedEnvelope:
-    """Encode and sign one knowledge-graph artifact for a network."""
+    """Encode and sign one knowledge-graph artifact for a chain."""
 
     if not isinstance(private_key, Ed25519PrivateKey):
         raise TypeError("private_key must be an Ed25519PrivateKey")
@@ -34,7 +34,7 @@ def sign_artifact(
 
     payload_type, payload = encode_payload(artifact)
     unsigned = SignedEnvelope(
-        network_id=network_id,
+        chain_id=chain_id,
         payload_type=payload_type,
         payload=payload,
         signer_public_key=public_key,
@@ -42,7 +42,7 @@ def sign_artifact(
     )
     signature = private_key.sign(_signature_message(unsigned))
     return SignedEnvelope(
-        network_id=unsigned.network_id,
+        chain_id=unsigned.chain_id,
         payload_type=unsigned.payload_type,
         payload=unsigned.payload,
         signer_public_key=unsigned.signer_public_key,

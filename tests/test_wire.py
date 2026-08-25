@@ -56,7 +56,7 @@ def area_contribution() -> Contribution:
 
 def signed(artifact: Contribution | ContributionRelation | None = None) -> SignedEnvelope:
     return sign_artifact(
-        network_id="discovery-net-devnet",
+        chain_id="discovery-net-devnet",
         artifact=artifact if artifact is not None else sample_contribution(),
         private_key=PRIVATE_KEY,
     )
@@ -115,15 +115,15 @@ def test_signed_envelope_has_fixed_signing_bytes_and_round_trips() -> None:
     encoded = encode_envelope(envelope)
 
     assert signing_payload == (
-        b'{"network_id":"discovery-net-devnet","payload":'
+        b'{"chain_id":"discovery-net-devnet","payload":'
         b'{"body":"All nontrivial zeros have real part one half.",'
         b'"created_at":"2026-08-24T12:30:00Z","kind":"problem_statement",'
         b'"parent":null,"title":"Riemann hypothesis"},"payload_type":"contribution",'
         b'"signer_public_key":"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"}'
     )
     assert envelope.signature.hex() == (
-        "25dca5267139283025a1a1d9b471fc1d89f32fb326774935a9c9030ac4427b2b"
-        "10fcf8c6608769e6d2e6b3d2f4c8adf5f70d59b0785ecf711ec7b34f416cbf05"
+        "0f638c5f0d0b31ae69fe4e679fc8fd70d33542b88ffbf1f928890e498260b2d9"
+        "3dacb55b1300e4d840acf195b469c1990dc2331686282c0f5bd9e973b641ac02"
     )
     assert decode_envelope(encoded) == envelope
     assert verify_envelope(envelope)
@@ -135,7 +135,7 @@ def test_artifact_reference_is_canonical_cid_for_the_signed_envelope() -> None:
     reference = artifact_ref(envelope)
     cid = CID.decode(reference)
 
-    assert reference == "bafkreifiaocqamttz2hmu73p2xnffp2p65mcag3ouvvnxo2a6t5nljtbwq"
+    assert reference == "bafkreickvwi5x3dzjh5ap7qa5onmiusawgdigfdufxph4v5ubzgku2aymm"
     assert parse_artifact_ref(reference) == reference
     assert cid.version == 1
     assert cid.base.name == "base32"
@@ -144,10 +144,10 @@ def test_artifact_reference_is_canonical_cid_for_the_signed_envelope() -> None:
     assert cid.raw_digest == sha256(encoded).digest()
 
 
-def test_artifact_reference_covers_signer_network_payload_and_signature() -> None:
+def test_artifact_reference_covers_signer_chain_payload_and_signature() -> None:
     envelope = signed()
     second_signer = sign_artifact(
-        network_id="discovery-net-devnet",
+        chain_id="discovery-net-devnet",
         artifact=sample_contribution(),
         private_key=SECOND_PRIVATE_KEY,
     )
@@ -156,7 +156,7 @@ def test_artifact_reference_covers_signer_network_payload_and_signature() -> Non
     references = {
         artifact_ref(envelope),
         artifact_ref(second_signer),
-        artifact_ref(replace(envelope, network_id="discovery-net-mainnet")),
+        artifact_ref(replace(envelope, chain_id="discovery-net-mainnet")),
         artifact_ref(replace(envelope, payload=changed_payload)),
         artifact_ref(replace(envelope, signature=bytes(64))),
     }
@@ -168,21 +168,21 @@ def test_envelope_is_immutable_and_validates_fixed_width_fields() -> None:
     envelope = signed()
 
     with pytest.raises(FrozenInstanceError):
-        envelope.network_id = "other"  # type: ignore[misc]
+        envelope.chain_id = "other"  # type: ignore[misc]
     assert envelope.signer_public_key == PUBLIC_KEY
     with pytest.raises(ValueError, match="signer_public_key"):
         replace(envelope, signer_public_key=bytes(31))
     with pytest.raises(ValueError, match="signature"):
         replace(envelope, signature=bytes(63))
-    with pytest.raises(ValueError, match="network_id"):
-        replace(envelope, network_id=" ")
+    with pytest.raises(ValueError, match="chain_id"):
+        replace(envelope, chain_id=" ")
 
 
-def test_signature_covers_network_signer_and_payload() -> None:
+def test_signature_covers_chain_signer_and_payload() -> None:
     envelope = signed()
     _, changed_payload = encode_payload(replace(sample_contribution(), title="A different title"))
 
-    assert not verify_envelope(replace(envelope, network_id="discovery-net-mainnet"))
+    assert not verify_envelope(replace(envelope, chain_id="discovery-net-mainnet"))
     assert not verify_envelope(replace(envelope, payload=changed_payload))
     assert not verify_envelope(replace(envelope, signer_public_key=bytes(reversed(PUBLIC_KEY))))
     assert not verify_envelope(replace(envelope, signature=bytes(64)))
@@ -193,8 +193,8 @@ def test_signature_covers_network_signer_and_payload() -> None:
     [
         lambda data: b" " + data,
         lambda data: data + b"\n",
-        lambda data: data.replace(b'"network_id"', b'"unknown"', 1),
-        lambda data: data.replace(b'"network_id":', b'"network_id":"duplicate","network_id":', 1),
+        lambda data: data.replace(b'"chain_id"', b'"unknown"', 1),
+        lambda data: data.replace(b'"chain_id":', b'"chain_id":"duplicate","chain_id":', 1),
     ],
 )
 def test_decoder_rejects_noncanonical_duplicate_or_unknown_envelope_fields(
