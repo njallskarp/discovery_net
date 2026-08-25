@@ -1,23 +1,22 @@
-from dataclasses import dataclass, field, replace
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from discovery_net.knowledge_graph import ArtifactRef, Contribution, ContributionKind
-from discovery_net.node import TransactionCode, TransactionResult, TransactionValidator
-from discovery_net.wire import SignedEnvelope, artifact_ref, encode_envelope, sign_artifact
+from discovery_net.knowledge_graph import Contribution, ContributionKind
+from discovery_net.node import (
+    AppendOutcome,
+    ArtifactLedgerEntry,
+    LocalArtifactLedger,
+    TransactionCode,
+    TransactionResult,
+    TransactionValidator,
+)
+from discovery_net.wire import SignedEnvelope, encode_envelope, sign_artifact
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
-
-
-@dataclass(slots=True)
-class ArtifactLookup:
-    references: set[ArtifactRef] = field(default_factory=set)
-
-    def contains(self, artifact_ref: ArtifactRef) -> bool:
-        return artifact_ref in self.references
 
 
 def signed_envelope(*, chain_id: str = CHAIN_ID) -> SignedEnvelope:
@@ -38,9 +37,12 @@ def transaction(*, chain_id: str = CHAIN_ID) -> bytes:
     return encode_envelope(signed_envelope(chain_id=chain_id))
 
 
-def validate(encoded: bytes, artifacts: ArtifactLookup | None = None) -> TransactionResult:
+def validate(encoded: bytes, artifacts: LocalArtifactLedger | None = None) -> TransactionResult:
     validator = TransactionValidator(expected_chain_id=CHAIN_ID)
-    return validator.validate(encoded, artifacts or ArtifactLookup())
+    return validator.validate(
+        encoded,
+        artifacts if artifacts is not None else LocalArtifactLedger(),
+    )
 
 
 def test_transaction_codes_are_stable() -> None:
@@ -83,8 +85,11 @@ def test_rejects_an_invalid_signature() -> None:
 
 def test_rejects_an_artifact_already_present_in_committed_state() -> None:
     envelope = signed_envelope()
-    artifacts = ArtifactLookup(references={artifact_ref(envelope)})
+    artifacts, outcome = LocalArtifactLedger().append_artifact(
+        ArtifactLedgerEntry(envelope=envelope, height=1, transaction_index=0)
+    )
 
+    assert outcome is AppendOutcome.ACCEPTED
     assert validate(encode_envelope(envelope), artifacts) == TransactionResult(
         code=TransactionCode.DUPLICATE
     )
