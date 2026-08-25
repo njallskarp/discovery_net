@@ -6,9 +6,9 @@ from typing import Protocol
 
 from discovery_net.knowledge_graph import ArtifactRef
 from discovery_net.ledger import (
-    AcceptedArtifact,
-    CommittedArtifact,
+    ArtifactLedgerEntry,
     LocalArtifactLedger,
+    VerifiedTransaction,
 )
 
 
@@ -27,7 +27,7 @@ class FinalizeBlockResult:
     height: int
     ledger: LocalArtifactLedger
     transaction_results: tuple[TransactionResult, ...]
-    accepted_artifacts: tuple[AcceptedArtifact, ...]
+    accepted_transactions: tuple[VerifiedTransaction, ...]
     state_hash: bytes
 
 
@@ -43,4 +43,4 @@ class DiscoveryApplication(Protocol):
         transactions: Sequence[bytes],
     ) -> FinalizeBlockResult: ...
 
-    def commit(self) -> tuple[CommittedArtifact, ...]: ...
+    def commit(self) -> tuple[ArtifactLedgerEntry, ...]: ...

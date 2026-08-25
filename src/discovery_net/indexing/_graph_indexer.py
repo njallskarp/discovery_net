@@ -3,10 +3,10 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from discovery_net.ledger import CommittedArtifact
+from discovery_net.ledger import ArtifactLedgerEntry
 
 
 class _GraphIndexer(Protocol):
-    """Updates local query indexes from committed ledger artifacts."""
+    """Updates local query indexes from committed artifact-ledger entries."""
 
-    def process(self, artifacts: Sequence[CommittedArtifact]) -> None: ...
+    def process(self, entries: Sequence[ArtifactLedgerEntry]) -> None: ...

@@ -11,15 +11,15 @@ from discovery_net.wire import SignedEnvelope
 
 
 class AppendOutcome(StrEnum):
-    """The consensus-visible outcome of appending a verified artifact."""
+    """The consensus-visible outcome of appending a verified transaction."""
 
     ACCEPTED = "accepted"
     DUPLICATE = "duplicate"
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class VerifiedArtifact:
-    """A signed artifact that passed deterministic transaction validation."""
+class VerifiedTransaction:
+    """A signed artifact transaction that passed deterministic validation."""
 
     artifact_ref: ArtifactRef
     envelope: SignedEnvelope
@@ -27,29 +27,22 @@ class VerifiedArtifact:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class AcceptedArtifact:
-    """An artifact accepted while executing an agreed block."""
+class ArtifactLedgerEntry:
+    """A committed artifact transaction with its canonical ledger position."""
 
-    verified_artifact: VerifiedArtifact
+    transaction: VerifiedTransaction
     height: int
     transaction_index: int
 
 
-@dataclass(frozen=True, slots=True, kw_only=True)
-class CommittedArtifact:
-    """An accepted artifact made durable by Commit."""
-
-    accepted_artifact: AcceptedArtifact
-
-
 class LocalArtifactLedger(Protocol):
-    """Records verified artifacts without signing, broadcasting, or persistence."""
+    """Records verified transactions without signing, broadcasting, or persistence."""
 
     def contains(self, artifact_ref: ArtifactRef) -> bool: ...
 
     def append_artifact(
         self,
-        artifact: VerifiedArtifact,
+        transaction: VerifiedTransaction,
     ) -> tuple[Self, AppendOutcome]: ...
 
     def artifact_refs(self) -> tuple[ArtifactRef, ...]: ...
