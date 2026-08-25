@@ -10,7 +10,7 @@ from discovery_net.node.abci import CometBFTABCIAdapter
 
 
 @final
-class _CometBFTABCIService(_abci_grpc.ABCIServicer):
+class _ABCIGRPCService(_abci_grpc.ABCIServicer):
     """Delegates supported CometBFT RPCs to the local ABCI adapter."""
 
     __slots__ = ("_adapter",)

@@ -10,8 +10,8 @@ from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2 as abci
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2_grpc as abci_grpc
 from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.node import (
+    ABCIGRPCServer,
     CometBFTABCIAdapter,
-    CometBFTABCIServer,
     CometBFTCallbackHandler,
     LocalArtifactLedger,
     SQLiteArtifactLedgerStore,
@@ -53,7 +53,7 @@ def abci_client(
     tmp_path: Path,
 ) -> Iterator[tuple[abci_grpc.ABCIStub, SQLiteArtifactLedgerStore]]:
     application, store = adapter(tmp_path / "artifact-ledger.sqlite")
-    server = CometBFTABCIServer(
+    server = ABCIGRPCServer(
         adapter=application,
         listen_address="127.0.0.1:0",
     )
@@ -142,7 +142,7 @@ def test_transport_reports_unimplemented_callbacks(
 
 def test_server_owns_one_explicit_lifecycle(tmp_path: Path) -> None:
     application, _ = adapter(tmp_path / "artifact-ledger.sqlite")
-    server = CometBFTABCIServer(
+    server = ABCIGRPCServer(
         adapter=application,
         listen_address="127.0.0.1:0",
     )
@@ -162,7 +162,7 @@ def test_server_owns_one_explicit_lifecycle(tmp_path: Path) -> None:
 
 def test_server_can_stop_before_starting(tmp_path: Path) -> None:
     application, _ = adapter(tmp_path / "artifact-ledger.sqlite")
-    server = CometBFTABCIServer(
+    server = ABCIGRPCServer(
         adapter=application,
         listen_address="127.0.0.1:0",
     )
@@ -189,7 +189,7 @@ def test_server_rejects_an_invalid_listen_address(
     application, _ = adapter(tmp_path / "artifact-ledger.sqlite")
 
     with pytest.raises(error_type, match=message):
-        CometBFTABCIServer(
+        ABCIGRPCServer(
             adapter=application,
             listen_address=listen_address,  # type: ignore[arg-type]
         )

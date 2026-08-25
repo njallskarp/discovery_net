@@ -9,12 +9,12 @@ from typing import Self, final
 import grpc
 
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2_grpc as _abci_grpc
-from discovery_net.node._abci_service import _CometBFTABCIService
+from discovery_net.node._abci_grpc_service import _ABCIGRPCService
 from discovery_net.node.abci import CometBFTABCIAdapter
 
 
 @final
-class CometBFTABCIServer:
+class ABCIGRPCServer:
     """Runs the local CometBFT ABCI gRPC endpoint with explicit lifecycle ownership."""
 
     __slots__ = (
@@ -44,7 +44,7 @@ class CometBFTABCIServer:
         )
         server = grpc.server(executor)
         _abci_grpc.add_ABCIServicer_to_server(
-            _CometBFTABCIService(adapter=adapter),
+            _ABCIGRPCService(adapter=adapter),
             server,
         )
         bound_port = server.add_insecure_port(listen_address)
