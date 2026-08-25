@@ -102,6 +102,12 @@ def test_submitter_requires_an_ed25519_private_key() -> None:
         )
 
 
+@pytest.mark.parametrize("url", ["127.0.0.1:26657", "ftp://127.0.0.1:26657"])
+def test_rpc_client_requires_an_absolute_http_url(url: str) -> None:
+    with pytest.raises(ValueError, match="absolute HTTP URL"):
+        _CometBFTRPCClient(url=url)
+
+
 def test_rpc_client_encodes_broadcast_tx_sync_and_decodes_check_tx() -> None:
     transaction = b"canonical transaction"
     transaction_hash = sha256(transaction).hexdigest().upper()
@@ -163,30 +169,45 @@ def test_rpc_client_translates_transport_and_rpc_failures() -> None:
 
 
 @pytest.mark.parametrize(
-    ("payload", "message"),
+    "payload",
     (
-        (b"not-json", "invalid JSON"),
-        (
+        pytest.param(b"not-json", id="invalid-json"),
+        pytest.param(
             json.dumps(
                 {"jsonrpc": "2.0", "id": 2, "result": {"hash": "0" * 64, "code": 0}}
             ).encode(),
-            "unrelated response",
+            id="wrong-response-id",
         ),
-        (
+        pytest.param(
             json.dumps(
                 {"jsonrpc": "2.0", "id": 1, "result": {"hash": "invalid", "code": 0}}
             ).encode(),
-            "invalid transaction hash",
+            id="invalid-transaction-hash",
         ),
-        (
+        pytest.param(
             json.dumps(
                 {"jsonrpc": "2.0", "id": 1, "result": {"hash": "0" * 64, "code": True}}
             ).encode(),
-            "invalid CheckTx code",
+            id="invalid-check-tx-code",
+        ),
+        pytest.param(
+            json.dumps({"jsonrpc": "2.0", "id": 1}).encode(),
+            id="missing-outcome",
+        ),
+        pytest.param(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {"hash": "0" * 64, "code": 0},
+                    "error": {"message": "ambiguous"},
+                }
+            ).encode(),
+            id="multiple-outcomes",
         ),
     ),
 )
-def test_rpc_client_rejects_malformed_responses(payload: bytes, message: str) -> None:
+def test_rpc_client_rejects_malformed_responses(payload: bytes) -> None:
     response = MagicMock()
     response.__enter__.return_value.read.return_value = payload
     with (
@@ -194,7 +215,7 @@ def test_rpc_client_rejects_malformed_responses(payload: bytes, message: str) ->
             "discovery_net.submission._cometbft_rpc_client.urlopen",
             return_value=response,
         ),
-        pytest.raises(SubmissionError, match=message),
+        pytest.raises(SubmissionError, match="invalid response"),
     ):
         _CometBFTRPCClient(url=RPC_URL).broadcast_transaction(b"transaction")
 
