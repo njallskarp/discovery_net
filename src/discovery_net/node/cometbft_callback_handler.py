@@ -34,6 +34,14 @@ class FinalizeBlockResult:
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class ArtifactLedgerHead:
+    """The block height and state hash most recently persisted by this node."""
+
+    height: int
+    state_hash: bytes
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class _PendingBlock:
     height: int
     ledger: LocalArtifactLedger
@@ -73,6 +81,14 @@ class CometBFTCallbackHandler:
         self._committed_ledger = committed_ledger
         self._pending_block: _PendingBlock | None = None
         self._lock = RLock()
+
+    def committed_head(self) -> ArtifactLedgerHead:
+        """Return one consistent view of the latest committed ledger state."""
+        with self._lock:
+            return ArtifactLedgerHead(
+                height=self._committed_height,
+                state_hash=self._committed_ledger.state_hash(),
+            )
 
     def check_tx(self, transaction: bytes) -> TransactionResult:
         """Validate a transaction against committed state without changing it."""

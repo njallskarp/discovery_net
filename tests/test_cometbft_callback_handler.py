@@ -8,6 +8,7 @@ from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.node import (
     AppendOutcome,
     ArtifactLedgerEntry,
+    ArtifactLedgerHead,
     ArtifactLedgerSnapshot,
     CometBFTCallbackHandler,
     FinalizeBlockResult,
@@ -87,6 +88,27 @@ def test_check_tx_reads_committed_state_without_mutation() -> None:
     assert handler.check_tx(encoded) == TransactionResult(code=TransactionCode.ACCEPTED)
     assert store.save_calls == 0
     assert store.snapshot is None
+
+
+def test_committed_head_changes_only_after_successful_commit() -> None:
+    handler, _ = callback_handler()
+    initial_head = ArtifactLedgerHead(
+        height=0,
+        state_hash=LocalArtifactLedger().state_hash(),
+    )
+
+    assert handler.committed_head() == initial_head
+
+    finalized = handler.finalize_block(height=1, transactions=(transaction("First"),))
+
+    assert handler.committed_head() == initial_head
+
+    handler.commit()
+
+    assert handler.committed_head() == ArtifactLedgerHead(
+        height=1,
+        state_hash=finalized.state_hash,
+    )
 
 
 def test_finalize_block_executes_transactions_in_order_without_persisting() -> None:
