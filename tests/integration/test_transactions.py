@@ -7,34 +7,40 @@ from pathlib import Path
 import pytest
 
 from discovery_net.node import LocalArtifactLedger, TransactionCode
+from discovery_net.submission import ArtifactSubmitter
 from discovery_net.wire import encode_envelope
 from tests.integration._integration_network import IntegrationNetwork
 from tests.integration._transactions import (
     invalid_signature_transaction,
+    private_key,
+    problem_contribution,
     signed_transaction,
 )
 
 
-def test_signed_artifact_commits_through_live_cometbft(
+def test_artifact_submitter_reaches_committed_state_through_live_cometbft(
     cometbft_binary: Path,
     tmp_path: Path,
 ) -> None:
-    """Path: RPC → consensus → Commit → SQLite; guards durability and app-hash agreement."""
+    """Path: submitter → RPC → consensus → SQLite; guards the production outbound path."""
     with IntegrationNetwork.single(binary=cometbft_binary, root=tmp_path) as network:
         node = network.nodes[0]
         network.start_all()
-        transaction = signed_transaction(network.chain_id, "A live network problem")
-
-        height = node.rpc.broadcast_commit(transaction)
-        snapshot = node.wait_for_snapshot(minimum_height=height, minimum_entries=1)
-
-        assert snapshot.height == height
-        assert len(snapshot.entries) == 1
-        assert encode_envelope(snapshot.entries[0].envelope) == transaction
-        assert (
-            node.rpc.block_app_hash(height=height)
-            == LocalArtifactLedger(entries=snapshot.entries).state_hash()
+        artifact = problem_contribution("A live network problem")
+        submitter = ArtifactSubmitter(
+            chain_id=network.chain_id,
+            private_key=private_key(),
+            cometbft_rpc_url=node.rpc_url,
         )
+
+        receipt = submitter.submit(artifact)
+        snapshot = node.wait_for_snapshot(minimum_entries=1)
+
+        assert receipt.accepted
+        assert len(snapshot.entries) == 1
+        ledger = LocalArtifactLedger(entries=snapshot.entries)
+        assert ledger.contains(receipt.artifact_ref)
+        assert node.rpc.block_app_hash(height=snapshot.height) == ledger.state_hash()
 
 
 def test_duplicate_resubmission_is_rejected_without_a_second_entry(
