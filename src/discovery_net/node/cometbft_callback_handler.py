@@ -8,11 +8,14 @@ from threading import RLock
 from typing import final
 
 from discovery_net.node._ledger_from_snapshot import ledger_from_snapshot
-from discovery_net.node.artifact_ledger_store import ArtifactLedgerSnapshot, ArtifactLedgerStore
 from discovery_net.node.local_artifact_ledger import (
     AppendOutcome,
     ArtifactLedgerEntry,
     LocalArtifactLedger,
+)
+from discovery_net.node.store.artifact_ledger_store import (
+    ArtifactLedgerSnapshot,
+    ArtifactLedgerStore,
 )
 from discovery_net.node.transaction_validator import (
     TransactionCode,

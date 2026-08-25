@@ -1,7 +1,7 @@
 # Reconstructs local artifact-ledger state from persisted snapshots.
 
-from discovery_net.node.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.node.local_artifact_ledger import AppendOutcome, LocalArtifactLedger
+from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.node.transaction_validator import TransactionCode, TransactionValidator
 from discovery_net.wire import encode_envelope
 

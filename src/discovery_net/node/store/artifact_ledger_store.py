@@ -1,4 +1,4 @@
-# Persists committed artifact-ledger state for node recovery.
+# Defines the contract for persisting committed artifact-ledger state.
 
 from dataclasses import dataclass
 from typing import Protocol
