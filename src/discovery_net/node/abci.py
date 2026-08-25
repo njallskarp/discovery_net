@@ -58,6 +58,7 @@ class CometBFTABCIAdapter:
     ) -> _abci.ResponseProcessProposal:
         """Accept a proposal for deterministic execution during FinalizeBlock."""
         _require_message(request, _abci.RequestProcessProposal)
+        # TODO: Reject proposals that violate deterministic knowledge-graph policies.
         return _abci.ResponseProcessProposal(status=_abci.ResponseProcessProposal.ACCEPT)
 
     def finalize_block(
