@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from discovery_net.ledger import ArtifactLedgerEntry
+from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 
 
 class _GraphIndexer(Protocol):

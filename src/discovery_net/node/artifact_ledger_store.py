@@ -1,9 +1,9 @@
-# Persists committed ledger state for node recovery.
+# Persists committed artifact-ledger state for node recovery.
 
 from dataclasses import dataclass
 from typing import Protocol
 
-from discovery_net.ledger import LocalArtifactLedger
+from discovery_net.node.local_artifact_ledger import LocalArtifactLedger
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

@@ -1,11 +1,11 @@
-# Coordinates the components required to run a network node.
+# Handles CometBFT callbacks for the local Discovery Net node.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
 from discovery_net.knowledge_graph import ArtifactRef
-from discovery_net.ledger import (
+from discovery_net.node.local_artifact_ledger import (
     ArtifactLedgerEntry,
     LocalArtifactLedger,
 )
@@ -30,8 +30,8 @@ class FinalizeBlockResult:
     state_hash: bytes
 
 
-class DiscoveryApplication(Protocol):
-    """Processes transactions delivered by a local CometBFT node."""
+class CometBFTCallbackHandler(Protocol):
+    """Handles CometBFT callbacks that validate transactions and advance local state."""
 
     def check_tx(self, transaction: bytes) -> TransactionResult: ...
 
