@@ -8,7 +8,7 @@ from discovery_net.knowledge_graph import ArtifactRef, Contribution, Contributio
 from discovery_net.node import TransactionCode, TransactionResult, TransactionValidator
 from discovery_net.wire import SignedEnvelope, artifact_ref, encode_envelope, sign_artifact
 
-NETWORK_ID = "discovery-net-devnet"
+CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 
 
@@ -20,7 +20,7 @@ class ArtifactLookup:
         return artifact_ref in self.references
 
 
-def signed_envelope(*, network_id: str = NETWORK_ID) -> SignedEnvelope:
+def signed_envelope(*, chain_id: str = CHAIN_ID) -> SignedEnvelope:
     contribution = Contribution(
         kind=ContributionKind.PROBLEM_STATEMENT,
         title="Riemann hypothesis",
@@ -28,18 +28,18 @@ def signed_envelope(*, network_id: str = NETWORK_ID) -> SignedEnvelope:
         created_at=datetime(2026, 8, 24, 12, 30, tzinfo=UTC),
     )
     return sign_artifact(
-        network_id=network_id,
+        chain_id=chain_id,
         artifact=contribution,
         private_key=PRIVATE_KEY,
     )
 
 
-def transaction(*, network_id: str = NETWORK_ID) -> bytes:
-    return encode_envelope(signed_envelope(network_id=network_id))
+def transaction(*, chain_id: str = CHAIN_ID) -> bytes:
+    return encode_envelope(signed_envelope(chain_id=chain_id))
 
 
 def validate(encoded: bytes, artifacts: ArtifactLookup | None = None) -> TransactionResult:
-    validator = TransactionValidator(expected_network_id=NETWORK_ID)
+    validator = TransactionValidator(expected_chain_id=CHAIN_ID)
     return validator.validate(encoded, artifacts or ArtifactLookup())
 
 
@@ -47,13 +47,13 @@ def test_transaction_codes_are_stable() -> None:
     assert dict(TransactionCode.__members__) == {
         "ACCEPTED": TransactionCode(0),
         "INVALID_ENVELOPE": TransactionCode(1),
-        "WRONG_NETWORK": TransactionCode(2),
+        "WRONG_CHAIN": TransactionCode(2),
         "INVALID_SIGNATURE": TransactionCode(3),
         "DUPLICATE": TransactionCode(4),
     }
 
 
-def test_accepts_a_canonical_signed_transaction_for_the_network() -> None:
+def test_accepts_a_canonical_signed_transaction_for_the_chain() -> None:
     assert validate(transaction()) == TransactionResult(code=TransactionCode.ACCEPTED)
 
 
@@ -69,9 +69,9 @@ def test_rejects_malformed_or_noncanonical_envelopes(encoded: bytes) -> None:
     assert validate(encoded) == TransactionResult(code=TransactionCode.INVALID_ENVELOPE)
 
 
-def test_rejects_a_valid_transaction_for_another_network() -> None:
-    assert validate(transaction(network_id="discovery-net-mainnet")) == TransactionResult(
-        code=TransactionCode.WRONG_NETWORK
+def test_rejects_a_valid_transaction_for_another_chain() -> None:
+    assert validate(transaction(chain_id="discovery-net-mainnet")) == TransactionResult(
+        code=TransactionCode.WRONG_CHAIN
     )
 
 
@@ -90,7 +90,7 @@ def test_rejects_an_artifact_already_present_in_committed_state() -> None:
     )
 
 
-@pytest.mark.parametrize("network_id", ["", " "])
-def test_validator_requires_a_nonblank_network_id(network_id: str) -> None:
-    with pytest.raises(ValueError, match="expected_network_id"):
-        TransactionValidator(expected_network_id=network_id)
+@pytest.mark.parametrize("chain_id", ["", " "])
+def test_validator_requires_a_nonblank_chain_id(chain_id: str) -> None:
+    with pytest.raises(ValueError, match="expected_chain_id"):
+        TransactionValidator(expected_chain_id=chain_id)

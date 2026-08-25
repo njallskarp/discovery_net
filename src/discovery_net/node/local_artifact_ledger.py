@@ -26,12 +26,16 @@ class ArtifactLedgerEntry:
     transaction_index: int
 
 
-class LocalArtifactLedger(Protocol):
-    """Maintains the ordered artifact entries accepted by this node."""
+class ArtifactLedgerLookup(Protocol):
+    """Looks up artifacts already recorded in committed ledger state."""
 
     def contains(self, artifact_ref: ArtifactRef) -> bool:
         """Return whether an artifact has already been recorded."""
         ...
+
+
+class LocalArtifactLedger(ArtifactLedgerLookup, Protocol):
+    """Maintains the ordered artifact entries accepted by this node."""
 
     def append_artifact(
         self,

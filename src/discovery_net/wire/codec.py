@@ -60,17 +60,17 @@ class _RelationPayload(_WireModel):
 
 
 class _EnvelopePayload(_WireModel):
-    network_id: StrictStr
+    chain_id: StrictStr
     payload: dict[str, object]
     payload_type: PayloadType
     signature: StrictStr
     signer_public_key: StrictStr
 
-    @field_validator("network_id")
+    @field_validator("chain_id")
     @classmethod
-    def validate_network_id(cls, value: str) -> str:
+    def validate_chain_id(cls, value: str) -> str:
         if not value.strip():
-            raise ValueError("network_id must not be blank")
+            raise ValueError("chain_id must not be blank")
         return value
 
     @field_validator("signature")
@@ -174,7 +174,7 @@ def decode_envelope(data: bytes) -> SignedEnvelope:
     try:
         model = _EnvelopePayload.model_validate_json(data)
         envelope = SignedEnvelope(
-            network_id=model.network_id,
+            chain_id=model.chain_id,
             payload_type=model.payload_type,
             payload=_canonical_json(model.payload),
             signer_public_key=bytes.fromhex(model.signer_public_key),
@@ -249,14 +249,14 @@ def _envelope_value(envelope: SignedEnvelope, *, include_signature: bool) -> JSO
         payload_value = _relation_value(relation_model)
 
     model = _EnvelopePayload(
-        network_id=envelope.network_id,
+        chain_id=envelope.chain_id,
         payload=payload_value,
         payload_type=payload_type,
         signature=envelope.signature.hex(),
         signer_public_key=envelope.signer_public_key.hex(),
     )
     value: JSONObject = {
-        "network_id": model.network_id,
+        "chain_id": model.chain_id,
         "payload": model.payload,
         "payload_type": model.payload_type.value,
         "signer_public_key": model.signer_public_key,

@@ -1,10 +1,9 @@
 # Validates encoded network transactions without changing node state.
 
 from dataclasses import dataclass
-from typing import Protocol
 
-from discovery_net.knowledge_graph import ArtifactRef
 from discovery_net.node.cometbft_callback_handler import TransactionCode, TransactionResult
+from discovery_net.node.local_artifact_ledger import ArtifactLedgerLookup
 from discovery_net.wire import (
     CodecError,
     artifact_ref,
@@ -13,26 +12,22 @@ from discovery_net.wire import (
 )
 
 
-class _ArtifactLookup(Protocol):
-    def contains(self, artifact_ref: ArtifactRef) -> bool: ...
-
-
 @dataclass(frozen=True, slots=True, kw_only=True)
 class TransactionValidator:
-    """Validates transactions against one network and its committed artifacts."""
+    """Validates transactions against one chain and its committed artifacts."""
 
-    expected_network_id: str
+    expected_chain_id: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.expected_network_id, str):
-            raise TypeError("expected_network_id must be a string")
-        if not self.expected_network_id.strip():
-            raise ValueError("expected_network_id must not be blank")
+        if not isinstance(self.expected_chain_id, str):
+            raise TypeError("expected_chain_id must be a string")
+        if not self.expected_chain_id.strip():
+            raise ValueError("expected_chain_id must not be blank")
 
     def validate(
         self,
         transaction: bytes,
-        artifacts: _ArtifactLookup,
+        artifacts: ArtifactLedgerLookup,
     ) -> TransactionResult:
         """Return a deterministic result without modifying committed state."""
 
@@ -41,8 +36,8 @@ class TransactionValidator:
         except (CodecError, TypeError):
             return TransactionResult(code=TransactionCode.INVALID_ENVELOPE)
 
-        if envelope.network_id != self.expected_network_id:
-            return TransactionResult(code=TransactionCode.WRONG_NETWORK)
+        if envelope.chain_id != self.expected_chain_id:
+            return TransactionResult(code=TransactionCode.WRONG_CHAIN)
         if not verify_envelope(envelope):
             return TransactionResult(code=TransactionCode.INVALID_SIGNATURE)
         if artifacts.contains(artifact_ref(envelope)):

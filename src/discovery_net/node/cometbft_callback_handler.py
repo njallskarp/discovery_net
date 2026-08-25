@@ -13,7 +13,7 @@ class TransactionCode(IntEnum):
 
     ACCEPTED = 0
     INVALID_ENVELOPE = 1
-    WRONG_NETWORK = 2
+    WRONG_CHAIN = 2
     INVALID_SIGNATURE = 3
     DUPLICATE = 4
 
