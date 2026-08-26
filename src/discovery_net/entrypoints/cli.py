@@ -79,7 +79,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
             return _submit(parsed)
         return _query(parsed)
     except (OSError, sqlite3.Error, TypeError, ValueError, SubmissionError) as error:
-        print(f"error: {error}", file=sys.stderr)
+        _write_error(error)
         return 1
 
 
@@ -96,11 +96,11 @@ def _submit(arguments: argparse.Namespace) -> int:
         private_key=private_key,
         cometbft_rpc_url=arguments.rpc_url,
     ).submit(contribution)
-    print(
+    _write_output(
         _SubmissionOutput(
             artifact_ref=receipt.artifact_ref,
             accepted_for_broadcast=receipt.accepted,
-        ).model_dump_json()
+        )
     )
     return 0 if receipt.accepted else 1
 
@@ -116,11 +116,11 @@ def _query(arguments: argparse.Namespace) -> int:
 
     queries = KnowledgeGraphQueries(index=index)
     artifacts = _execute_query(queries, arguments)
-    print(
+    _write_output(
         _QueryOutput(
             indexed_height=queries.indexed_height,
             artifacts=tuple(_ArtifactOutput.from_indexed(artifact) for artifact in artifacts),
-        ).model_dump_json()
+        )
     )
     return 0
 
@@ -244,6 +244,14 @@ def _add_relation_kind_argument(parser: argparse.ArgumentParser) -> None:
         choices=tuple(RelationKind),
         help="only return relations of this kind",
     )
+
+
+def _write_output(output: BaseModel) -> None:
+    sys.stdout.write(f"{output.model_dump_json()}\n")
+
+
+def _write_error(error: Exception) -> None:
+    sys.stderr.write(f"error: {error}\n")
 
 
 def _artifact_reference(value: str) -> ArtifactRef:

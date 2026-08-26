@@ -65,8 +65,11 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
             )
         )
 
+    captured = capsys.readouterr()
     assert exit_code == 0
-    assert json.loads(capsys.readouterr().out) == {
+    assert captured.out.endswith("\n")
+    assert captured.err == ""
+    assert json.loads(captured.out) == {
         "artifact_ref": "bafy-artifact",
         "accepted_for_broadcast": True,
     }
@@ -317,6 +320,7 @@ def _run_query(
     exit_code = main(("query", "--ledger-path", str(ledger_path), *arguments))
     captured = capsys.readouterr()
     assert exit_code == 0
+    assert captured.out.endswith("\n")
     assert captured.err == ""
     return cast(dict[str, object], json.loads(captured.out))
 
