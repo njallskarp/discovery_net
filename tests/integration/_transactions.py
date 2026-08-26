@@ -9,6 +9,23 @@ from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.wire import encode_envelope, sign_artifact
 
 
+def private_key(key_offset: int = 0) -> Ed25519PrivateKey:
+    """Return one deterministic test signer."""
+    return Ed25519PrivateKey.from_private_bytes(
+        bytes((index + key_offset) % 256 for index in range(32))
+    )
+
+
+def problem_contribution(title: str) -> Contribution:
+    """Return one deterministic mathematical problem artifact."""
+    return Contribution(
+        kind=ContributionKind.PROBLEM_STATEMENT,
+        title=title,
+        body=f"Body for {title}",
+        created_at=datetime(2026, 8, 25, 22, tzinfo=UTC),
+    )
+
+
 def signed_transaction(
     chain_id: str,
     title: str,
@@ -16,19 +33,11 @@ def signed_transaction(
     key_offset: int = 0,
 ) -> bytes:
     """Return one deterministic valid transaction for the requested chain."""
-    private_key = Ed25519PrivateKey.from_private_bytes(
-        bytes((index + key_offset) % 256 for index in range(32))
-    )
     return encode_envelope(
         sign_artifact(
             chain_id=chain_id,
-            artifact=Contribution(
-                kind=ContributionKind.PROBLEM_STATEMENT,
-                title=title,
-                body=f"Body for {title}",
-                created_at=datetime(2026, 8, 25, 22, tzinfo=UTC),
-            ),
-            private_key=private_key,
+            artifact=problem_contribution(title),
+            private_key=private_key(key_offset),
         )
     )
 

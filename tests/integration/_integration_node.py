@@ -89,6 +89,11 @@ class IntegrationNode:
         return self._rpc
 
     @property
+    def rpc_url(self) -> str:
+        """Return this node's CometBFT JSON-RPC URL."""
+        return f"http://{self._rpc_address}"
+
+    @property
     def peer_address(self) -> str:
         """Return the persistent-peer address used by other CometBFT nodes."""
         return f"{self._node_id}@{self._p2p_address}"
