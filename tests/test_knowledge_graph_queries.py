@@ -66,6 +66,12 @@ def test_contribution_queries_expose_selection_and_traversal_explicitly() -> Non
         graph.finding,
         graph.discussion,
     )
+    assert _refs(
+        graph.queries.contributions_containing_title(
+            "FINDING",
+            kind=ContributionKind.FINDING,
+        )
+    ) == (graph.finding, graph.other_finding)
 
 
 def test_relation_queries_expose_selection_and_direction_explicitly() -> None:
@@ -97,6 +103,33 @@ def test_relation_queries_expose_selection_and_direction_explicitly() -> None:
     ) == (graph.discusses,)
 
 
+def test_contribution_traversal_resolves_directed_relation_endpoints() -> None:
+    # Node queries hide edge mechanics while preserving direction and optional kind filters.
+    graph = _graph_fixture()
+
+    assert _refs(
+        graph.queries.outgoing_contributions_by_ref(
+            graph.finding,
+            via=RelationKind.ABOUT,
+        )
+    ) == (graph.area,)
+    assert _refs(
+        graph.queries.incoming_contributions_by_ref(
+            graph.problem,
+            via=RelationKind.ABOUT,
+            kind=ContributionKind.DISCUSSION,
+        )
+    ) == (graph.discussion,)
+    assert (
+        graph.queries.incoming_contributions_by_ref(
+            graph.problem,
+            via=RelationKind.ABOUT,
+            kind=ContributionKind.PROOF_ATTEMPT,
+        )
+        == ()
+    )
+
+
 def test_query_kinds_preserve_index_validation() -> None:
     # Invalid enum families fail consistently on selection and traversal methods.
     graph = _graph_fixture()
@@ -109,6 +142,12 @@ def test_query_kinds_preserve_index_validation() -> None:
         graph.queries.incoming_relations_by_ref(
             graph.problem,
             kind=ContributionKind.FINDING,  # type: ignore[arg-type]
+        )
+    with pytest.raises(TypeError, match="ContributionKind"):
+        graph.queries.outgoing_contributions_by_ref(
+            graph.finding,
+            via=RelationKind.ABOUT,
+            kind=RelationKind.SUPPORTS,  # type: ignore[arg-type]
         )
 
 
