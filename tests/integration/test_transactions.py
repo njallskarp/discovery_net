@@ -6,9 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from discovery_net.knowledge_graph import ContributionKind
 from discovery_net.node import LocalArtifactLedger, TransactionCode
 from discovery_net.submission import ArtifactSubmitter
 from discovery_net.wire import encode_envelope
+from tests.integration._discovery_net_cli import DiscoveryNetCLI
 from tests.integration._integration_network import IntegrationNetwork
 from tests.integration._transactions import (
     invalid_signature_transaction,
@@ -28,7 +30,6 @@ def test_artifact_submitter_reaches_committed_state_through_live_cometbft(
         network.start_all()
         artifact = problem_contribution("A live network problem")
         submitter = ArtifactSubmitter(
-            chain_id=network.chain_id,
             private_key=private_key(),
             cometbft_rpc_url=node.rpc_url,
         )
@@ -41,6 +42,28 @@ def test_artifact_submitter_reaches_committed_state_through_live_cometbft(
         ledger = LocalArtifactLedger(entries=snapshot.entries)
         assert ledger.contains(receipt.artifact_ref)
         assert node.rpc.block_app_hash(height=snapshot.height) == ledger.state_hash()
+
+
+def test_cli_reaches_committed_state_through_live_cometbft(
+    cometbft_binary: Path,
+    tmp_path: Path,
+) -> None:
+    """Path: CLI process → submitter → consensus → SQLite; guards the complete user path."""
+    with IntegrationNetwork.single(binary=cometbft_binary, root=tmp_path) as network:
+        node = network.nodes[0]
+        network.start_all()
+        artifact_ref = DiscoveryNetCLI.with_private_key(
+            rpc_url=node.rpc_url,
+            directory=tmp_path,
+            private_key=private_key(),
+        ).submit(
+            kind=ContributionKind.PROBLEM_STATEMENT,
+            title="Submitted from the CLI",
+            body="This contribution traverses the complete local node boundary.",
+        )
+        snapshot = node.wait_for_snapshot(minimum_entries=1)
+        ledger = LocalArtifactLedger(entries=snapshot.entries)
+        assert ledger.contains(artifact_ref)
 
 
 def test_duplicate_resubmission_is_rejected_without_a_second_entry(

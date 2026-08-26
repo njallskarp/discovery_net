@@ -16,30 +16,24 @@ from discovery_net.wire import artifact_ref, encode_envelope, sign_artifact
 class ArtifactSubmitter:
     """Signs artifacts and asks a local CometBFT node to broadcast them."""
 
-    __slots__ = ("_chain_id", "_private_key", "_rpc_client")
+    __slots__ = ("_private_key", "_rpc_client")
 
     def __init__(
         self,
         *,
-        chain_id: str,
         private_key: Ed25519PrivateKey,
         cometbft_rpc_url: str,
     ) -> None:
-        if not isinstance(chain_id, str):
-            raise TypeError("chain_id must be a string")
-        if not chain_id.strip():
-            raise ValueError("chain_id must not be blank")
         if not isinstance(private_key, Ed25519PrivateKey):
             raise TypeError("private_key must be an Ed25519PrivateKey")
 
-        self._chain_id = chain_id
         self._private_key = private_key
         self._rpc_client = _CometBFTRPCClient(url=cometbft_rpc_url)
 
     def submit(self, artifact: Artifact) -> SubmissionReceipt:
         """Return whether CometBFT accepted a signed artifact for peer broadcast."""
         envelope = sign_artifact(
-            chain_id=self._chain_id,
+            chain_id=self._rpc_client.fetch_chain_id(),
             artifact=artifact,
             private_key=self._private_key,
         )

@@ -2,8 +2,11 @@
 
 from pathlib import Path
 
+from discovery_net.knowledge_graph import ContributionKind
+from discovery_net.node import LocalArtifactLedger
+from tests.integration._discovery_net_cli import DiscoveryNetCLI
 from tests.integration._integration_network import IntegrationNetwork
-from tests.integration._transactions import signed_transaction
+from tests.integration._transactions import private_key, signed_transaction
 
 
 def test_late_joining_node_replays_committed_history(
@@ -50,6 +53,37 @@ def test_transaction_submitted_to_non_validator_gossips_and_commits_everywhere(
         snapshots = network.wait_for_convergence(minimum_entries=1)
 
         assert snapshots[0] == snapshots[1]
+
+
+def test_cli_submission_to_non_validator_reaches_every_ledger(
+    cometbft_binary: Path,
+    tmp_path: Path,
+) -> None:
+    """Path: CLI → non-validator → peer gossip → both ledgers; guards the complete P2P path."""
+    with IntegrationNetwork.testnet(
+        binary=cometbft_binary,
+        root=tmp_path,
+        validators=1,
+        non_validators=1,
+    ) as network:
+        network.start_all()
+        artifact_ref = DiscoveryNetCLI.with_private_key(
+            rpc_url=network.nodes[1].rpc_url,
+            directory=tmp_path,
+            private_key=private_key(),
+        ).submit(
+            kind=ContributionKind.FINDING,
+            title="A peer-to-peer finding",
+            body="This contribution entered through a non-validator.",
+        )
+
+        snapshots = network.wait_for_convergence(minimum_entries=1)
+
+        assert snapshots[0] == snapshots[1]
+        for node, snapshot in zip(network.nodes, snapshots, strict=True):
+            ledger = LocalArtifactLedger(entries=snapshot.entries)
+            assert ledger.contains(artifact_ref)
+            assert node.rpc.block_app_hash(height=snapshot.height) == ledger.state_hash()
 
 
 def test_stopped_validator_catches_up_after_the_remaining_quorum_commits(
