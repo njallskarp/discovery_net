@@ -234,6 +234,79 @@ def test_cli_query_rejects_missing_local_data(
     assert "artifact is not indexed" in capsys.readouterr().err
 
 
+def test_cli_executes_graphql_with_variables_against_the_local_ledger(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Path: GraphQL document → local snapshot → nested JSON; guards the agent query boundary."""
+    ledger_path, references = _write_ledger(tmp_path)
+
+    exit_code = main(
+        (
+            "graphql",
+            "--ledger-path",
+            str(ledger_path),
+            "--variables",
+            json.dumps({"kind": "FINDING"}),
+            """
+            query Findings($kind: ContributionKind!) {
+              indexedHeight
+              contributions(kind: $kind) {
+                artifactRef
+                title
+                parent { artifactRef title }
+              }
+            }
+            """,
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert captured.err == ""
+    assert json.loads(captured.out) == {
+        "data": {
+            "indexedHeight": "1",
+            "contributions": [
+                {
+                    "artifactRef": references["finding"],
+                    "title": "A finding",
+                    "parent": {
+                        "artifactRef": references["problem"],
+                        "title": "A problem",
+                    },
+                }
+            ],
+        },
+        "errors": [],
+    }
+
+
+def test_cli_returns_failure_with_a_structured_graphql_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Path: invalid GraphQL document → formatted response; guards errors from becoming crashes."""
+    ledger_path, _ = _write_ledger(tmp_path)
+
+    exit_code = main(
+        (
+            "graphql",
+            "--ledger-path",
+            str(ledger_path),
+            "{ unknownField }",
+        )
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.err == ""
+    output = cast(dict[str, object], json.loads(captured.out))
+    assert output["data"] is None
+    errors = cast(list[dict[str, object]], output["errors"])
+    assert errors[0]["message"] == "Cannot query field 'unknownField' on type 'Query'."
+
+
 def _write_private_key(directory: Path) -> Path:
     path = directory / "agent.pem"
     path.write_bytes(

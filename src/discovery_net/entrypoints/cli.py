@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sqlite3
 import sys
 from collections.abc import Sequence
@@ -13,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import BaseModel, ConfigDict
 
+from discovery_net.entrypoints.graphql import GraphQLQueryExecutor
 from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
 from discovery_net.knowledge_graph import (
     ArtifactRef,
@@ -71,13 +73,22 @@ class _QueryOutput(BaseModel):
     artifacts: tuple[_ArtifactOutput, ...]
 
 
+class _GraphQLOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    data: dict[str, object] | None
+    errors: tuple[dict[str, object], ...]
+
+
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run one Discovery Net command and return its process exit code."""
     parsed = _argument_parser().parse_args(arguments)
     try:
         if parsed.command == "submit":
             return _submit(parsed)
-        return _query(parsed)
+        if parsed.command == "query":
+            return _query(parsed)
+        return _graphql(parsed)
     except (OSError, sqlite3.Error, TypeError, ValueError, SubmissionError) as error:
         _write_error(error)
         return 1
@@ -106,15 +117,7 @@ def _submit(arguments: argparse.Namespace) -> int:
 
 
 def _query(arguments: argparse.Namespace) -> int:
-    if not arguments.ledger_path.is_file():
-        raise FileNotFoundError(f"artifact ledger does not exist: {arguments.ledger_path}")
-
-    snapshot = SQLiteArtifactLedgerStore(path=arguments.ledger_path).load()
-    index = KnowledgeGraphIndex()
-    if snapshot is not None:
-        index.refresh(snapshot)
-
-    queries = KnowledgeGraphQueries(index=index)
+    queries = _load_queries(arguments.ledger_path)
     artifacts = _execute_query(queries, arguments)
     _write_output(
         _QueryOutput(
@@ -123,6 +126,34 @@ def _query(arguments: argparse.Namespace) -> int:
         )
     )
     return 0
+
+
+def _graphql(arguments: argparse.Namespace) -> int:
+    variables = None
+    if arguments.variables is not None:
+        decoded = json.loads(arguments.variables)
+        if not isinstance(decoded, dict):
+            raise ValueError("GraphQL variables must be a JSON object")
+        variables = decoded
+
+    execution = GraphQLQueryExecutor(queries=_load_queries(arguments.ledger_path)).execute(
+        arguments.document,
+        variables=variables,
+        operation_name=arguments.operation_name,
+    )
+    _write_output(_GraphQLOutput(data=execution.data, errors=execution.errors))
+    return 0 if execution.succeeded else 1
+
+
+def _load_queries(ledger_path: Path) -> KnowledgeGraphQueries:
+    if not ledger_path.is_file():
+        raise FileNotFoundError(f"artifact ledger does not exist: {ledger_path}")
+
+    snapshot = SQLiteArtifactLedgerStore(path=ledger_path).load()
+    index = KnowledgeGraphIndex()
+    if snapshot is not None:
+        index.refresh(snapshot)
+    return KnowledgeGraphQueries(index=index)
 
 
 def _execute_query(
@@ -234,6 +265,27 @@ def _argument_parser() -> argparse.ArgumentParser:
     )
     incoming.add_argument("artifact_ref", type=_artifact_reference)
     _add_relation_kind_argument(incoming)
+
+    graphql = commands.add_parser(
+        "graphql",
+        help="execute a GraphQL query",
+        description="Execute GraphQL against committed knowledge in a local ledger.",
+    )
+    graphql.add_argument(
+        "--ledger-path",
+        required=True,
+        type=Path,
+        help="path to the local SQLite artifact ledger",
+    )
+    graphql.add_argument(
+        "--variables",
+        help="GraphQL variables as a JSON object",
+    )
+    graphql.add_argument(
+        "--operation-name",
+        help="operation to execute when the document contains multiple operations",
+    )
+    graphql.add_argument("document", help="GraphQL query document")
     return parser
 
 
