@@ -1,11 +1,20 @@
 # Verifies transaction acceptance, rejection, ordering, and state commitments.
 
+import json
+import subprocess
+import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+)
 
+from discovery_net.knowledge_graph import ArtifactRef
 from discovery_net.node import LocalArtifactLedger, TransactionCode
 from discovery_net.submission import ArtifactSubmitter
 from discovery_net.wire import encode_envelope
@@ -28,7 +37,6 @@ def test_artifact_submitter_reaches_committed_state_through_live_cometbft(
         network.start_all()
         artifact = problem_contribution("A live network problem")
         submitter = ArtifactSubmitter(
-            chain_id=network.chain_id,
             private_key=private_key(),
             cometbft_rpc_url=node.rpc_url,
         )
@@ -41,6 +49,53 @@ def test_artifact_submitter_reaches_committed_state_through_live_cometbft(
         ledger = LocalArtifactLedger(entries=snapshot.entries)
         assert ledger.contains(receipt.artifact_ref)
         assert node.rpc.block_app_hash(height=snapshot.height) == ledger.state_hash()
+
+
+def test_cli_reaches_committed_state_through_live_cometbft(
+    cometbft_binary: Path,
+    tmp_path: Path,
+) -> None:
+    """Path: CLI process → submitter → consensus → SQLite; guards the complete user path."""
+    with IntegrationNetwork.single(binary=cometbft_binary, root=tmp_path) as network:
+        node = network.nodes[0]
+        network.start_all()
+        key_path = tmp_path / "agent.pem"
+        key_path.write_bytes(
+            private_key().private_bytes(
+                Encoding.PEM,
+                PrivateFormat.PKCS8,
+                NoEncryption(),
+            )
+        )
+
+        completed = subprocess.run(
+            (
+                sys.executable,
+                "-m",
+                "discovery_net.entrypoints.cli",
+                "submit",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                "problem_statement",
+                "--title",
+                "Submitted from the CLI",
+                "--body",
+                "This contribution traverses the complete local node boundary.",
+                "--rpc-url",
+                node.rpc_url,
+            ),
+            check=False,
+            capture_output=True,
+            timeout=15,
+        )
+
+        assert completed.returncode == 0, completed.stderr.decode()
+        output = json.loads(completed.stdout)
+        snapshot = node.wait_for_snapshot(minimum_entries=1)
+        ledger = LocalArtifactLedger(entries=snapshot.entries)
+        assert output["accepted_for_broadcast"] is True
+        assert ledger.contains(ArtifactRef(output["artifact_ref"]))
 
 
 def test_duplicate_resubmission_is_rejected_without_a_second_entry(

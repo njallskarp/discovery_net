@@ -23,6 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
+discovery-net = "discovery_net.entrypoints.cli:main"
 discovery-node = "discovery_net.node.process:main"
 
 [project.optional-dependencies]

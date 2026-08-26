@@ -38,7 +38,15 @@ def test_submitter_signs_and_broadcasts_an_artifact() -> None:
         captured_transaction = transaction
         return _response(transaction)
 
-    with patch.object(_CometBFTRPCClient, "broadcast_transaction", autospec=True) as rpc:
+    with (
+        patch.object(
+            _CometBFTRPCClient,
+            "fetch_chain_id",
+            autospec=True,
+            return_value=CHAIN_ID,
+        ),
+        patch.object(_CometBFTRPCClient, "broadcast_transaction", autospec=True) as rpc,
+    ):
         rpc.side_effect = broadcast
         receipt = _submitter().submit(ARTIFACT)
 
@@ -58,11 +66,11 @@ def test_submitter_reports_a_rejected_check_tx_without_claiming_commitment() -> 
     ) -> _BroadcastResponse:
         return _response(transaction, check_tx_code=2)
 
-    with patch.object(
-        _CometBFTRPCClient,
-        "broadcast_transaction",
-        autospec=True,
-        side_effect=reject,
+    with (
+        patch.object(_CometBFTRPCClient, "fetch_chain_id", autospec=True, return_value=CHAIN_ID),
+        patch.object(
+            _CometBFTRPCClient, "broadcast_transaction", autospec=True, side_effect=reject
+        ),
     ):
         receipt = _submitter().submit(ARTIFACT)
 
@@ -74,6 +82,12 @@ def test_submitter_rejects_a_response_for_another_transaction() -> None:
     with (
         patch.object(
             _CometBFTRPCClient,
+            "fetch_chain_id",
+            autospec=True,
+            return_value=CHAIN_ID,
+        ),
+        patch.object(
+            _CometBFTRPCClient,
             "broadcast_transaction",
             autospec=True,
             return_value=response,
@@ -83,20 +97,9 @@ def test_submitter_rejects_a_response_for_another_transaction() -> None:
         _submitter().submit(ARTIFACT)
 
 
-@pytest.mark.parametrize("chain_id", ["", " "])
-def test_submitter_requires_a_nonblank_chain_id(chain_id: str) -> None:
-    with pytest.raises(ValueError, match="chain_id must not be blank"):
-        ArtifactSubmitter(
-            chain_id=chain_id,
-            private_key=PRIVATE_KEY,
-            cometbft_rpc_url=RPC_URL,
-        )
-
-
 def test_submitter_requires_an_ed25519_private_key() -> None:
     with pytest.raises(TypeError, match="private_key must be an Ed25519PrivateKey"):
         ArtifactSubmitter(
-            chain_id=CHAIN_ID,
             private_key=object(),  # type: ignore[arg-type]
             cometbft_rpc_url=RPC_URL,
         )
@@ -132,6 +135,38 @@ def test_rpc_client_encodes_broadcast_tx_sync_and_decodes_check_tx() -> None:
         transaction_hash=transaction_hash,
         check_tx_code=3,
     )
+
+
+def test_rpc_client_discovers_the_active_chain() -> None:
+    response = _http_response(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "node_info": {
+                    "network": CHAIN_ID,
+                    "moniker": "local-node",
+                },
+                "sync_info": {"catching_up": False},
+            },
+        }
+    )
+
+    with patch(
+        "discovery_net.submission._cometbft_rpc_client.urlopen",
+        return_value=response,
+    ) as open_rpc:
+        chain_id = _CometBFTRPCClient(url=RPC_URL).fetch_chain_id()
+
+    request = cast(Request, open_rpc.call_args.args[0])
+    assert request.data is not None
+    assert json.loads(cast(bytes, request.data)) == {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "status",
+        "params": {},
+    }
+    assert chain_id == CHAIN_ID
 
 
 def test_rpc_client_translates_transport_and_rpc_failures() -> None:
@@ -216,7 +251,6 @@ def test_rpc_client_rejects_malformed_responses(payload: bytes) -> None:
 
 def _submitter() -> ArtifactSubmitter:
     return ArtifactSubmitter(
-        chain_id=CHAIN_ID,
         private_key=PRIVATE_KEY,
         cometbft_rpc_url=RPC_URL,
     )
