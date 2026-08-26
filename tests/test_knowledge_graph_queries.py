@@ -39,16 +39,16 @@ def test_artifact_lookup_exposes_the_indexed_consensus_height() -> None:
     # Transport adapters can retrieve one artifact and report the state height behind it.
     graph = _graph_fixture()
 
-    indexed = graph.queries.artifact(graph.problem)
+    indexed = graph.queries.artifact_by_ref(graph.problem)
 
     assert isinstance(indexed, IndexedArtifact)
     assert indexed.artifact_ref == graph.problem
     assert graph.queries.indexed_height == 2
-    assert graph.queries.artifact(ArtifactRef("missing")) is None
+    assert graph.queries.artifact_by_ref(ArtifactRef("missing")) is None
 
 
-def test_contributions_support_kind_and_parent_filters() -> None:
-    # CLI, GraphQL, and MCP callers share one implementation of combined contribution filters.
+def test_contribution_queries_expose_selection_and_traversal_explicitly() -> None:
+    # Entry points select all nodes, select a kind, or traverse a parent reference explicitly.
     graph = _graph_fixture()
 
     assert _refs(graph.queries.contributions()) == (
@@ -58,24 +58,18 @@ def test_contributions_support_kind_and_parent_filters() -> None:
         graph.discussion,
         graph.other_finding,
     )
-    assert _refs(graph.queries.contributions(kind=ContributionKind.FINDING)) == (
+    assert _refs(graph.queries.contributions_by_kind(ContributionKind.FINDING)) == (
         graph.finding,
         graph.other_finding,
     )
-    assert _refs(graph.queries.contributions(parent=graph.problem)) == (
+    assert _refs(graph.queries.children_by_parent_ref(graph.problem)) == (
         graph.finding,
         graph.discussion,
     )
-    assert _refs(
-        graph.queries.contributions(
-            kind=ContributionKind.FINDING,
-            parent=graph.problem,
-        )
-    ) == (graph.finding,)
 
 
-def test_relations_support_kind_and_endpoint_filters() -> None:
-    # Directional and kind filters compose without exposing adjacency details to entrypoints.
+def test_relation_queries_expose_selection_and_direction_explicitly() -> None:
+    # Entry points select relations or traverse one direction without choosing behavior by filters.
     graph = _graph_fixture()
 
     assert _refs(graph.queries.relations()) == (
@@ -83,47 +77,38 @@ def test_relations_support_kind_and_endpoint_filters() -> None:
         graph.discusses,
         graph.categorizes,
     )
-    assert _refs(graph.queries.relations(kind=RelationKind.ABOUT)) == (
+    assert _refs(graph.queries.relations_by_kind(RelationKind.ABOUT)) == (
         graph.discusses,
         graph.categorizes,
     )
-    assert _refs(graph.queries.relations(from_contribution=graph.finding)) == (
+    assert _refs(graph.queries.outgoing_relations_by_ref(graph.finding)) == (
         graph.supports,
         graph.categorizes,
     )
-    assert _refs(graph.queries.relations(to_contribution=graph.problem)) == (
+    assert _refs(graph.queries.incoming_relations_by_ref(graph.problem)) == (
         graph.supports,
         graph.discusses,
     )
     assert _refs(
-        graph.queries.relations(
-            from_contribution=graph.finding,
-            to_contribution=graph.problem,
-        )
-    ) == (graph.supports,)
-    assert (
-        graph.queries.relations(
+        graph.queries.outgoing_relations_by_ref(
+            graph.discussion,
             kind=RelationKind.ABOUT,
-            from_contribution=graph.finding,
-            to_contribution=graph.problem,
         )
-        == ()
-    )
+    ) == (graph.discusses,)
 
 
-def test_query_filters_preserve_index_validation() -> None:
-    # Invalid filter enum families fail consistently on every query path.
+def test_query_kinds_preserve_index_validation() -> None:
+    # Invalid enum families fail consistently on selection and traversal methods.
     graph = _graph_fixture()
 
     with pytest.raises(TypeError, match="ContributionKind"):
-        graph.queries.contributions(
-            kind=RelationKind.ABOUT,  # type: ignore[arg-type]
-            parent=graph.problem,
+        graph.queries.contributions_by_kind(
+            RelationKind.ABOUT,  # type: ignore[arg-type]
         )
     with pytest.raises(TypeError, match="RelationKind"):
-        graph.queries.relations(
+        graph.queries.incoming_relations_by_ref(
+            graph.problem,
             kind=ContributionKind.FINDING,  # type: ignore[arg-type]
-            from_contribution=graph.finding,
         )
 
 

@@ -6,7 +6,6 @@ from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
 from discovery_net.knowledge_graph import (
     ArtifactRef,
     ContributionKind,
-    ContributionRelation,
     RelationKind,
 )
 
@@ -27,60 +26,53 @@ class KnowledgeGraphQueries:
         """Return the committed height available to queries."""
         return self._index.indexed_height
 
-    def artifact(self, artifact_ref: ArtifactRef) -> IndexedArtifact | None:
+    def artifact_by_ref(self, artifact_ref: ArtifactRef) -> IndexedArtifact | None:
         """Return an artifact by reference, if it is indexed."""
         return self._index.get(artifact_ref)
 
-    def contributions(
-        self,
-        *,
-        kind: ContributionKind | None = None,
-        parent: ArtifactRef | None = None,
-    ) -> tuple[IndexedArtifact, ...]:
-        """Return contributions matching the supplied filters."""
-        if parent is None:
-            return self._index.contributions(kind)
+    def contributions(self) -> tuple[IndexedArtifact, ...]:
+        """Return all indexed contributions."""
+        return self._index.contributions()
 
-        children = self._index.children_of(parent)
-        if kind is None:
-            return children
-        if not isinstance(kind, ContributionKind):
-            raise TypeError("kind must be a ContributionKind")
-        return tuple(child for child in children if child.artifact.kind is kind)
-
-    def relations(
+    def contributions_by_kind(
         self,
-        *,
-        kind: RelationKind | None = None,
-        from_contribution: ArtifactRef | None = None,
-        to_contribution: ArtifactRef | None = None,
+        kind: ContributionKind,
     ) -> tuple[IndexedArtifact, ...]:
-        """Return relations matching the supplied filters."""
-        if from_contribution is not None:
-            return _relations_from(
-                self._index,
-                from_contribution=from_contribution,
-                to_contribution=to_contribution,
-                kind=kind,
-            )
-        if to_contribution is not None:
-            return self._index.incoming_relations(to_contribution, kind)
+        """Return contributions of one mathematical or organizational kind."""
+        return self._index.contributions(kind)
+
+    def children_by_parent_ref(
+        self,
+        parent_ref: ArtifactRef,
+    ) -> tuple[IndexedArtifact, ...]:
+        """Return contributions whose parent has the supplied reference."""
+        return self._index.children_of(parent_ref)
+
+    def relations(self) -> tuple[IndexedArtifact, ...]:
+        """Return all indexed contribution relations."""
+        return self._index.relations()
+
+    def relations_by_kind(
+        self,
+        kind: RelationKind,
+    ) -> tuple[IndexedArtifact, ...]:
+        """Return contribution relations of one kind."""
         return self._index.relations(kind)
 
+    def outgoing_relations_by_ref(
+        self,
+        artifact_ref: ArtifactRef,
+        *,
+        kind: RelationKind | None = None,
+    ) -> tuple[IndexedArtifact, ...]:
+        """Return relations originating from the referenced artifact."""
+        return self._index.outgoing_relations(artifact_ref, kind)
 
-def _relations_from(
-    index: KnowledgeGraphIndex,
-    *,
-    from_contribution: ArtifactRef,
-    to_contribution: ArtifactRef | None,
-    kind: RelationKind | None,
-) -> tuple[IndexedArtifact, ...]:
-    outgoing = index.outgoing_relations(from_contribution, kind)
-    if to_contribution is None:
-        return outgoing
-    return tuple(
-        relation
-        for relation in outgoing
-        if isinstance(relation.artifact, ContributionRelation)
-        and relation.artifact.to_contribution == to_contribution
-    )
+    def incoming_relations_by_ref(
+        self,
+        artifact_ref: ArtifactRef,
+        *,
+        kind: RelationKind | None = None,
+    ) -> tuple[IndexedArtifact, ...]:
+        """Return relations terminating at the referenced artifact."""
+        return self._index.incoming_relations(artifact_ref, kind)
