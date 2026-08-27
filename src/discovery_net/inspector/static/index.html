@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Discovery Net Inspector</title>
+    <link rel="stylesheet" href="/inspector.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">∿</span>
+          <div>
+            <h1>Discovery Net</h1>
+            <p>Local node inspector</p>
+          </div>
+        </div>
+        <div class="live-controls">
+          <span class="live-state" id="liveState" aria-live="polite">
+            <span class="live-dot" aria-hidden="true"></span>
+            <span id="liveLabel">Connecting</span>
+          </span>
+          <button type="button" id="liveToggle" aria-pressed="false">Pause</button>
+          <button type="button" id="refreshButton">Update now</button>
+        </div>
+      </header>
+
+      <main>
+        <div class="error-message" id="errorMessage" role="alert" hidden></div>
+
+        <section class="summary-grid" aria-label="Local node status">
+          <article class="summary-item">
+            <span>Chain</span>
+            <strong id="chainValue">—</strong>
+            <small id="syncValue">Waiting for observation</small>
+          </article>
+          <article class="summary-item">
+            <span>Committed height</span>
+            <strong id="heightValue" class="tabular">—</strong>
+            <small id="consensusValue">Consensus unavailable</small>
+          </article>
+          <article class="summary-item">
+            <span>Direct peers</span>
+            <strong id="peerValue" class="tabular">—</strong>
+            <small>Observed by this node only</small>
+          </article>
+          <article class="summary-item">
+            <span>Committed graph</span>
+            <strong id="graphValue" class="tabular">—</strong>
+            <small id="mempoolValue">Mempool unavailable</small>
+          </article>
+        </section>
+
+        <section class="graph-grid">
+          <article class="graph-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Peer connections</h2>
+                <p>Local observation · direct connections only</p>
+              </div>
+              <span class="source-label source-local">Ego view</span>
+            </div>
+            <div class="graph-stage peer-stage" id="peerGraph" aria-label="Direct peer graph"></div>
+            <div class="legend">
+              <span><i class="legend-node local-node"></i>Local node</span>
+              <span><i class="legend-node peer-node"></i>Direct peer</span>
+              <span><i class="legend-line outbound-line"></i>Outbound</span>
+              <span><i class="legend-line inbound-line"></i>Inbound</span>
+            </div>
+          </article>
+
+          <article class="graph-panel">
+            <div class="panel-heading knowledge-heading">
+              <div>
+                <h2>Knowledge graph</h2>
+                <p>Locally indexed consensus</p>
+              </div>
+              <label class="filter-label" for="kindFilter">
+                <span>Show</span>
+                <select id="kindFilter">
+                  <option value="all">All contribution kinds</option>
+                </select>
+              </label>
+            </div>
+            <div class="graph-stage knowledge-stage" id="knowledgeGraph" aria-label="Committed knowledge graph"></div>
+            <div class="legend">
+              <span><i class="legend-node area-node"></i>Area</span>
+              <span><i class="legend-node problem-node"></i>Problem</span>
+              <span><i class="legend-node work-node"></i>Mathematical work</span>
+              <span><i class="legend-node discourse-node"></i>Review and discussion</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="inspection-grid">
+          <article class="detail-panel" aria-labelledby="detailTitle">
+            <div class="panel-heading">
+              <div>
+                <h2 id="detailTitle">Inspector</h2>
+                <p id="detailSubtitle">Select a node or committed artifact</p>
+              </div>
+              <span class="source-label" id="detailSource">Read only</span>
+            </div>
+            <div class="detail-content" id="detailContent" aria-live="polite"></div>
+          </article>
+
+          <aside class="activity-panel" aria-labelledby="activityTitle">
+            <div class="panel-heading">
+              <div>
+                <h2 id="activityTitle">Committed activity</h2>
+                <p>Newest ledger artifacts first</p>
+              </div>
+            </div>
+            <div class="activity-list" id="activityList"></div>
+          </aside>
+        </section>
+
+        <footer>
+          <span id="observedAt">No snapshot observed</span>
+          <span>Peer metadata is observed or peer-reported; knowledge is consensus-derived.</span>
+        </footer>
+      </main>
+    </div>
+    <script src="/inspector.js" defer></script>
+  </body>
+</html>
