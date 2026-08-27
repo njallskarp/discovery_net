@@ -170,7 +170,8 @@ class IntegrationNode:
             "error",
             "--cometbft-binary",
             str(self._binary),
-            *tuple(argument for peer in peers for argument in ("--persistent-peer", peer)),
+            "--persistent-peers",
+            ",".join(peers),
         )
         process = BackgroundProcess(
             command=command,

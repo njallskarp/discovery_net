@@ -32,3 +32,18 @@ jobs:
       - run: pytest
         env:
           DISCOVERY_NET_COMETBFT_BINARY: ${{ runner.temp }}/cometbft
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e '.[dev]'
+      - run: pytest tests/docker/test_local_deployment.py
+        env:
+          DISCOVERY_NET_RUN_DOCKER_TESTS: "1"
