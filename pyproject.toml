@@ -26,7 +26,9 @@ dependencies = [
 [project.scripts]
 discovery-inspector = "discovery_net.entrypoints.inspector:main"
 discovery-net = "discovery_net.entrypoints.cli:main"
+discovery-cometbft = "discovery_net.node.cometbft_process:main"
 discovery-node = "discovery_net.node.process:main"
+discovery-node-initialize = "discovery_net.node.initialize:main"
 
 [project.optional-dependencies]
 dev = [

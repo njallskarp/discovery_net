@@ -29,6 +29,14 @@ class CometBFTRPCClient:
         """Return whether CometBFT is still synchronizing before normal consensus."""
         return boolean_field(object_field(self.status(), "sync_info"), "catching_up")
 
+    def peer_ids(self) -> tuple[str, ...]:
+        """Return the node IDs of this node's current direct peers."""
+        peers = list_field(self._call("net_info"), "peers")
+        return tuple(
+            string_field(object_field(json_object(peer, "peer"), "node_info"), "id")
+            for peer in peers
+        )
+
     def broadcast_sync(self, transaction: bytes) -> int:
         """Broadcast a transaction and return its CheckTx code."""
         result = self._call(
@@ -117,4 +125,12 @@ def boolean_field(value: JSONObject, field_name: str) -> bool:
     field = value.get(field_name)
     if not isinstance(field, bool):
         raise ValueError(f"{field_name} must be a boolean")
+    return field
+
+
+def list_field(value: JSONObject, field_name: str) -> list[object]:
+    """Return one required list field."""
+    field = value.get(field_name)
+    if not isinstance(field, list):
+        raise ValueError(f"{field_name} must be a list")
     return field

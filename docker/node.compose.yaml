@@ -1,0 +1,98 @@
+# Runs one independently owned Discovery Net node as two isolated services.
+
+x-node-image: &node-image
+  image: ${DISCOVERY_NET_IMAGE:-discovery-net-node:local}
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+
+services:
+  initialize:
+    <<: *node-image
+    command:
+      - discovery-node-initialize
+      - --home
+      - /var/lib/cometbft
+      - --genesis
+      - /chain/genesis.json
+      - --chain-id
+      - ${CHAIN_ID:?set CHAIN_ID}
+      - --advertised-address
+      - ${P2P_ADVERTISE:?set P2P_ADVERTISE}
+    volumes:
+      - cometbft-data:/var/lib/cometbft
+      - ${GENESIS_PATH:?set GENESIS_PATH}:/chain/genesis.json:ro
+    network_mode: none
+    restart: "no"
+
+  app:
+    <<: *node-image
+    command:
+      - discovery-node
+      - --chain-id
+      - ${CHAIN_ID:?set CHAIN_ID}
+      - --ledger-path
+      - /var/lib/discovery/artifact-ledger.sqlite
+      - --abci-listen-address
+      - 0.0.0.0:26658
+    volumes:
+      - artifact-ledger:/var/lib/discovery
+    networks:
+      - node-internal
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; socket.create_connection(('127.0.0.1', 26658), 2).close()
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: unless-stopped
+
+  cometbft:
+    <<: *node-image
+    command:
+      - discovery-cometbft
+      - --home
+      - /var/lib/cometbft
+      - --moniker
+      - ${NODE_NAME:?set NODE_NAME}
+      - --proxy-app
+      - app:26658
+      - --advertised-address
+      - ${P2P_ADVERTISE:?set P2P_ADVERTISE}
+      - --network-scope
+      - ${NETWORK_SCOPE:-private}
+      - --persistent-peers
+      - ${PERSISTENT_PEERS:-}
+    volumes:
+      - cometbft-data:/var/lib/cometbft
+    ports:
+      - ${P2P_PORT:-26656}:26656
+      - 127.0.0.1:${RPC_PORT:-26657}:26657
+    networks:
+      node-internal:
+      p2p:
+        aliases:
+          - ${NODE_NAME:?set NODE_NAME}
+    depends_on:
+      initialize:
+        condition: service_completed_successfully
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  artifact-ledger:
+  cometbft-data:
+
+networks:
+  node-internal:
+    internal: true
+  p2p:
+    external: true
+    name: ${P2P_NETWORK:-discovery-net-p2p}

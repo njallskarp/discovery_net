@@ -7,12 +7,18 @@ from discovery_net.node.cometbft_callback_handler import (
     CometBFTCallbackHandler,
     FinalizeBlockResult,
 )
+from discovery_net.node.cometbft_config_file import CometBFTConfigFile
+from discovery_net.node.cometbft_home import CometBFTNodeHome
+from discovery_net.node.cometbft_p2p_config import CometBFTP2PConfig
+from discovery_net.node.cometbft_process import CometBFTStartCommand
 from discovery_net.node.local_artifact_ledger import (
     AppendOutcome,
     ArtifactLedgerEntry,
     ArtifactLedgerLookup,
     LocalArtifactLedger,
 )
+from discovery_net.node.network_config import NetworkScope, NodeNetworkConfig
+from discovery_net.node.peer_address import PeerAddress, PeerEndpoint
 from discovery_net.node.store import (
     ArtifactLedgerSnapshot,
     ArtifactLedgerStore,
@@ -34,8 +40,16 @@ __all__ = [
     "ArtifactLedgerStore",
     "CometBFTABCIAdapter",
     "CometBFTCallbackHandler",
+    "CometBFTConfigFile",
+    "CometBFTNodeHome",
+    "CometBFTP2PConfig",
+    "CometBFTStartCommand",
     "FinalizeBlockResult",
     "LocalArtifactLedger",
+    "NetworkScope",
+    "NodeNetworkConfig",
+    "PeerAddress",
+    "PeerEndpoint",
     "SQLiteArtifactLedgerStore",
     "TransactionCode",
     "TransactionResult",

@@ -9,7 +9,17 @@ from pathlib import Path
 from typing import final
 from urllib.error import URLError
 
-from discovery_net.node import ArtifactLedgerSnapshot, SQLiteArtifactLedgerStore
+from discovery_net.node import (
+    ArtifactLedgerSnapshot,
+    CometBFTConfigFile,
+    CometBFTP2PConfig,
+    CometBFTStartCommand,
+    NetworkScope,
+    NodeNetworkConfig,
+    PeerAddress,
+    PeerEndpoint,
+    SQLiteArtifactLedgerStore,
+)
 from tests.integration._background_process import BackgroundProcess
 from tests.integration._cometbft_rpc_client import CometBFTRPCClient
 
@@ -84,6 +94,11 @@ class IntegrationNode:
         return self._ledger_path
 
     @property
+    def node_id(self) -> str:
+        """Return this node's persistent CometBFT P2P identity."""
+        return self._node_id
+
+    @property
     def rpc(self) -> CometBFTRPCClient:
         """Return the client for this node's CometBFT RPC endpoint."""
         return self._rpc
@@ -94,9 +109,12 @@ class IntegrationNode:
         return f"http://{self._rpc_address}"
 
     @property
-    def peer_address(self) -> str:
+    def peer_address(self) -> PeerAddress:
         """Return the persistent-peer address used by other CometBFT nodes."""
-        return f"{self._node_id}@{self._p2p_address}"
+        return PeerAddress(
+            node_id=self._node_id,
+            endpoint=PeerEndpoint.parse(self._p2p_address),
+        )
 
     def start_application(self) -> None:
         """Start the Discovery Net process and wait for its ABCI listener."""
@@ -128,7 +146,7 @@ class IntegrationNode:
     def start_cometbft(
         self,
         *,
-        peers: tuple[str, ...] = (),
+        peers: tuple[PeerAddress, ...] = (),
         create_empty_blocks: bool = False,
         wait_until_ready: bool = True,
     ) -> None:
@@ -138,29 +156,25 @@ class IntegrationNode:
         if self._cometbft_process is not None:
             raise RuntimeError("CometBFT is already running")
         self._cometbft_generation += 1
-        process = BackgroundProcess(
-            command=(
-                str(self._binary),
-                "start",
-                "--home",
-                str(self._home),
-                "--moniker",
-                self._name,
-                "--abci",
-                "grpc",
-                "--proxy_app",
-                self._application_address,
-                "--rpc.laddr",
-                f"tcp://{self._rpc_address}",
-                "--p2p.laddr",
-                f"tcp://{self._p2p_address}",
-                "--p2p.persistent_peers",
-                ",".join(peers),
-                "--p2p.pex=false",
-                f"--consensus.create_empty_blocks={str(create_empty_blocks).lower()}",
-                "--log_level",
-                "error",
+        start_command = CometBFTStartCommand(
+            home=self._home,
+            moniker=self._name,
+            proxy_app=self._application_address,
+            rpc_listen_address=self._rpc_address,
+            p2p_listen_address=self._p2p_address,
+            network=NodeNetworkConfig(
+                scope=NetworkScope.LOOPBACK,
+                advertised_endpoint=PeerEndpoint.parse(self._p2p_address),
+                persistent_peers=peers,
             ),
+            create_empty_blocks=create_empty_blocks,
+            log_level="error",
+        )
+        CometBFTConfigFile(path=self._home / "config" / "config.toml").apply_p2p_policy(
+            CometBFTP2PConfig.from_node_config(start_command.network)
+        )
+        process = BackgroundProcess(
+            command=start_command.arguments(binary=self._binary),
             log_path=self._log_directory / f"{self._name}-cometbft-{self._cometbft_generation}.log",
         )
         self._cometbft_process = process
@@ -197,6 +211,21 @@ class IntegrationNode:
                 pass
             time.sleep(0.05)
         raise AssertionError(f"{self._name} did not finish catching up\n{self.diagnostics()}")
+
+    def wait_for_peer(self, node_id: str, *, timeout_seconds: float = 60) -> None:
+        """Wait until peer exchange establishes a direct connection to one node."""
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            self.assert_running()
+            try:
+                if node_id in self._rpc.peer_ids():
+                    return
+            except (OSError, URLError, ValueError):
+                pass
+            time.sleep(0.1)
+        raise AssertionError(
+            f"{self._name} did not connect to peer {node_id}\n{self.diagnostics()}"
+        )
 
     def snapshot(self) -> ArtifactLedgerSnapshot | None:
         """Return the locally persisted ledger snapshot when it exists."""
