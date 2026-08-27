@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import socket
@@ -12,6 +13,16 @@ from types import TracebackType
 from typing import cast, final
 
 from discovery_net.node import ArtifactLedgerSnapshot, LocalArtifactLedger
+from discovery_net.node.runtime import (
+    Endpoint,
+    GenesisTrustAnchor,
+    NodeLaunchSettings,
+    PeerAdmissionPolicy,
+)
+from discovery_net.node.runtime._cometbft_config import _CometBFTConfig
+from discovery_net.node.runtime._cometbft_home import _CometBFTHome
+from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
+from discovery_net.node.runtime.genesis import _VerifiedGenesis
 from tests.integration._integration_node import IntegrationNode
 
 _CONVERGENCE_TIMEOUT_SECONDS = 20
@@ -98,7 +109,7 @@ class IntegrationNetwork:
                 "--v",
                 str(validators),
                 "--n",
-                str(non_validators),
+                "0",
                 "--o",
                 str(homes_root),
                 "--populate-persistent-peers=false",
@@ -108,6 +119,16 @@ class IntegrationNetwork:
         total_nodes = validators + non_validators
         ports = _available_ports(total_nodes * 3)
         chain_id = _chain_id(homes_root / "node0")
+        if non_validators:
+            _prepare_joining_homes(
+                binary=binary,
+                homes_root=homes_root,
+                genesis_path=homes_root / "node0" / "config" / "genesis.json",
+                chain_id=chain_id,
+                first_index=validators,
+                count=non_validators,
+                ports=ports,
+            )
         nodes = tuple(
             _node(
                 binary=binary,
@@ -256,6 +277,54 @@ def _chain_id(home: Path) -> str:
     if not isinstance(chain_id, str) or not chain_id:
         raise ValueError("CometBFT genesis must contain a chain ID")
     return chain_id
+
+
+def _prepare_joining_homes(
+    *,
+    binary: Path,
+    homes_root: Path,
+    genesis_path: Path,
+    chain_id: str,
+    first_index: int,
+    count: int,
+    ports: tuple[int, ...],
+) -> None:
+    genesis_content = genesis_path.read_bytes()
+    trust_anchor = GenesisTrustAnchor(
+        expected_chain_id=chain_id,
+        expected_sha256=hashlib.sha256(genesis_content).hexdigest(),
+    )
+    verified = _VerifiedGenesis.from_path(
+        path=genesis_path,
+        trust_anchor=trust_anchor,
+    )
+    process = _CometBFTProcess(binary=binary)
+    process.require_compatible_command_surface()
+
+    for index in range(first_index, first_index + count):
+        application_port, rpc_port, p2p_port = ports[index * 3 : index * 3 + 3]
+        settings = NodeLaunchSettings(
+            home=homes_root / f"node{index}",
+            moniker=f"node{index}",
+            genesis_path=genesis_path,
+            genesis_trust_anchor=trust_anchor,
+            abci_endpoint=Endpoint(host="127.0.0.1", port=application_port),
+            rpc_listen_endpoint=Endpoint(host="127.0.0.1", port=rpc_port),
+            p2p_listen_endpoint=Endpoint(host="127.0.0.1", port=p2p_port),
+            p2p_advertised_endpoint=Endpoint(host="127.0.0.1", port=p2p_port),
+            peer_exchange=False,
+            peer_admission=PeerAdmissionPolicy(
+                address_book_strict=False,
+                allow_duplicate_ip=True,
+            ),
+            create_empty_blocks=False,
+            log_level="error",
+        )
+        _CometBFTHome(
+            path=settings.home,
+            config=_CometBFTConfig(),
+            process=process,
+        ).prepare(genesis=verified, settings=settings)
 
 
 def _peer_memberships(

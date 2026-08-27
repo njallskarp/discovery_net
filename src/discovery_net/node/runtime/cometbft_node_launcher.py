@@ -12,7 +12,7 @@ from discovery_net.node.runtime.node_launch_settings import NodeLaunchSettings
 
 @final
 class CometBFTNodeLauncher:
-    """Starts CometBFT without provisioning validator identity or membership."""
+    """Starts CometBFT without importing signing state or arranging validator membership."""
 
     __slots__ = ("_binary",)
 
