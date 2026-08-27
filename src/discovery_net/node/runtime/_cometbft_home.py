@@ -71,9 +71,7 @@ class _CometBFTHome:
             try:
                 self._process.initialize(home=staging)
                 _require_complete_home(staging)
-                _VerifiedValidatorIdentity.from_identity(
-                    ValidatorIdentity(directory=staging)
-                )
+                _VerifiedValidatorIdentity.from_identity(ValidatorIdentity(directory=staging))
                 _replace_genesis(
                     staging / "config" / "genesis.json",
                     _UNBOUND_VALIDATOR_GENESIS,
@@ -167,10 +165,7 @@ def _require_complete_home(home: Path) -> None:
 
 def _require_unstarted_home(home: Path) -> None:
     data_paths = tuple(
-        sorted(
-            path.relative_to(home / "data")
-            for path in (home / "data").rglob("*")
-        )
+        sorted(path.relative_to(home / "data") for path in (home / "data").rglob("*"))
     )
     if data_paths != (Path("priv_validator_state.json"),):
         raise ValueError("validator home has already created runtime state")

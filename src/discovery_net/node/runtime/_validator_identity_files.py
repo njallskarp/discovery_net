@@ -120,6 +120,7 @@ class _VerifiedValidatorIdentity:
             voting_power=voting_power,
         )
 
+
 def _decode_key(value: str, expected_length: int, description: str) -> bytes:
     try:
         decoded = base64.b64decode(value, validate=True)

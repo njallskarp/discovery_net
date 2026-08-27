@@ -68,9 +68,9 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
 
 def _initialize_validator(arguments: argparse.Namespace) -> None:
-    identity = CometBFTValidatorProvisioner(
-        binary=arguments.cometbft_binary
-    ).initialize_home(home=arguments.home)
+    identity = CometBFTValidatorProvisioner(binary=arguments.cometbft_binary).initialize_home(
+        home=arguments.home
+    )
     _emit(_HomeOutput(home=str(identity.directory)))
 
 

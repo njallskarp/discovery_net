@@ -23,4 +23,3 @@ class ValidatorIdentity:
     def state_path(self) -> Path:
         """Return the matching CometBFT private-validator state path."""
         return self.directory / "data" / "priv_validator_state.json"
-

@@ -86,11 +86,15 @@ def test_install_rejects_a_home_not_initialized_by_the_provisioner(tmp_path: Pat
     home = tmp_path / "foreign-home"
     _initialize_valid_home(_CometBFTProcess(binary=Path("cometbft")), home=home)
     identity = ValidatorIdentity(directory=home)
-    public_key = CometBFTValidatorProvisioner().genesis_validator(
-        identity,
-        name="validator-a",
-        voting_power=10,
-    ).public_key
+    public_key = (
+        CometBFTValidatorProvisioner()
+        .genesis_validator(
+            identity,
+            name="validator-a",
+            voting_power=10,
+        )
+        .public_key
+    )
     genesis_path = tmp_path / "genesis.json"
     trust_anchor = _genesis(genesis_path, public_key=public_key)
 
@@ -108,11 +112,15 @@ def test_non_pristine_signing_state_is_rejected_before_home_mutation(tmp_path: P
     home = tmp_path / "validator-home"
     _initialize_valid_home(_CometBFTProcess(binary=Path("cometbft")), home=home)
     identity = ValidatorIdentity(directory=home)
-    public_key = CometBFTValidatorProvisioner().genesis_validator(
-        identity,
-        name="validator-a",
-        voting_power=10,
-    ).public_key
+    public_key = (
+        CometBFTValidatorProvisioner()
+        .genesis_validator(
+            identity,
+            name="validator-a",
+            voting_power=10,
+        )
+        .public_key
+    )
     (home / "data" / "priv_validator_state.json").write_text(
         json.dumps({"height": "4", "round": 0, "step": 3})
     )

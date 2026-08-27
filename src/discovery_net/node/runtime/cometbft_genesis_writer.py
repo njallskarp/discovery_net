@@ -83,9 +83,7 @@ class CometBFTGenesisWriter:
 
         self._process.require_compatible_command_surface()
         path.parent.mkdir(parents=True, exist_ok=True)
-        template_home = Path(
-            tempfile.mkdtemp(prefix=f".{path.name}.template.", dir=path.parent)
-        )
+        template_home = Path(tempfile.mkdtemp(prefix=f".{path.name}.template.", dir=path.parent))
         try:
             self._process.initialize(home=template_home)
             template = _read_template(template_home / "config" / "genesis.json")
