@@ -21,11 +21,13 @@ dependencies = [
   "pydantic>=2.12,<3",
   "protobuf>=7.35.1,<8",
   "strawberry-graphql>=0.284,<1",
+  "tomlkit>=0.13,<1",
 ]
 
 [project.scripts]
 discovery-inspector = "discovery_net.entrypoints.inspector:main"
 discovery-net = "discovery_net.entrypoints.cli:main"
+discovery-cometbft = "discovery_net.node.runtime.process:main"
 discovery-node = "discovery_net.node.process:main"
 
 [project.optional-dependencies]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import socket
 import sys
 import time
@@ -138,29 +139,41 @@ class IntegrationNode:
         if self._cometbft_process is not None:
             raise RuntimeError("CometBFT is already running")
         self._cometbft_generation += 1
+        genesis_path = self._home / "config" / "genesis.json"
+        command = (
+            sys.executable,
+            "-m",
+            "discovery_net.node.runtime.process",
+            "--home",
+            str(self._home),
+            "--moniker",
+            self._name,
+            "--genesis",
+            str(genesis_path),
+            "--genesis-sha256",
+            hashlib.sha256(genesis_path.read_bytes()).hexdigest(),
+            "--chain-id",
+            self._chain_id,
+            "--abci-endpoint",
+            self._application_address,
+            "--rpc-listen-endpoint",
+            self._rpc_address,
+            "--p2p-listen-endpoint",
+            self._p2p_address,
+            "--p2p-advertised-endpoint",
+            self._p2p_address,
+            "--no-peer-exchange",
+            "--no-address-book-strict",
+            "--allow-duplicate-ip",
+            "--create-empty-blocks" if create_empty_blocks else "--no-create-empty-blocks",
+            "--log-level",
+            "error",
+            "--cometbft-binary",
+            str(self._binary),
+            *tuple(argument for peer in peers for argument in ("--persistent-peer", peer)),
+        )
         process = BackgroundProcess(
-            command=(
-                str(self._binary),
-                "start",
-                "--home",
-                str(self._home),
-                "--moniker",
-                self._name,
-                "--abci",
-                "grpc",
-                "--proxy_app",
-                self._application_address,
-                "--rpc.laddr",
-                f"tcp://{self._rpc_address}",
-                "--p2p.laddr",
-                f"tcp://{self._p2p_address}",
-                "--p2p.persistent_peers",
-                ",".join(peers),
-                "--p2p.pex=false",
-                f"--consensus.create_empty_blocks={str(create_empty_blocks).lower()}",
-                "--log_level",
-                "error",
-            ),
+            command=command,
             log_path=self._log_directory / f"{self._name}-cometbft-{self._cometbft_generation}.log",
         )
         self._cometbft_process = process
