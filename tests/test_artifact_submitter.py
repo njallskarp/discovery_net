@@ -125,6 +125,8 @@ def test_submitter_atomically_broadcasts_a_contribution_and_both_relation_direct
     assert receipt.artifact_refs == tuple(
         artifact_ref(envelope) for envelope in transaction.envelopes
     )
+    assert receipt.transaction_hash == sha256(captured_transaction).hexdigest().upper()
+    assert receipt.check_tx_code == 0
     assert receipt.accepted
 
 
@@ -162,6 +164,8 @@ def test_submitter_broadcasts_a_post_hoc_relation_as_one_artifact_transaction() 
     envelope = transaction.envelopes[0]
     assert decode_payload(envelope.payload_type, envelope.payload) == relation
     assert receipt.artifact_refs == (artifact_ref(envelope),)
+    assert receipt.transaction_hash == sha256(captured_transaction).hexdigest().upper()
+    assert receipt.check_tx_code == 0
 
 
 def test_submitter_reports_a_rejected_check_tx_without_claiming_commitment() -> None:
@@ -179,6 +183,7 @@ def test_submitter_reports_a_rejected_check_tx_without_claiming_commitment() -> 
     ):
         receipt = _submitter().submit_contribution(ARTIFACT)
 
+    assert receipt.check_tx_code == 2
     assert not receipt.accepted
 
 

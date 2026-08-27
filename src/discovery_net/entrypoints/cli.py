@@ -40,6 +40,8 @@ class _SubmissionOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     artifact_refs: tuple[ArtifactRef, ...]
+    transaction_hash: str
+    check_tx_code: int
     accepted_for_broadcast: bool
 
 
@@ -136,6 +138,8 @@ def _submit(arguments: argparse.Namespace) -> int:
     _write_output(
         _SubmissionOutput(
             artifact_refs=receipt.artifact_refs,
+            transaction_hash=receipt.transaction_hash,
+            check_tx_code=receipt.check_tx_code,
             accepted_for_broadcast=receipt.accepted,
         )
     )
@@ -207,6 +211,18 @@ def _execute_query(
         return queries.outgoing_relations_by_ref(arguments.artifact_ref, kind=arguments.kind)
     if arguments.query == "incoming-relations":
         return queries.incoming_relations_by_ref(arguments.artifact_ref, kind=arguments.kind)
+    if arguments.query == "outgoing-contributions":
+        return queries.outgoing_contributions_by_ref(
+            arguments.artifact_ref,
+            via=arguments.via,
+            kind=arguments.kind,
+        )
+    if arguments.query == "incoming-contributions":
+        return queries.incoming_contributions_by_ref(
+            arguments.artifact_ref,
+            via=arguments.via,
+            kind=arguments.kind,
+        )
     raise RuntimeError("query command was not recognized")
 
 
@@ -322,6 +338,18 @@ def _argument_parser() -> argparse.ArgumentParser:
     incoming.add_argument("artifact_ref", type=_artifact_reference)
     _add_relation_kind_argument(incoming)
 
+    outgoing_contributions = queries.add_parser(
+        "outgoing-contributions",
+        help="list contributions reached through outgoing relations",
+    )
+    _add_contribution_traversal_arguments(outgoing_contributions)
+
+    incoming_contributions = queries.add_parser(
+        "incoming-contributions",
+        help="list contributions reached through incoming relations",
+    )
+    _add_contribution_traversal_arguments(incoming_contributions)
+
     graphql = commands.add_parser(
         "graphql",
         help="execute a GraphQL query",
@@ -365,6 +393,23 @@ def _add_relation_kind_argument(parser: argparse.ArgumentParser) -> None:
         type=RelationKind,
         choices=tuple(RelationKind),
         help="only return relations of this kind",
+    )
+
+
+def _add_contribution_traversal_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("artifact_ref", type=_artifact_reference)
+    parser.add_argument(
+        "--via",
+        required=True,
+        type=RelationKind,
+        choices=tuple(RelationKind),
+        help="relation kind to follow",
+    )
+    parser.add_argument(
+        "--kind",
+        type=ContributionKind,
+        choices=tuple(ContributionKind),
+        help="only return contributions of this kind",
     )
 
 

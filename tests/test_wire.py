@@ -196,6 +196,17 @@ def test_signed_transaction_round_trips_and_binds_its_artifacts() -> None:
     assert not verify_transaction(replace(transaction, signature=bytes(64)))
 
 
+def test_signed_transaction_rejects_an_artifact_detached_after_signing() -> None:
+    transaction = sign_transaction(
+        envelopes=(signed(), signed(area_contribution())),
+        private_key=PRIVATE_KEY,
+    )
+
+    detached = replace(transaction, envelopes=(transaction.envelopes[0],))
+
+    assert not verify_transaction(detached)
+
+
 def test_transaction_requires_artifacts_from_one_chain_and_signer() -> None:
     envelope = signed()
     other_signer = sign_artifact(

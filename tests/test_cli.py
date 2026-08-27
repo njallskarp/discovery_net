@@ -35,6 +35,7 @@ from discovery_net.submission import (
 from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
 
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+TRANSACTION_HASH = "A" * 64
 PARENT_REF = ArtifactRef("bafkreiheoeszncz3oecj7pciali6ictr5ijvtxwpvowpoczulcadpvh7bq")
 OTHER_REF = ArtifactRef("bafkreickvwi5x3dzjh5ap7qa5onmiusawgdigfdufxph4v5ubzgku2aymm")
 
@@ -48,7 +49,8 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
     submitter = MagicMock(spec=ArtifactSubmitter)
     submitter.submit_contribution.return_value = SubmissionReceipt(
         artifact_refs=(ArtifactRef("bafy-artifact"),),
-        accepted=True,
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
     )
 
     with patch(
@@ -80,6 +82,8 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
     assert captured.err == ""
     assert json.loads(captured.out) == {
         "artifact_refs": ["bafy-artifact"],
+        "transaction_hash": TRANSACTION_HASH,
+        "check_tx_code": 0,
         "accepted_for_broadcast": True,
     }
     constructor_arguments = submitter_type.call_args.kwargs
@@ -107,7 +111,8 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
     submitter = MagicMock(spec=ArtifactSubmitter)
     submitter.submit_contribution.return_value = SubmissionReceipt(
         artifact_refs=(ArtifactRef("bafy-rejected"),),
-        accepted=False,
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=2,
     )
 
     with patch("discovery_net.entrypoints.cli.ArtifactSubmitter", return_value=submitter):
@@ -127,7 +132,10 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
         )
 
     assert exit_code == 1
-    assert json.loads(capsys.readouterr().out)["accepted_for_broadcast"] is False
+    output = json.loads(capsys.readouterr().out)
+    assert output["transaction_hash"] == TRANSACTION_HASH
+    assert output["check_tx_code"] == 2
+    assert output["accepted_for_broadcast"] is False
 
 
 def test_cli_submits_a_post_hoc_relation_between_existing_contributions(
@@ -139,7 +147,8 @@ def test_cli_submits_a_post_hoc_relation_between_existing_contributions(
     submitter = MagicMock(spec=ArtifactSubmitter)
     submitter.submit_relation.return_value = SubmissionReceipt(
         artifact_refs=(ArtifactRef("bafy-relation"),),
-        accepted=True,
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
     )
 
     with patch("discovery_net.entrypoints.cli.ArtifactSubmitter", return_value=submitter):
@@ -250,6 +259,41 @@ def test_cli_maps_explicit_query_commands_to_the_knowledge_graph(
     assert _output_refs(
         _run_query(ledger_path, capsys, "incoming-relations", references["problem"])
     ) == (references["relation"],)
+    assert _output_refs(
+        _run_query(
+            ledger_path,
+            capsys,
+            "outgoing-contributions",
+            references["finding"],
+            "--via",
+            "supports",
+        )
+    ) == (references["problem"],)
+    assert _output_refs(
+        _run_query(
+            ledger_path,
+            capsys,
+            "incoming-contributions",
+            references["problem"],
+            "--via",
+            "supports",
+        )
+    ) == (references["finding"],)
+    assert (
+        _output_refs(
+            _run_query(
+                ledger_path,
+                capsys,
+                "outgoing-contributions",
+                references["finding"],
+                "--via",
+                "supports",
+                "--kind",
+                "question",
+            )
+        )
+        == ()
+    )
     assert (
         _output_refs(
             _run_query(

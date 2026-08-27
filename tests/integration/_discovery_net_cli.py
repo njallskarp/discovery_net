@@ -13,7 +13,16 @@ from cryptography.hazmat.primitives.serialization import (
     NoEncryption,
     PrivateFormat,
 )
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from discovery_net.knowledge_graph import ArtifactRef, ContributionKind, RelationKind
 from discovery_net.wire import parse_artifact_ref
@@ -25,6 +34,8 @@ class _SubmissionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     artifact_refs: tuple[StrictStr, ...]
+    transaction_hash: StrictStr
+    check_tx_code: StrictInt
     accepted_for_broadcast: StrictBool
 
     @field_validator("artifact_refs")
@@ -35,6 +46,19 @@ class _SubmissionOutput(BaseModel):
         for reference in value:
             parse_artifact_ref(reference)
         return value
+
+    @field_validator("transaction_hash")
+    @classmethod
+    def validate_transaction_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789ABCDEF" for character in value):
+            raise ValueError("transaction_hash must be uppercase hexadecimal")
+        return value
+
+    @model_validator(mode="after")
+    def validate_acceptance(self) -> _SubmissionOutput:
+        if self.accepted_for_broadcast != (self.check_tx_code == 0):
+            raise ValueError("accepted_for_broadcast must reflect check_tx_code")
+        return self
 
 
 @final

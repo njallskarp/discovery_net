@@ -171,6 +171,15 @@ def test_rejects_invalid_inner_or_outer_signatures() -> None:
     )
 
 
+def test_rejects_an_artifact_detached_from_an_already_signed_transaction() -> None:
+    transaction = signed_transaction(
+        (contribution("Contribution"), contribution("Attached artifact"))
+    )
+    detached = replace(transaction, envelopes=(transaction.envelopes[0],))
+
+    assert validate(encode_transaction(detached)).code is TransactionCode.INVALID_SIGNATURE
+
+
 def test_rejects_the_whole_transaction_when_any_artifact_is_a_duplicate() -> None:
     committed = signed_transaction((contribution("Committed"),))
     ledger = append(LocalArtifactLedger(), committed, transaction_index=0)

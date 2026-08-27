@@ -102,7 +102,8 @@ class ArtifactSubmitter:
             artifact_refs=tuple(
                 artifact_ref(envelope) for envelope in signed_transaction.envelopes
             ),
-            accepted=response.check_tx_code == 0,
+            transaction_hash=response.transaction_hash,
+            check_tx_code=response.check_tx_code,
         )
 
 
