@@ -1,7 +1,12 @@
 # Provides concise trusted-genesis and launch settings shared by runtime tests.
 
+import base64
 import hashlib
+import json
 from pathlib import Path
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from discovery_net.node.runtime import (
     Endpoint,
@@ -81,3 +86,41 @@ create_empty_blocks = true
         '{"pub_key":{"type":"tendermint/PubKeyEd25519","value":"generated"}}'
     )
     (data / "priv_validator_state.json").write_text('{"height":"0"}')
+
+
+def write_validator_identity(directory: Path, *, seed_byte: int = 7) -> bytes:
+    """Write one deterministic pristine Ed25519 identity and return its public key."""
+    seed = bytes((seed_byte,)) * 32
+    public_key = (
+        Ed25519PrivateKey.from_private_bytes(seed)
+        .public_key()
+        .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    )
+    address = hashlib.sha256(public_key).digest()[:20].hex().upper()
+    encoded_public_key = base64.b64encode(public_key).decode("ascii")
+    encoded_private_key = base64.b64encode(seed + public_key).decode("ascii")
+    config = directory / "config"
+    data = directory / "data"
+    config.mkdir(parents=True, exist_ok=True)
+    data.mkdir(exist_ok=True)
+    (config / "priv_validator_key.json").write_text(
+        json.dumps(
+            {
+                "address": address,
+                "pub_key": {
+                    "type": "tendermint/PubKeyEd25519",
+                    "value": encoded_public_key,
+                },
+                "priv_key": {
+                    "type": "tendermint/PrivKeyEd25519",
+                    "value": encoded_private_key,
+                },
+            }
+        )
+    )
+    (data / "priv_validator_state.json").write_text(
+        json.dumps({"height": "0", "round": 0, "step": 0})
+    )
+    (config / "priv_validator_key.json").chmod(0o600)
+    (data / "priv_validator_state.json").chmod(0o600)
+    return public_key
