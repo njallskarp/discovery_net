@@ -14,7 +14,12 @@ from discovery_net.node import (
     TransactionCode,
     TransactionValidator,
 )
-from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
+from discovery_net.wire import (
+    TRANSACTION_LIMITS,
+    encode_transaction,
+    sign_artifact,
+    sign_transaction,
+)
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -202,6 +207,22 @@ def test_finalize_block_preserves_transaction_order_and_returns_app_hash() -> No
     assert len(response.app_hash) == 32
     assert store.snapshot is None
     assert abci.ResponseFinalizeBlock.FromString(response.SerializeToString()) == response
+
+
+def test_finalize_block_rejects_an_oversized_transaction_that_bypassed_check_tx() -> None:
+    application, store = adapter()
+    oversized = bytes(TRANSACTION_LIMITS.maximum_encoded_bytes + 1)
+
+    proposal = application.process_proposal(abci.RequestProcessProposal(height=1, txs=(oversized,)))
+    finalized = application.finalize_block(abci.RequestFinalizeBlock(height=1, txs=(oversized,)))
+    application.commit(abci.RequestCommit())
+
+    assert proposal.status == abci.ResponseProcessProposal.ACCEPT
+    assert tuple(result.code for result in finalized.tx_results) == (
+        TransactionCode.TRANSACTION_TOO_LARGE,
+    )
+    assert finalized.app_hash == LocalArtifactLedger().state_hash()
+    assert store.snapshot == ArtifactLedgerSnapshot(height=1, entries=())
 
 
 def test_commit_persists_before_returning_an_acknowledgement() -> None:

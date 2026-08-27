@@ -23,6 +23,7 @@ from discovery_net.node import (
     TransactionValidator,
 )
 from discovery_net.wire import (
+    TRANSACTION_LIMITS,
     SignedTransaction,
     artifact_ref,
     decode_transaction,
@@ -97,6 +98,13 @@ def invalid_signature_transaction(title: str) -> bytes:
     return encode_transaction(replace(signed_transaction(title), signature=bytes(64)))
 
 
+def transaction_with_artifact_count(artifact_count: int) -> bytes:
+    envelopes = tuple(
+        signed_transaction(f"Artifact {index}").envelopes[0] for index in range(artifact_count)
+    )
+    return encode_transaction(sign_transaction(envelopes=envelopes, private_key=PRIVATE_KEY))
+
+
 def test_check_tx_reads_committed_state_without_mutation() -> None:
     handler, store = callback_handler()
     encoded = transaction("First")
@@ -105,6 +113,31 @@ def test_check_tx_reads_committed_state_without_mutation() -> None:
     assert handler.check_tx(encoded) == TransactionResult(code=TransactionCode.ACCEPTED)
     assert store.save_calls == 0
     assert store.snapshot is None
+
+
+def test_check_tx_and_finalize_block_enforce_identical_resource_limits() -> None:
+    rejected_transactions = (
+        (
+            bytes(TRANSACTION_LIMITS.maximum_encoded_bytes + 1),
+            TransactionCode.TRANSACTION_TOO_LARGE,
+        ),
+        (
+            transaction_with_artifact_count(TRANSACTION_LIMITS.maximum_artifacts + 1),
+            TransactionCode.TOO_MANY_ARTIFACTS,
+        ),
+    )
+
+    for transaction_bytes, expected_code in rejected_transactions:
+        handler, store = callback_handler()
+
+        checked = handler.check_tx(transaction_bytes)
+        finalized = handler.finalize_block(height=1, transactions=(transaction_bytes,))
+        committed = handler.commit()
+
+        assert checked.code is expected_code
+        assert finalized.transaction_results == (TransactionResult(code=expected_code),)
+        assert committed == ()
+        assert store.snapshot == ArtifactLedgerSnapshot(height=1, entries=())
 
 
 def test_committed_head_changes_only_after_successful_commit() -> None:

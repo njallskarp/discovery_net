@@ -1,5 +1,6 @@
 from dataclasses import replace
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -20,6 +21,7 @@ from discovery_net.node import (
     TransactionValidator,
 )
 from discovery_net.wire import (
+    TRANSACTION_LIMITS,
     SignedEnvelope,
     SignedTransaction,
     artifact_ref,
@@ -64,6 +66,19 @@ def validate(encoded: bytes, ledger: LocalArtifactLedger | None = None) -> Trans
     )
 
 
+def transaction_with_size(encoded_size: int) -> bytes:
+    base = Contribution(
+        kind=ContributionKind.PROBLEM_STATEMENT,
+        title="Boundary-sized contribution",
+        body="",
+        created_at=CREATED_AT,
+    )
+    base_size = len(encode_transaction(signed_transaction((base,))))
+    return encode_transaction(
+        signed_transaction((replace(base, body="x" * (encoded_size - base_size)),))
+    )
+
+
 def append(
     ledger: LocalArtifactLedger,
     transaction: SignedTransaction,
@@ -89,6 +104,8 @@ def test_transaction_codes_are_stable() -> None:
         "INVALID_SIGNATURE": TransactionCode(3),
         "DUPLICATE": TransactionCode(4),
         "MISSING_REFERENCE": TransactionCode(5),
+        "TRANSACTION_TOO_LARGE": TransactionCode(6),
+        "TOO_MANY_ARTIFACTS": TransactionCode(7),
     }
 
 
@@ -98,6 +115,49 @@ def test_accepts_a_canonical_signed_transaction_for_the_chain() -> None:
     assert validate(encode_transaction(transaction)) == TransactionResult(
         code=TransactionCode.ACCEPTED
     )
+
+
+def test_accepts_a_valid_transaction_at_the_encoded_byte_limit() -> None:
+    encoded = transaction_with_size(TRANSACTION_LIMITS.maximum_encoded_bytes)
+
+    assert len(encoded) == TRANSACTION_LIMITS.maximum_encoded_bytes
+    assert validate(encoded).code is TransactionCode.ACCEPTED
+
+
+def test_rejects_an_oversized_transaction_before_decoding() -> None:
+    encoded = bytes(TRANSACTION_LIMITS.maximum_encoded_bytes + 1)
+
+    with patch("discovery_net.node.transaction_validator.decode_transaction") as decode:
+        result = validate(encoded)
+
+    assert result.code is TransactionCode.TRANSACTION_TOO_LARGE
+    decode.assert_not_called()
+
+
+def test_accepts_the_maximum_number_of_artifacts() -> None:
+    transaction = signed_transaction(
+        tuple(
+            contribution(f"Contribution {index}")
+            for index in range(TRANSACTION_LIMITS.maximum_artifacts)
+        )
+    )
+
+    assert len(transaction.envelopes) == TRANSACTION_LIMITS.maximum_artifacts
+    assert validate(encode_transaction(transaction)).code is TransactionCode.ACCEPTED
+
+
+def test_rejects_one_artifact_over_the_atomic_package_limit() -> None:
+    transaction = signed_transaction(
+        tuple(
+            contribution(f"Contribution {index}")
+            for index in range(TRANSACTION_LIMITS.maximum_artifacts + 1)
+        )
+    )
+
+    encoded = encode_transaction(transaction)
+
+    assert len(encoded) <= TRANSACTION_LIMITS.maximum_encoded_bytes
+    assert validate(encoded).code is TransactionCode.TOO_MANY_ARTIFACTS
 
 
 def test_accepts_a_relation_to_a_contribution_in_the_same_atomic_transaction() -> None:
