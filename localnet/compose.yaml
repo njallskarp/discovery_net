@@ -1,1 +1,142 @@
-# Defines a local multi-node development network.
+name: ${COMPOSE_PROJECT_NAME:?Set a unique Compose project name for this node}
+
+x-service-security: &service-security
+  cap_drop:
+    - ALL
+  init: true
+  logging:
+    driver: json-file
+    options:
+      max-file: "3"
+      max-size: 10m
+  pids_limit: 128
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:size=16m,mode=1777
+
+services:
+  application:
+    <<: *service-security
+    image: ${DISCOVERY_NET_IMAGE:-discovery-net-node:local}
+    build:
+      context: ..
+      dockerfile: localnet/Dockerfile
+    user: ${DISCOVERY_NET_UID:-1000}:${DISCOVERY_NET_GID:-1000}
+    command:
+      - discovery-node
+      - --chain-id
+      - ${CHAIN_ID:?Set the trusted genesis chain ID}
+      - --ledger-path
+      - /var/lib/discovery-net/artifact-ledger.sqlite
+      - --abci-listen-address
+      - 0.0.0.0:26658
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; socket.create_connection(('127.0.0.1', 26658), 1).close()
+      interval: 1s
+      timeout: 1s
+      retries: 20
+    volumes:
+      - type: bind
+        source: ${LEDGER_DATA_DIRECTORY:?Set an absolute ledger data directory}
+        target: /var/lib/discovery-net
+    networks:
+      private:
+        aliases:
+          - application
+
+  cometbft:
+    <<: *service-security
+    image: ${DISCOVERY_NET_IMAGE:-discovery-net-node:local}
+    build:
+      context: ..
+      dockerfile: localnet/Dockerfile
+    user: ${DISCOVERY_NET_UID:-1000}:${DISCOVERY_NET_GID:-1000}
+    command:
+      - discovery-cometbft
+      - --home
+      - /var/lib/discovery-net/cometbft
+      - --moniker
+      - ${NODE_NAME:?Set a human-readable node name}
+      - --genesis
+      - /run/discovery-net/genesis.json
+      - --genesis-sha256
+      - ${GENESIS_SHA256:?Set the trusted genesis SHA-256 digest}
+      - --chain-id
+      - ${CHAIN_ID:?Set the trusted genesis chain ID}
+      - --abci-endpoint
+      - application:26658
+      - --rpc-listen-endpoint
+      - comet-private:26657
+      - --p2p-listen-endpoint
+      - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
+      - --p2p-advertised-endpoint
+      - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
+      - --persistent-peers=${PERSISTENT_PEERS:-}
+      - --no-address-book-strict
+      - --no-create-empty-blocks
+    depends_on:
+      application:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from urllib.request import urlopen; urlopen('http://comet-private:26657/status', timeout=1).close()
+      interval: 1s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - type: bind
+        source: ${COMETBFT_DATA_DIRECTORY:?Set an absolute CometBFT data directory}
+        target: /var/lib/discovery-net
+      - type: bind
+        source: ${GENESIS_FILE:?Set an absolute trusted genesis file}
+        target: /run/discovery-net/genesis.json
+        read_only: true
+    networks:
+      private:
+        aliases:
+          - comet-private
+      p2p:
+        aliases:
+          - ${P2P_ALIAS:?Set a unique P2P network alias}
+
+  rpc:
+    <<: *service-security
+    image: nginxinc/nginx-unprivileged:1.29.1-alpine@sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e
+    entrypoint:
+      - nginx
+    command:
+      - -g
+      - daemon off;
+    depends_on:
+      cometbft:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ./rpc.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    ports:
+      - target: 8080
+        published: ${RPC_PORT:?Set the host-local RPC port}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    networks:
+      - private
+      - edge
+
+networks:
+  private:
+    internal: true
+  edge: {}
+  p2p:
+    external: true
+    name: ${P2P_NETWORK:?Create and name an internal Docker P2P network}

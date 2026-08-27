@@ -27,7 +27,7 @@ def main() -> None:
             rpc_listen_endpoint=arguments.rpc_listen_endpoint,
             p2p_listen_endpoint=arguments.p2p_listen_endpoint,
             p2p_advertised_endpoint=arguments.p2p_advertised_endpoint,
-            persistent_peers=tuple(arguments.persistent_peer),
+            persistent_peers=arguments.persistent_peers,
             peer_exchange=arguments.peer_exchange,
             peer_admission=PeerAdmissionPolicy(
                 address_book_strict=arguments.address_book_strict,
@@ -54,10 +54,10 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--p2p-listen-endpoint", required=True, type=Endpoint.parse)
     parser.add_argument("--p2p-advertised-endpoint", type=Endpoint.parse)
     parser.add_argument(
-        "--persistent-peer",
-        action="append",
-        default=[],
-        type=PeerAddress.parse,
+        "--persistent-peers",
+        default=(),
+        type=_peer_addresses,
+        help="comma-separated CometBFT peer addresses",
     )
     parser.add_argument(
         "--peer-exchange",
@@ -78,6 +78,14 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-level", default="info")
     parser.add_argument("--cometbft-binary", default=Path("cometbft"), type=Path)
     return parser
+
+
+def _peer_addresses(value: str) -> tuple[PeerAddress, ...]:
+    if not isinstance(value, str):
+        raise TypeError("persistent peers must be a string")
+    if not value:
+        return ()
+    return tuple(PeerAddress.parse(peer) for peer in value.split(","))
 
 
 if __name__ == "__main__":
