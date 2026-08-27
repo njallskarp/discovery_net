@@ -62,13 +62,6 @@ class KnowledgeGraphQueries:
             and text in indexed.artifact.title.casefold()
         )
 
-    def children_by_parent_ref(
-        self,
-        parent_ref: ArtifactRef,
-    ) -> tuple[IndexedArtifact, ...]:
-        """Return contributions whose parent has the supplied reference."""
-        return self._index.children_of(parent_ref)
-
     def relations(self) -> tuple[IndexedArtifact, ...]:
         """Return all indexed contribution relations."""
         return self._index.relations()

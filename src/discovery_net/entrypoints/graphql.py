@@ -53,15 +53,15 @@ class _ArtifactNode:
 
     @strawberry.field
     def chain_id(self) -> str:
-        return self._indexed.ledger_entry.envelope.chain_id
+        return self._indexed.envelope.chain_id
 
     @strawberry.field
     def signer_public_key(self) -> str:
-        return self._indexed.ledger_entry.envelope.signer_public_key.hex()
+        return self._indexed.envelope.signer_public_key.hex()
 
     @strawberry.field
     def signature(self) -> str:
-        return self._indexed.ledger_entry.envelope.signature.hex()
+        return self._indexed.envelope.signature.hex()
 
     @strawberry.field
     def height(self) -> str:
@@ -96,27 +96,6 @@ class _ContributionNode(_ArtifactNode):
     @strawberry.field
     def body(self) -> str:
         return self._contribution.body
-
-    @strawberry.field
-    def parent_ref(self) -> strawberry.ID | None:
-        parent = self._contribution.parent
-        return None if parent is None else strawberry.ID(parent)
-
-    @strawberry.field
-    def parent(self, info: Info[_GraphQLContext, None]) -> _ContributionNode | None:
-        parent = self._contribution.parent
-        if parent is None:
-            return None
-        return _contribution_node(info.context.queries.artifact_by_ref(parent))
-
-    @strawberry.field
-    def children(
-        self,
-        info: Info[_GraphQLContext, None],
-        kind: ContributionKind | None = None,
-    ) -> list[_ContributionNode]:
-        children = info.context.queries.children_by_parent_ref(self._indexed.artifact_ref)
-        return _contribution_nodes(children, kind)
 
     @strawberry.field
     def outgoing_relations(

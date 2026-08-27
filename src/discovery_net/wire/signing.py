@@ -14,10 +14,12 @@ from discovery_net.wire.codec import (
     decode_payload,
     encode_payload,
     encode_signing_payload,
+    encode_transaction_signing_payload,
 )
-from discovery_net.wire.envelope import SignedEnvelope
+from discovery_net.wire.envelope import SignedEnvelope, SignedTransaction
 
 SIGNATURE_DOMAIN: Final = b"discovery-net:signed-envelope:\x00"
+TRANSACTION_SIGNATURE_DOMAIN: Final = b"discovery-net:signed-transaction:\x00"
 
 
 def sign_artifact(
@@ -62,5 +64,42 @@ def verify_envelope(envelope: SignedEnvelope) -> bool:
     return True
 
 
+def sign_transaction(
+    *,
+    envelopes: tuple[SignedEnvelope, ...],
+    private_key: Ed25519PrivateKey,
+) -> SignedTransaction:
+    """Authorize signed artifacts as one atomic transaction."""
+    if not isinstance(private_key, Ed25519PrivateKey):
+        raise TypeError("private_key must be an Ed25519PrivateKey")
+    public_key = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    unsigned = SignedTransaction(envelopes=envelopes, signature=bytes(64))
+    if unsigned.signer_public_key != public_key:
+        raise ValueError("transaction signer must match every envelope signer")
+    return SignedTransaction(
+        envelopes=envelopes,
+        signature=private_key.sign(_transaction_signature_message(unsigned)),
+    )
+
+
+def verify_transaction(transaction: SignedTransaction) -> bool:
+    """Verify every artifact signature and the atomic transaction signature."""
+    try:
+        if any(not verify_envelope(envelope) for envelope in transaction.envelopes):
+            return False
+        public_key = Ed25519PublicKey.from_public_bytes(transaction.signer_public_key)
+        public_key.verify(
+            transaction.signature,
+            _transaction_signature_message(transaction),
+        )
+    except (InvalidSignature, TypeError, ValueError):
+        return False
+    return True
+
+
 def _signature_message(envelope: SignedEnvelope) -> bytes:
     return SIGNATURE_DOMAIN + encode_signing_payload(envelope)
+
+
+def _transaction_signature_message(transaction: SignedTransaction) -> bytes:
+    return TRANSACTION_SIGNATURE_DOMAIN + encode_transaction_signing_payload(transaction)

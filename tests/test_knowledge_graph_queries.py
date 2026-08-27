@@ -15,7 +15,7 @@ from discovery_net.knowledge_graph import (
 )
 from discovery_net.node import ArtifactLedgerEntry, ArtifactLedgerSnapshot
 from discovery_net.query import KnowledgeGraphQueries
-from discovery_net.wire import artifact_ref, sign_artifact
+from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -47,8 +47,8 @@ def test_artifact_lookup_exposes_the_indexed_consensus_height() -> None:
     assert graph.queries.artifact_by_ref(ArtifactRef("missing")) is None
 
 
-def test_contribution_queries_expose_selection_and_traversal_explicitly() -> None:
-    # Entry points select all nodes, select a kind, or traverse a parent reference explicitly.
+def test_contribution_queries_expose_selection_explicitly() -> None:
+    # Entry points select all nodes or one kind without overloading filters with traversal.
     graph = _graph_fixture()
 
     assert _refs(graph.queries.contributions()) == (
@@ -61,10 +61,6 @@ def test_contribution_queries_expose_selection_and_traversal_explicitly() -> Non
     assert _refs(graph.queries.contributions_by_kind(ContributionKind.FINDING)) == (
         graph.finding,
         graph.other_finding,
-    )
-    assert _refs(graph.queries.children_by_parent_ref(graph.problem)) == (
-        graph.finding,
-        graph.discussion,
     )
     assert _refs(
         graph.queries.contributions_containing_title(
@@ -164,11 +160,11 @@ def _graph_fixture() -> _GraphFixture:
     problem = _append(entries, _contribution(ContributionKind.PROBLEM_STATEMENT, "A problem"))
     finding = _append(
         entries,
-        _contribution(ContributionKind.FINDING, "A finding", parent=problem),
+        _contribution(ContributionKind.FINDING, "A finding"),
     )
     discussion = _append(
         entries,
-        _contribution(ContributionKind.DISCUSSION, "A discussion", parent=problem),
+        _contribution(ContributionKind.DISCUSSION, "A discussion"),
     )
     other_finding = _append(
         entries,
@@ -205,31 +201,29 @@ def _graph_fixture() -> _GraphFixture:
 def _append(entries: list[ArtifactLedgerEntry], artifact: Artifact) -> ArtifactRef:
     height = 1 if len(entries) < 4 else 2
     transaction_index = len(entries) if height == 1 else len(entries) - 4
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=artifact,
+        private_key=PRIVATE_KEY,
+    )
     entry = ArtifactLedgerEntry(
-        envelope=sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=artifact,
-            private_key=PRIVATE_KEY,
-        ),
+        transaction=sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY),
         height=height,
         transaction_index=transaction_index,
     )
     entries.append(entry)
-    return artifact_ref(entry.envelope)
+    return artifact_ref(envelope)
 
 
 def _contribution(
     kind: ContributionKind,
     title: str,
-    *,
-    parent: ArtifactRef | None = None,
 ) -> Contribution:
     return Contribution(
         kind=kind,
         title=title,
         body=f"Body for {title}",
         created_at=NOW,
-        parent=parent,
     )
 
 

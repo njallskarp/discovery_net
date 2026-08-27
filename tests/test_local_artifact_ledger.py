@@ -6,25 +6,30 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.node import AppendOutcome, ArtifactLedgerEntry, LocalArtifactLedger
-from discovery_net.wire import SignedEnvelope, artifact_ref, sign_artifact
+from discovery_net.wire import SignedTransaction, artifact_ref, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 SECOND_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
 
 
-def signed_envelope(
+def signed_transaction(
     title: str,
     *,
     private_key: Ed25519PrivateKey = PRIVATE_KEY,
-) -> SignedEnvelope:
-    return sign_artifact(
-        chain_id=CHAIN_ID,
-        artifact=Contribution(
-            kind=ContributionKind.PROBLEM_STATEMENT,
-            title=title,
-            body=f"Body for {title}",
-            created_at=datetime(2026, 8, 24, 12, 30, tzinfo=UTC),
+) -> SignedTransaction:
+    return sign_transaction(
+        envelopes=(
+            sign_artifact(
+                chain_id=CHAIN_ID,
+                artifact=Contribution(
+                    kind=ContributionKind.PROBLEM_STATEMENT,
+                    title=title,
+                    body=f"Body for {title}",
+                    created_at=datetime(2026, 8, 24, 12, 30, tzinfo=UTC),
+                ),
+                private_key=private_key,
+            ),
         ),
         private_key=private_key,
     )
@@ -38,7 +43,7 @@ def entry(
     private_key: Ed25519PrivateKey = PRIVATE_KEY,
 ) -> ArtifactLedgerEntry:
     return ArtifactLedgerEntry(
-        envelope=signed_envelope(title, private_key=private_key),
+        transaction=signed_transaction(title, private_key=private_key),
         height=height,
         transaction_index=transaction_index,
     )
@@ -46,17 +51,17 @@ def entry(
 
 def test_state_hash_has_fixed_vectors_for_ordered_entries() -> None:
     empty = LocalArtifactLedger()
-    first, _ = empty.append_artifact(entry("First"))
-    second, _ = first.append_artifact(entry("Second", transaction_index=2))
+    first, _ = empty.append_transaction(entry("First"))
+    second, _ = first.append_transaction(entry("Second", transaction_index=2))
 
     assert empty.state_hash().hex() == (
         "658209c56cbbf49d7da1e00b6393fe444854670953c5e48cfa791f0fb750cb07"
     )
     assert first.state_hash().hex() == (
-        "0c86756587c6d668dfa8547620b488cb98f4a646017a1f1e35678407d8bc39b9"
+        "7a9035c712ac6ab9a2358f57580569804b1341794797663a71a897d7c94daff7"
     )
     assert second.state_hash().hex() == (
-        "f2283ca03d032196e7bef10667a5b569fe888f03fb522f131aaf9e8503516492"
+        "cce7ef2f4b326a344633923526ebc1f965414c215119eb5e1094245a77ab26a8"
     )
 
 
@@ -64,25 +69,44 @@ def test_append_returns_a_new_ledger_without_changing_the_original() -> None:
     empty = LocalArtifactLedger()
     first_entry = entry("First")
 
-    resulting, outcome = empty.append_artifact(first_entry)
+    resulting, outcome = empty.append_transaction(first_entry)
 
     assert outcome is AppendOutcome.ACCEPTED
     assert empty.entries() == ()
-    assert not empty.contains(artifact_ref(first_entry.envelope))
+    first_ref = artifact_ref(first_entry.transaction.envelopes[0])
+    assert not empty.contains(first_ref)
     assert resulting.entries() == (first_entry,)
-    assert resulting.contains(artifact_ref(first_entry.envelope))
+    assert resulting.contains(first_ref)
+    assert resulting.envelope_by_ref(first_ref) == first_entry.transaction.envelopes[0]
+
+
+def test_one_ledger_entry_atomically_records_every_transaction_artifact() -> None:
+    first_envelope = signed_transaction("First").envelopes[0]
+    second_envelope = signed_transaction("Second").envelopes[0]
+    transaction = sign_transaction(
+        envelopes=(first_envelope, second_envelope),
+        private_key=PRIVATE_KEY,
+    )
+    entry = ArtifactLedgerEntry(transaction=transaction, height=1, transaction_index=0)
+
+    resulting, outcome = LocalArtifactLedger().append_transaction(entry)
+
+    assert outcome is AppendOutcome.ACCEPTED
+    assert resulting.entries() == (entry,)
+    assert resulting.envelope_by_ref(artifact_ref(first_envelope)) == first_envelope
+    assert resulting.envelope_by_ref(artifact_ref(second_envelope)) == second_envelope
 
 
 def test_duplicate_append_returns_the_same_ledger() -> None:
     first_entry = entry("First")
     ledger = LocalArtifactLedger(entries=(first_entry,))
     duplicate = ArtifactLedgerEntry(
-        envelope=first_entry.envelope,
+        transaction=first_entry.transaction,
         height=2,
         transaction_index=0,
     )
 
-    resulting, outcome = ledger.append_artifact(duplicate)
+    resulting, outcome = ledger.append_transaction(duplicate)
 
     assert outcome is AppendOutcome.DUPLICATE
     assert resulting is ledger
@@ -99,7 +123,9 @@ def test_append_rejects_nonincreasing_block_positions(
     ledger = LocalArtifactLedger(entries=(entry("First", height=2, transaction_index=4),))
 
     with pytest.raises(ValueError, match="follow the current ledger position"):
-        ledger.append_artifact(entry("Second", height=height, transaction_index=transaction_index))
+        ledger.append_transaction(
+            entry("Second", height=height, transaction_index=transaction_index)
+        )
 
 
 def test_constructor_restores_the_same_ledger_from_ordered_entries() -> None:
@@ -111,7 +137,7 @@ def test_constructor_restores_the_same_ledger_from_ordered_entries() -> None:
     restored = LocalArtifactLedger(entries=entries)
     appended = LocalArtifactLedger()
     for ledger_entry in entries:
-        appended, outcome = appended.append_artifact(ledger_entry)
+        appended, outcome = appended.append_transaction(ledger_entry)
         assert outcome is AppendOutcome.ACCEPTED
 
     assert restored == appended
@@ -122,7 +148,7 @@ def test_constructor_restores_the_same_ledger_from_ordered_entries() -> None:
 def test_constructor_rejects_duplicate_artifacts() -> None:
     first_entry = entry("First")
     duplicate = ArtifactLedgerEntry(
-        envelope=first_entry.envelope,
+        transaction=first_entry.transaction,
         height=1,
         transaction_index=1,
     )
@@ -158,8 +184,8 @@ def test_artifact_identity_includes_the_signer() -> None:
     ledger = LocalArtifactLedger(entries=(first_entry,))
     second_signer = entry("First", private_key=SECOND_PRIVATE_KEY)
 
-    assert ledger.contains(artifact_ref(first_entry.envelope))
-    assert not ledger.contains(artifact_ref(second_signer.envelope))
+    assert ledger.contains(artifact_ref(first_entry.transaction.envelopes[0]))
+    assert not ledger.contains(artifact_ref(second_signer.transaction.envelopes[0]))
 
 
 @pytest.mark.parametrize(
@@ -179,7 +205,7 @@ def test_entry_rejects_positions_outside_the_canonical_range(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         ArtifactLedgerEntry(
-            envelope=signed_envelope("First"),
+            transaction=signed_transaction("First"),
             height=height,
             transaction_index=transaction_index,
         )
@@ -195,7 +221,7 @@ def test_entry_requires_integer_positions(
 ) -> None:
     with pytest.raises(TypeError, match="must be an integer"):
         ArtifactLedgerEntry(
-            envelope=signed_envelope("First"),
+            transaction=signed_transaction("First"),
             height=height,  # type: ignore[arg-type]
             transaction_index=transaction_index,  # type: ignore[arg-type]
         )
@@ -211,9 +237,9 @@ def test_ledger_requires_an_ordered_tuple_and_is_immutable() -> None:
 
 
 def test_entry_and_ledger_reject_values_of_the_wrong_type() -> None:
-    with pytest.raises(TypeError, match="envelope must be a SignedEnvelope"):
+    with pytest.raises(TypeError, match="transaction must be a SignedTransaction"):
         ArtifactLedgerEntry(
-            envelope=object(),  # type: ignore[arg-type]
+            transaction=object(),  # type: ignore[arg-type]
             height=1,
             transaction_index=0,
         )

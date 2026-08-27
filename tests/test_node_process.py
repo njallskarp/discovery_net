@@ -15,7 +15,7 @@ from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2 as abci
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2_grpc as abci_grpc
 from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.node import LocalArtifactLedger, SQLiteArtifactLedgerStore, TransactionCode
-from discovery_net.wire import encode_envelope, sign_artifact
+from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-process-test"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -62,18 +62,17 @@ def test_node_process_serves_abci_and_restores_committed_state(tmp_path: Path) -
 
 
 def _transaction() -> bytes:
-    return encode_envelope(
-        sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=Contribution(
-                kind=ContributionKind.PROBLEM_STATEMENT,
-                title="A process-level problem",
-                body="A process-level body",
-                created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
-            ),
-            private_key=PRIVATE_KEY,
-        )
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=Contribution(
+            kind=ContributionKind.PROBLEM_STATEMENT,
+            title="A process-level problem",
+            body="A process-level body",
+            created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
+        ),
+        private_key=PRIVATE_KEY,
     )
+    return encode_transaction(sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY))
 
 
 def _available_loopback_address() -> str:

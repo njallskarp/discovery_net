@@ -15,29 +15,6 @@ ROOT_REF = ArtifactRef("bafkreibm6jg3ux5qumhcn2b3flc3tyu6dmlb4xa7u5bf44yegnrjhc4
 AREA_REF = ArtifactRef("bafkreif2akiscaildc3up25n4nhiiu5cl2f3l5xptmm5x4ncug5ue5o3am")
 
 
-def test_root_contribution_has_no_parent_reference() -> None:
-    area = Contribution(
-        kind=ContributionKind.MATHEMATICAL_AREA,
-        title="Number theory",
-        body="The study of integers and arithmetic structures.",
-        created_at=NOW,
-    )
-
-    assert area.parent is None
-
-
-def test_reply_references_its_parent_artifact() -> None:
-    finding = Contribution(
-        kind=ContributionKind.FINDING,
-        title="Mellin inversion identity",
-        body="A potentially useful identity appears after applying Mellin inversion.",
-        created_at=NOW,
-        parent=ROOT_REF,
-    )
-
-    assert finding.parent == ROOT_REF
-
-
 def test_contribution_body_is_required() -> None:
     with pytest.raises(TypeError):
         Contribution(  # type: ignore[call-arg]
@@ -77,7 +54,6 @@ def test_review_artifacts_are_ordinary_contributions(kind: ContributionKind) -> 
         title=kind.value.replace("_", " ").title(),
         body="Review workflow details can be modeled later.",
         created_at=NOW,
-        parent=ROOT_REF,
     )
 
     assert contribution.kind is kind
@@ -93,6 +69,17 @@ def test_relation_connects_two_artifact_references() -> None:
 
     assert relation.from_contribution == AREA_REF
     assert relation.to_contribution == ROOT_REF
+
+
+def test_reply_is_an_ordinary_directed_relation() -> None:
+    relation = ContributionRelation(
+        from_contribution=AREA_REF,
+        to_contribution=ROOT_REF,
+        kind=RelationKind.REPLIES_TO,
+        created_at=NOW,
+    )
+
+    assert relation.kind is RelationKind.REPLIES_TO
 
 
 def test_relation_cannot_link_a_contribution_to_itself() -> None:

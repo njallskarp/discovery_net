@@ -25,7 +25,12 @@ from discovery_net.knowledge_graph import (
 )
 from discovery_net.node import SQLiteArtifactLedgerStore
 from discovery_net.query import KnowledgeGraphQueries
-from discovery_net.submission import ArtifactSubmitter, SubmissionError
+from discovery_net.submission import (
+    ArtifactSubmitter,
+    IncomingRelation,
+    OutgoingRelation,
+    SubmissionError,
+)
 from discovery_net.wire import PayloadType, parse_artifact_ref
 
 _DEFAULT_COMETBFT_RPC_URL = "http://127.0.0.1:26657"
@@ -34,7 +39,7 @@ _DEFAULT_COMETBFT_RPC_URL = "http://127.0.0.1:26657"
 class _SubmissionOutput(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    artifact_ref: ArtifactRef
+    artifact_refs: tuple[ArtifactRef, ...]
     accepted_for_broadcast: bool
 
 
@@ -53,7 +58,7 @@ class _ArtifactOutput(BaseModel):
     @classmethod
     def from_indexed(cls, indexed: IndexedArtifact) -> _ArtifactOutput:
         entry = indexed.ledger_entry
-        envelope = entry.envelope
+        envelope = indexed.envelope
         return cls(
             artifact_ref=indexed.artifact_ref,
             payload_type=envelope.payload_type,
@@ -96,20 +101,41 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
 def _submit(arguments: argparse.Namespace) -> int:
     private_key = _load_private_key(arguments.private_key)
-    contribution = Contribution(
-        kind=arguments.kind,
-        title=arguments.title,
-        body=arguments.body,
-        created_at=datetime.now(UTC),
-        parent=arguments.parent,
-    )
-    receipt = ArtifactSubmitter(
+    submitter = ArtifactSubmitter(
         private_key=private_key,
         cometbft_rpc_url=arguments.rpc_url,
-    ).submit(contribution)
+    )
+    if arguments.submission == "contribution":
+        receipt = submitter.submit_contribution(
+            Contribution(
+                kind=arguments.kind,
+                title=arguments.title,
+                body=arguments.body,
+                created_at=datetime.now(UTC),
+            ),
+            relations=(
+                *(
+                    OutgoingRelation(kind=kind, to_contribution=reference)
+                    for kind, reference in arguments.outgoing
+                ),
+                *(
+                    IncomingRelation(from_contribution=reference, kind=kind)
+                    for kind, reference in arguments.incoming
+                ),
+            ),
+        )
+    else:
+        receipt = submitter.submit_relation(
+            ContributionRelation(
+                from_contribution=arguments.from_contribution,
+                to_contribution=arguments.to_contribution,
+                kind=arguments.kind,
+                created_at=datetime.now(UTC),
+            )
+        )
     _write_output(
         _SubmissionOutput(
-            artifact_ref=receipt.artifact_ref,
+            artifact_refs=receipt.artifact_refs,
             accepted_for_broadcast=receipt.accepted,
         )
     )
@@ -171,8 +197,6 @@ def _execute_query(
             if arguments.kind is None
             else queries.contributions_by_kind(arguments.kind)
         )
-    if arguments.query == "children":
-        return queries.children_by_parent_ref(arguments.parent_ref)
     if arguments.query == "relations":
         return (
             queries.relations()
@@ -194,34 +218,69 @@ def _argument_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     submit = commands.add_parser(
         "submit",
-        help="submit a contribution",
-        description="Submit a contribution through a local Discovery Net node.",
+        help="submit knowledge",
+        description="Submit an atomic artifact transaction through a local node.",
     )
-    submit.add_argument(
-        "--private-key",
-        required=True,
-        type=Path,
-        help="path to an unencrypted Ed25519 PEM private key",
+    submissions = submit.add_subparsers(dest="submission", required=True)
+
+    contribution = submissions.add_parser(
+        "contribution",
+        help="submit a contribution and its initial relations",
     )
-    submit.add_argument(
+    _add_submission_arguments(contribution)
+    contribution.add_argument(
         "--kind",
         required=True,
         type=ContributionKind,
         choices=tuple(ContributionKind),
         help="mathematical or organizational role of the contribution",
     )
-    submit.add_argument("--title", required=True, help="short contribution title")
-    submit.add_argument("--body", required=True, help="contribution body")
-    submit.add_argument(
-        "--parent",
+    contribution.add_argument("--title", required=True, help="short contribution title")
+    contribution.add_argument("--body", required=True, help="contribution body")
+    contribution.add_argument(
+        "--outgoing",
+        action="append",
+        default=[],
+        type=_relation_argument,
+        metavar="KIND:CONTRIBUTION_REF",
+        help="initial relation from this contribution; may be repeated",
+    )
+    contribution.add_argument(
+        "--incoming",
+        action="append",
+        default=[],
+        type=_relation_argument,
+        metavar="KIND:CONTRIBUTION_REF",
+        help="initial relation to this contribution; may be repeated",
+    )
+
+    relation = submissions.add_parser(
+        "relation",
+        help="submit a relation between existing contributions",
+    )
+    _add_submission_arguments(relation)
+    relation.add_argument(
+        "--kind",
+        required=True,
+        type=RelationKind,
+        choices=tuple(RelationKind),
+        help="claimed relationship between the contributions",
+    )
+    relation.add_argument(
+        "--from",
+        dest="from_contribution",
+        required=True,
         type=_artifact_reference,
-        help="canonical artifact reference of the parent contribution",
+        help="source contribution reference",
     )
-    submit.add_argument(
-        "--rpc-url",
-        default=_DEFAULT_COMETBFT_RPC_URL,
-        help=f"local CometBFT RPC URL (default: {_DEFAULT_COMETBFT_RPC_URL})",
+    relation.add_argument(
+        "--to",
+        dest="to_contribution",
+        required=True,
+        type=_artifact_reference,
+        help="destination contribution reference",
     )
+
     query = commands.add_parser(
         "query",
         help="query committed knowledge",
@@ -245,9 +304,6 @@ def _argument_parser() -> argparse.ArgumentParser:
         choices=tuple(ContributionKind),
         help="only return contributions of this kind",
     )
-
-    children = queries.add_parser("children", help="list children of a parent artifact")
-    children.add_argument("parent_ref", type=_artifact_reference)
 
     relations = queries.add_parser("relations", help="list contribution relations")
     _add_relation_kind_argument(relations)
@@ -289,6 +345,20 @@ def _argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_submission_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--private-key",
+        required=True,
+        type=Path,
+        help="path to an unencrypted Ed25519 PEM private key",
+    )
+    parser.add_argument(
+        "--rpc-url",
+        default=_DEFAULT_COMETBFT_RPC_URL,
+        help=f"local CometBFT RPC URL (default: {_DEFAULT_COMETBFT_RPC_URL})",
+    )
+
+
 def _add_relation_kind_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--kind",
@@ -309,6 +379,16 @@ def _write_error(error: Exception) -> None:
 def _artifact_reference(value: str) -> ArtifactRef:
     try:
         return parse_artifact_ref(value)
+    except (TypeError, ValueError) as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def _relation_argument(value: str) -> tuple[RelationKind, ArtifactRef]:
+    kind_value, separator, reference_value = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("relation must use KIND:CONTRIBUTION_REF")
+    try:
+        return RelationKind(kind_value), parse_artifact_ref(reference_value)
     except (TypeError, ValueError) as error:
         raise argparse.ArgumentTypeError(str(error)) from error
 

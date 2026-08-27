@@ -22,7 +22,7 @@ from discovery_net.node.transaction_validator import (
     TransactionResult,
     TransactionValidator,
 )
-from discovery_net.wire import decode_envelope
+from discovery_net.wire import decode_transaction
 
 _MAX_INT64: Final = (1 << 63) - 1
 
@@ -169,11 +169,11 @@ class CometBFTCallbackHandler:
                     continue
 
                 entry = ArtifactLedgerEntry(
-                    envelope=decode_envelope(transaction),
+                    transaction=decode_transaction(transaction),
                     height=height,
                     transaction_index=transaction_index,
                 )
-                ledger, outcome = ledger.append_artifact(entry)
+                ledger, outcome = ledger.append_transaction(entry)
                 if outcome is not AppendOutcome.ACCEPTED:
                     raise RuntimeError("validated transaction could not be appended")
                 new_entries.append(entry)

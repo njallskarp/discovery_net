@@ -26,11 +26,17 @@ from discovery_net.node import (
     ArtifactLedgerSnapshot,
     SQLiteArtifactLedgerStore,
 )
-from discovery_net.submission import ArtifactSubmitter, SubmissionReceipt
-from discovery_net.wire import artifact_ref, sign_artifact
+from discovery_net.submission import (
+    ArtifactSubmitter,
+    IncomingRelation,
+    OutgoingRelation,
+    SubmissionReceipt,
+)
+from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
 
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
-PARENT_REF = "bafkreiheoeszncz3oecj7pciali6ictr5ijvtxwpvowpoczulcadpvh7bq"
+PARENT_REF = ArtifactRef("bafkreiheoeszncz3oecj7pciali6ictr5ijvtxwpvowpoczulcadpvh7bq")
+OTHER_REF = ArtifactRef("bafkreickvwi5x3dzjh5ap7qa5onmiusawgdigfdufxph4v5ubzgku2aymm")
 
 
 def test_cli_builds_and_submits_a_contribution_to_the_local_node(
@@ -40,8 +46,8 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
     """Path: CLI arguments → contribution → submitter; guards the agent-facing boundary."""
     key_path = _write_private_key(tmp_path)
     submitter = MagicMock(spec=ArtifactSubmitter)
-    submitter.submit.return_value = SubmissionReceipt(
-        artifact_ref=ArtifactRef("bafy-artifact"),
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-artifact"),),
         accepted=True,
     )
 
@@ -52,6 +58,7 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
         exit_code = main(
             (
                 "submit",
+                "contribution",
                 "--private-key",
                 str(key_path),
                 "--kind",
@@ -60,8 +67,10 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
                 "A spectral approach",
                 "--body",
                 "Consider the associated operator.",
-                "--parent",
-                PARENT_REF,
+                "--outgoing",
+                f"about:{PARENT_REF}",
+                "--incoming",
+                f"cites:{PARENT_REF}",
             )
         )
 
@@ -70,20 +79,23 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
     assert captured.out.endswith("\n")
     assert captured.err == ""
     assert json.loads(captured.out) == {
-        "artifact_ref": "bafy-artifact",
+        "artifact_refs": ["bafy-artifact"],
         "accepted_for_broadcast": True,
     }
     constructor_arguments = submitter_type.call_args.kwargs
     assert constructor_arguments["cometbft_rpc_url"] == "http://127.0.0.1:26657"
     loaded_key = constructor_arguments["private_key"]
     assert isinstance(loaded_key, Ed25519PrivateKey)
-    contribution = submitter.submit.call_args.args[0]
+    contribution = submitter.submit_contribution.call_args.args[0]
     assert isinstance(contribution, Contribution)
     assert contribution.kind is ContributionKind.PROOF_ATTEMPT
     assert contribution.title == "A spectral approach"
     assert contribution.body == "Consider the associated operator."
-    assert contribution.parent == PARENT_REF
     assert contribution.created_at.utcoffset() is not None
+    assert submitter.submit_contribution.call_args.kwargs["relations"] == (
+        OutgoingRelation(kind=RelationKind.ABOUT, to_contribution=PARENT_REF),
+        IncomingRelation(from_contribution=PARENT_REF, kind=RelationKind.CITES),
+    )
 
 
 def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
@@ -93,8 +105,8 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
     """Path: rejected CheckTx → CLI result; guards acceptance from being reported as success."""
     key_path = _write_private_key(tmp_path)
     submitter = MagicMock(spec=ArtifactSubmitter)
-    submitter.submit.return_value = SubmissionReceipt(
-        artifact_ref=ArtifactRef("bafy-rejected"),
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-rejected"),),
         accepted=False,
     )
 
@@ -102,6 +114,7 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
         exit_code = main(
             (
                 "submit",
+                "contribution",
                 "--private-key",
                 str(key_path),
                 "--kind",
@@ -117,6 +130,43 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
     assert json.loads(capsys.readouterr().out)["accepted_for_broadcast"] is False
 
 
+def test_cli_submits_a_post_hoc_relation_between_existing_contributions(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Path: relation arguments → relation artifact; guards the post-hoc connection workflow."""
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+    submitter.submit_relation.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-relation"),),
+        accepted=True,
+    )
+
+    with patch("discovery_net.entrypoints.cli.ArtifactSubmitter", return_value=submitter):
+        exit_code = main(
+            (
+                "submit",
+                "relation",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                RelationKind.CITES,
+                "--from",
+                PARENT_REF,
+                "--to",
+                OTHER_REF,
+            )
+        )
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)["artifact_refs"] == ["bafy-relation"]
+    relation = submitter.submit_relation.call_args.args[0]
+    assert isinstance(relation, ContributionRelation)
+    assert relation.from_contribution == PARENT_REF
+    assert relation.to_contribution == OTHER_REF
+    assert relation.kind is RelationKind.CITES
+
+
 def test_cli_reports_an_invalid_private_key(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -128,6 +178,7 @@ def test_cli_reports_an_invalid_private_key(
     exit_code = main(
         (
             "submit",
+            "contribution",
             "--private-key",
             str(key_path),
             "--kind",
@@ -166,7 +217,6 @@ def test_cli_returns_a_committed_artifact_with_its_provenance(
         "title": "A problem",
         "body": "Body for A problem",
         "created_at": "2026-08-26T16:00:00Z",
-        "parent": None,
     }
     assert artifact["chain_id"] == "discovery-net-devnet"
     assert artifact["signer_public_key"] == PRIVATE_KEY.public_key().public_bytes_raw().hex()
@@ -188,9 +238,6 @@ def test_cli_maps_explicit_query_commands_to_the_knowledge_graph(
         references["finding"],
     )
     assert _output_refs(_run_query(ledger_path, capsys, "contributions", "--kind", "finding")) == (
-        references["finding"],
-    )
-    assert _output_refs(_run_query(ledger_path, capsys, "children", references["problem"])) == (
         references["finding"],
     )
     assert _output_refs(_run_query(ledger_path, capsys, "relations")) == (references["relation"],)
@@ -254,7 +301,7 @@ def test_cli_executes_graphql_with_variables_against_the_local_ledger(
               contributions(kind: $kind) {
                 artifactRef
                 title
-                parent { artifactRef title }
+                supported: outgoingContributions(via: SUPPORTS) { artifactRef title }
               }
             }
             """,
@@ -271,10 +318,12 @@ def test_cli_executes_graphql_with_variables_against_the_local_ledger(
                 {
                     "artifactRef": references["finding"],
                     "title": "A finding",
-                    "parent": {
-                        "artifactRef": references["problem"],
-                        "title": "A problem",
-                    },
+                    "supported": [
+                        {
+                            "artifactRef": references["problem"],
+                            "title": "A problem",
+                        }
+                    ],
                 }
             ],
         },
@@ -337,18 +386,17 @@ def _write_ledger(directory: Path) -> tuple[Path, dict[str, ArtifactRef]]:
     entries = [
         _ledger_entry(artifact, transaction_index=index) for index, artifact in enumerate(artifacts)
     ]
-    area_ref, problem_ref = (artifact_ref(entry.envelope) for entry in entries)
+    area_ref, problem_ref = (artifact_ref(entry.transaction.envelopes[0]) for entry in entries)
     finding_entry = _ledger_entry(
         Contribution(
             kind=ContributionKind.FINDING,
             title="A finding",
             body="Body for A finding",
             created_at=datetime(2026, 8, 26, 16, tzinfo=UTC),
-            parent=problem_ref,
         ),
         transaction_index=2,
     )
-    finding_ref = artifact_ref(finding_entry.envelope)
+    finding_ref = artifact_ref(finding_entry.transaction.envelopes[0])
     relation_entry = _ledger_entry(
         ContributionRelation(
             from_contribution=finding_ref,
@@ -369,17 +417,18 @@ def _write_ledger(directory: Path) -> tuple[Path, dict[str, ArtifactRef]]:
         "area": area_ref,
         "problem": problem_ref,
         "finding": finding_ref,
-        "relation": artifact_ref(relation_entry.envelope),
+        "relation": artifact_ref(relation_entry.transaction.envelopes[0]),
     }
 
 
 def _ledger_entry(artifact: Artifact, *, transaction_index: int) -> ArtifactLedgerEntry:
+    envelope = sign_artifact(
+        chain_id="discovery-net-devnet",
+        artifact=artifact,
+        private_key=PRIVATE_KEY,
+    )
     return ArtifactLedgerEntry(
-        envelope=sign_artifact(
-            chain_id="discovery-net-devnet",
-            artifact=artifact,
-            private_key=PRIVATE_KEY,
-        ),
+        transaction=sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY),
         height=1,
         transaction_index=transaction_index,
     )

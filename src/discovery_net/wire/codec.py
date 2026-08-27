@@ -18,7 +18,7 @@ from pydantic import (
 from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
 from discovery_net.knowledge_graph.identifiers import ArtifactRef
 from discovery_net.knowledge_graph.models import Artifact, Contribution, ContributionRelation
-from discovery_net.wire.envelope import PayloadType, SignedEnvelope
+from discovery_net.wire.envelope import PayloadType, SignedEnvelope, SignedTransaction
 
 type JSONObject = dict[str, object]
 
@@ -35,15 +35,7 @@ class _ContributionPayload(_WireModel):
     body: StrictStr
     created_at: AwareDatetime
     kind: ContributionKind
-    parent: StrictStr | None
     title: StrictStr
-
-    @field_validator("parent")
-    @classmethod
-    def validate_parent(cls, value: str | None) -> str | None:
-        if value is not None:
-            parse_artifact_ref(value)
-        return value
 
 
 class _RelationPayload(_WireModel):
@@ -86,6 +78,17 @@ class _EnvelopePayload(_WireModel):
         return value
 
 
+class _TransactionPayload(_WireModel):
+    envelopes: tuple[_EnvelopePayload, ...]
+    signature: StrictStr
+
+    @field_validator("signature")
+    @classmethod
+    def validate_signature(cls, value: str) -> str:
+        _validate_lower_hex(value, "signature", 64)
+        return value
+
+
 def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
     """Encode a supported knowledge-graph artifact into canonical JSON bytes."""
 
@@ -95,7 +98,6 @@ def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
                 body=artifact.body,
                 created_at=artifact.created_at,
                 kind=artifact.kind,
-                parent=artifact.parent,
                 title=artifact.title,
             )
             return PayloadType.CONTRIBUTION, _canonical_json(_contribution_value(model))
@@ -128,7 +130,6 @@ def decode_payload(payload_type: PayloadType, data: bytes) -> Artifact:
                 title=model.title,
                 body=model.body,
                 created_at=model.created_at,
-                parent=ArtifactRef(model.parent) if model.parent is not None else None,
             )
         elif payload_type is PayloadType.CONTRIBUTION_RELATION:
             relation = _RelationPayload.model_validate_json(data)
@@ -173,22 +174,46 @@ def decode_envelope(data: bytes) -> SignedEnvelope:
 
     try:
         model = _EnvelopePayload.model_validate_json(data)
-        envelope = SignedEnvelope(
-            chain_id=model.chain_id,
-            payload_type=model.payload_type,
-            payload=_canonical_json(model.payload),
-            signer_public_key=bytes.fromhex(model.signer_public_key),
-            signature=bytes.fromhex(model.signature),
-        )
+        envelope = _envelope_from_model(model)
     except ValidationError as error:
         raise CodecError("envelope fields are invalid") from error
     except (TypeError, ValueError) as error:
         raise CodecError("envelope fields are invalid") from error
 
-    decode_payload(envelope.payload_type, envelope.payload)
     if encode_envelope(envelope) != data:
         raise CodecError("envelope is not canonical")
     return envelope
+
+
+def encode_transaction_signing_payload(transaction: SignedTransaction) -> bytes:
+    """Encode exactly the transaction fields covered by its signature."""
+    return _canonical_json(_transaction_value(transaction, include_signature=False))
+
+
+def encode_transaction(transaction: SignedTransaction) -> bytes:
+    """Encode an atomic signed transaction into its unique wire representation."""
+    return _canonical_json(_transaction_value(transaction, include_signature=True))
+
+
+def decode_transaction(data: bytes) -> SignedTransaction:
+    """Decode one canonical atomic transaction."""
+    if not isinstance(data, bytes):
+        raise TypeError("transaction data must be bytes")
+
+    try:
+        model = _TransactionPayload.model_validate_json(data)
+        transaction = SignedTransaction(
+            envelopes=tuple(_envelope_from_model(envelope) for envelope in model.envelopes),
+            signature=bytes.fromhex(model.signature),
+        )
+    except ValidationError as error:
+        raise CodecError("transaction fields are invalid") from error
+    except (TypeError, ValueError) as error:
+        raise CodecError("transaction fields are invalid") from error
+
+    if encode_transaction(transaction) != data:
+        raise CodecError("transaction is not canonical")
+    return transaction
 
 
 def artifact_ref(envelope: SignedEnvelope) -> ArtifactRef:
@@ -223,7 +248,6 @@ def _contribution_value(model: _ContributionPayload) -> JSONObject:
         "body": model.body,
         "created_at": _encode_datetime(model.created_at),
         "kind": model.kind.value,
-        "parent": model.parent,
         "title": model.title,
     }
 
@@ -264,6 +288,33 @@ def _envelope_value(envelope: SignedEnvelope, *, include_signature: bool) -> JSO
     if include_signature:
         value["signature"] = model.signature
     return value
+
+
+def _transaction_value(
+    transaction: SignedTransaction,
+    *,
+    include_signature: bool,
+) -> JSONObject:
+    value: JSONObject = {
+        "envelopes": [
+            _envelope_value(envelope, include_signature=True) for envelope in transaction.envelopes
+        ]
+    }
+    if include_signature:
+        value["signature"] = transaction.signature.hex()
+    return value
+
+
+def _envelope_from_model(model: _EnvelopePayload) -> SignedEnvelope:
+    envelope = SignedEnvelope(
+        chain_id=model.chain_id,
+        payload_type=model.payload_type,
+        payload=_canonical_json(model.payload),
+        signer_public_key=bytes.fromhex(model.signer_public_key),
+        signature=bytes.fromhex(model.signature),
+    )
+    decode_payload(envelope.payload_type, envelope.payload)
+    return envelope
 
 
 def _canonical_json(value: object) -> bytes:

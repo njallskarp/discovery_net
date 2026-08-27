@@ -4,7 +4,12 @@ from datetime import UTC, datetime
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from discovery_net.knowledge_graph import Contribution, ContributionKind
+from discovery_net.knowledge_graph import (
+    Contribution,
+    ContributionKind,
+    ContributionRelation,
+    RelationKind,
+)
 from discovery_net.node import (
     AppendOutcome,
     ArtifactLedgerEntry,
@@ -17,7 +22,14 @@ from discovery_net.node import (
     TransactionResult,
     TransactionValidator,
 )
-from discovery_net.wire import SignedEnvelope, decode_envelope, encode_envelope, sign_artifact
+from discovery_net.wire import (
+    SignedTransaction,
+    artifact_ref,
+    decode_transaction,
+    encode_transaction,
+    sign_artifact,
+    sign_transaction,
+)
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -42,25 +54,30 @@ class MemoryArtifactLedgerStore:
         self.saved_snapshots.append(snapshot)
 
 
-def signed_envelope(
+def signed_transaction(
     title: str,
     *,
     chain_id: str = CHAIN_ID,
-) -> SignedEnvelope:
-    return sign_artifact(
-        chain_id=chain_id,
-        artifact=Contribution(
-            kind=ContributionKind.PROBLEM_STATEMENT,
-            title=title,
-            body=f"Body for {title}",
-            created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
+) -> SignedTransaction:
+    return sign_transaction(
+        envelopes=(
+            sign_artifact(
+                chain_id=chain_id,
+                artifact=Contribution(
+                    kind=ContributionKind.PROBLEM_STATEMENT,
+                    title=title,
+                    body=f"Body for {title}",
+                    created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
+                ),
+                private_key=PRIVATE_KEY,
+            ),
         ),
         private_key=PRIVATE_KEY,
     )
 
 
 def transaction(title: str, *, chain_id: str = CHAIN_ID) -> bytes:
-    return encode_envelope(signed_envelope(title, chain_id=chain_id))
+    return encode_transaction(signed_transaction(title, chain_id=chain_id))
 
 
 def callback_handler(
@@ -77,7 +94,7 @@ def callback_handler(
 
 
 def invalid_signature_transaction(title: str) -> bytes:
-    return encode_envelope(replace(signed_envelope(title), signature=bytes(64)))
+    return encode_transaction(replace(signed_transaction(title), signature=bytes(64)))
 
 
 def test_check_tx_reads_committed_state_without_mutation() -> None:
@@ -225,9 +242,9 @@ def test_finalize_block_executes_transactions_in_order_without_persisting() -> N
 
     expected_ledger = LocalArtifactLedger()
     for transaction_index in (0, 5):
-        expected_ledger, outcome = expected_ledger.append_artifact(
+        expected_ledger, outcome = expected_ledger.append_transaction(
             ArtifactLedgerEntry(
-                envelope=decode_envelope(transactions[transaction_index]),
+                transaction=decode_transaction(transactions[transaction_index]),
                 height=1,
                 transaction_index=transaction_index,
             )
@@ -237,7 +254,7 @@ def test_finalize_block_executes_transactions_in_order_without_persisting() -> N
     assert result == FinalizeBlockResult(
         transaction_results=(
             TransactionResult(code=TransactionCode.ACCEPTED),
-            TransactionResult(code=TransactionCode.INVALID_ENVELOPE),
+            TransactionResult(code=TransactionCode.INVALID_TRANSACTION),
             TransactionResult(code=TransactionCode.WRONG_CHAIN),
             TransactionResult(code=TransactionCode.INVALID_SIGNATURE),
             TransactionResult(code=TransactionCode.DUPLICATE),
@@ -250,6 +267,64 @@ def test_finalize_block_executes_transactions_in_order_without_persisting() -> N
     assert handler.check_tx(first) == TransactionResult(code=TransactionCode.ACCEPTED)
 
 
+def test_finalize_block_applies_every_artifact_in_one_transaction_atomically() -> None:
+    handler, store = callback_handler()
+    problem = signed_transaction("Problem").envelopes[0]
+    area = signed_transaction("Area").envelopes[0]
+    relation = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=ContributionRelation(
+            from_contribution=artifact_ref(problem),
+            to_contribution=artifact_ref(area),
+            kind=RelationKind.ABOUT,
+            created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
+        ),
+        private_key=PRIVATE_KEY,
+    )
+    encoded = encode_transaction(
+        sign_transaction(
+            envelopes=(problem, relation, area),
+            private_key=PRIVATE_KEY,
+        )
+    )
+
+    result = handler.finalize_block(height=1, transactions=(encoded,))
+    committed = handler.commit()
+
+    assert result.transaction_results == (TransactionResult(code=TransactionCode.ACCEPTED),)
+    assert len(committed) == 1
+    assert len(committed[0].transaction.envelopes) == 3
+    assert store.snapshot == ArtifactLedgerSnapshot(height=1, entries=committed)
+
+
+def test_finalize_block_discards_an_entire_transaction_with_a_missing_endpoint() -> None:
+    handler, store = callback_handler()
+    problem = signed_transaction("Problem").envelopes[0]
+    missing_area = signed_transaction("Missing area").envelopes[0]
+    relation = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=ContributionRelation(
+            from_contribution=artifact_ref(problem),
+            to_contribution=artifact_ref(missing_area),
+            kind=RelationKind.ABOUT,
+            created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
+        ),
+        private_key=PRIVATE_KEY,
+    )
+    encoded = encode_transaction(
+        sign_transaction(envelopes=(problem, relation), private_key=PRIVATE_KEY)
+    )
+
+    result = handler.finalize_block(height=1, transactions=(encoded,))
+    committed = handler.commit()
+
+    assert result.transaction_results == (
+        TransactionResult(code=TransactionCode.MISSING_REFERENCE),
+    )
+    assert committed == ()
+    assert store.snapshot == ArtifactLedgerSnapshot(height=1, entries=())
+
+
 def test_commit_persists_then_promotes_pending_state() -> None:
     handler, store = callback_handler()
     encoded = transaction("First")
@@ -259,7 +334,7 @@ def test_commit_persists_then_promotes_pending_state() -> None:
 
     assert len(committed_entries) == 1
     assert committed_entries[0] == ArtifactLedgerEntry(
-        envelope=decode_envelope(encoded),
+        transaction=decode_transaction(encoded),
         height=1,
         transaction_index=0,
     )
@@ -354,7 +429,7 @@ def test_handler_recovers_committed_state_from_store() -> None:
     assert store.snapshot.height == 2
     assert len(store.snapshot.entries) == 2
     assert len(newly_committed) == 1
-    assert newly_committed[0].envelope == decode_envelope(second)
+    assert newly_committed[0].transaction == decode_transaction(second)
 
 
 def test_uncommitted_block_can_be_reexecuted_after_restart() -> None:
@@ -372,17 +447,23 @@ def test_uncommitted_block_can_be_reexecuted_after_restart() -> None:
 
 
 @pytest.mark.parametrize(
-    "envelope",
+    "transaction",
     [
-        signed_envelope("Wrong chain", chain_id="discovery-net-mainnet"),
-        replace(signed_envelope("Invalid signature"), signature=bytes(64)),
+        signed_transaction("Wrong chain", chain_id="discovery-net-mainnet"),
+        replace(signed_transaction("Invalid signature"), signature=bytes(64)),
     ],
 )
-def test_handler_rejects_invalid_stored_transactions(envelope: SignedEnvelope) -> None:
+def test_handler_rejects_invalid_stored_transactions(transaction: SignedTransaction) -> None:
     store = MemoryArtifactLedgerStore(
         snapshot=ArtifactLedgerSnapshot(
             height=1,
-            entries=(ArtifactLedgerEntry(envelope=envelope, height=1, transaction_index=0),),
+            entries=(
+                ArtifactLedgerEntry(
+                    transaction=transaction,
+                    height=1,
+                    transaction_index=0,
+                ),
+            ),
         )
     )
 
@@ -391,13 +472,13 @@ def test_handler_rejects_invalid_stored_transactions(envelope: SignedEnvelope) -
 
 
 def test_handler_rejects_duplicate_artifacts_in_stored_state() -> None:
-    envelope = signed_envelope("First")
+    transaction = signed_transaction("First")
     store = MemoryArtifactLedgerStore(
         snapshot=ArtifactLedgerSnapshot(
             height=1,
             entries=(
-                ArtifactLedgerEntry(envelope=envelope, height=1, transaction_index=0),
-                ArtifactLedgerEntry(envelope=envelope, height=1, transaction_index=1),
+                ArtifactLedgerEntry(transaction=transaction, height=1, transaction_index=0),
+                ArtifactLedgerEntry(transaction=transaction, height=1, transaction_index=1),
             ),
         )
     )
@@ -429,7 +510,9 @@ def test_separate_handlers_produce_identical_results_and_snapshots() -> None:
             0,
             (
                 ArtifactLedgerEntry(
-                    envelope=signed_envelope("First"), height=1, transaction_index=0
+                    transaction=signed_transaction("First"),
+                    height=1,
+                    transaction_index=0,
                 ),
             ),
         ),

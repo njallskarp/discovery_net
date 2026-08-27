@@ -10,11 +10,27 @@ from urllib.request import Request
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from discovery_net.knowledge_graph import Contribution, ContributionKind
-from discovery_net.submission import ArtifactSubmitter, SubmissionError
+from discovery_net.knowledge_graph import (
+    Contribution,
+    ContributionKind,
+    ContributionRelation,
+    RelationKind,
+)
+from discovery_net.submission import (
+    ArtifactSubmitter,
+    IncomingRelation,
+    OutgoingRelation,
+    SubmissionError,
+)
 from discovery_net.submission._broadcast_response import _BroadcastResponse
 from discovery_net.submission._cometbft_rpc_client import _CometBFTRPCClient
-from discovery_net.wire import artifact_ref, decode_envelope, decode_payload, verify_envelope
+from discovery_net.wire import (
+    artifact_ref,
+    decode_payload,
+    decode_transaction,
+    sign_artifact,
+    verify_transaction,
+)
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -25,9 +41,33 @@ ARTIFACT = Contribution(
     body="All nontrivial zeros have real part one half.",
     created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
 )
+AREA_REF = artifact_ref(
+    sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=Contribution(
+            kind=ContributionKind.MATHEMATICAL_AREA,
+            title="Number theory",
+            body="The study of integers.",
+            created_at=ARTIFACT.created_at,
+        ),
+        private_key=PRIVATE_KEY,
+    )
+)
+QUESTION_REF = artifact_ref(
+    sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=Contribution(
+            kind=ContributionKind.QUESTION,
+            title="What is known?",
+            body="Collect the known results.",
+            created_at=ARTIFACT.created_at,
+        ),
+        private_key=PRIVATE_KEY,
+    )
+)
 
 
-def test_submitter_signs_and_broadcasts_an_artifact() -> None:
+def test_submitter_atomically_broadcasts_a_contribution_and_both_relation_directions() -> None:
     captured_transaction: bytes | None = None
 
     def broadcast(
@@ -48,15 +88,80 @@ def test_submitter_signs_and_broadcasts_an_artifact() -> None:
         patch.object(_CometBFTRPCClient, "broadcast_transaction", autospec=True) as rpc,
     ):
         rpc.side_effect = broadcast
-        receipt = _submitter().submit(ARTIFACT)
+        receipt = _submitter().submit_contribution(
+            ARTIFACT,
+            relations=(
+                OutgoingRelation(kind=RelationKind.ABOUT, to_contribution=AREA_REF),
+                IncomingRelation(from_contribution=QUESTION_REF, kind=RelationKind.CITES),
+            ),
+        )
 
     assert captured_transaction is not None
-    envelope = decode_envelope(captured_transaction)
-    assert envelope.chain_id == CHAIN_ID
-    assert decode_payload(envelope.payload_type, envelope.payload) == ARTIFACT
-    assert verify_envelope(envelope)
-    assert receipt.artifact_ref == artifact_ref(envelope)
+    transaction = decode_transaction(captured_transaction)
+    contribution_envelope, outgoing_envelope, incoming_envelope = transaction.envelopes
+    contribution_ref = artifact_ref(contribution_envelope)
+    assert transaction.chain_id == CHAIN_ID
+    assert (
+        decode_payload(contribution_envelope.payload_type, contribution_envelope.payload)
+        == ARTIFACT
+    )
+    assert decode_payload(outgoing_envelope.payload_type, outgoing_envelope.payload) == (
+        ContributionRelation(
+            from_contribution=contribution_ref,
+            to_contribution=AREA_REF,
+            kind=RelationKind.ABOUT,
+            created_at=ARTIFACT.created_at,
+        )
+    )
+    assert decode_payload(incoming_envelope.payload_type, incoming_envelope.payload) == (
+        ContributionRelation(
+            from_contribution=QUESTION_REF,
+            to_contribution=contribution_ref,
+            kind=RelationKind.CITES,
+            created_at=ARTIFACT.created_at,
+        )
+    )
+    assert verify_transaction(transaction)
+    assert receipt.artifact_refs == tuple(
+        artifact_ref(envelope) for envelope in transaction.envelopes
+    )
     assert receipt.accepted
+
+
+def test_submitter_broadcasts_a_post_hoc_relation_as_one_artifact_transaction() -> None:
+    captured_transaction: bytes | None = None
+
+    def broadcast(
+        _client: _CometBFTRPCClient,
+        transaction: bytes,
+    ) -> _BroadcastResponse:
+        nonlocal captured_transaction
+        captured_transaction = transaction
+        return _response(transaction)
+
+    relation = ContributionRelation(
+        from_contribution=QUESTION_REF,
+        to_contribution=AREA_REF,
+        kind=RelationKind.CITES,
+        created_at=ARTIFACT.created_at,
+    )
+    with (
+        patch.object(_CometBFTRPCClient, "fetch_chain_id", autospec=True, return_value=CHAIN_ID),
+        patch.object(
+            _CometBFTRPCClient,
+            "broadcast_transaction",
+            autospec=True,
+            side_effect=broadcast,
+        ),
+    ):
+        receipt = _submitter().submit_relation(relation)
+
+    assert captured_transaction is not None
+    transaction = decode_transaction(captured_transaction)
+    assert len(transaction.envelopes) == 1
+    envelope = transaction.envelopes[0]
+    assert decode_payload(envelope.payload_type, envelope.payload) == relation
+    assert receipt.artifact_refs == (artifact_ref(envelope),)
 
 
 def test_submitter_reports_a_rejected_check_tx_without_claiming_commitment() -> None:
@@ -72,7 +177,7 @@ def test_submitter_reports_a_rejected_check_tx_without_claiming_commitment() -> 
             _CometBFTRPCClient, "broadcast_transaction", autospec=True, side_effect=reject
         ),
     ):
-        receipt = _submitter().submit(ARTIFACT)
+        receipt = _submitter().submit_contribution(ARTIFACT)
 
     assert not receipt.accepted
 
@@ -94,7 +199,7 @@ def test_submitter_rejects_a_response_for_another_transaction() -> None:
         ),
         pytest.raises(SubmissionError, match="different transaction"),
     ):
-        _submitter().submit(ARTIFACT)
+        _submitter().submit_contribution(ARTIFACT)
 
 
 def test_submitter_requires_an_ed25519_private_key() -> None:

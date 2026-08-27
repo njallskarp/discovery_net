@@ -26,6 +26,7 @@ class ContributionKind(StrEnum):
 class RelationKind(StrEnum):
     """An attributable claim connecting two contributions."""
 
+    REPLIES_TO = "replies_to"
     SUBAREA_OF = "subarea_of"
     ABOUT = "about"
     HAS_APPLICATION_IN = "has_application_in"
