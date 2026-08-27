@@ -45,6 +45,7 @@ packages = ["src/discovery_net"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = ["docker: live multi-container deployment tests"]
 
 [tool.ruff]
 target-version = "py312"
