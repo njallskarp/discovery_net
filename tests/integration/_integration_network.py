@@ -8,12 +8,15 @@ import shutil
 import socket
 import subprocess
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import cast, final
 
 from discovery_net.node import ArtifactLedgerSnapshot, LocalArtifactLedger
 from discovery_net.node.runtime import (
+    CometBFTGenesisWriter,
+    CometBFTValidatorProvisioner,
     Endpoint,
     GenesisTrustAnchor,
     NodeLaunchSettings,
@@ -140,6 +143,63 @@ class IntegrationNetwork:
                 log_directory=root / "logs",
             )
             for index in range(total_nodes)
+        )
+        return cls(
+            chain_id=chain_id,
+            nodes=nodes,
+            validator_count=validators,
+        )
+
+    @classmethod
+    def formed(
+        cls,
+        *,
+        binary: Path,
+        root: Path,
+        validators: int,
+        chain_id: str = "discovery-formation-test",
+    ) -> IntegrationNetwork:
+        """Form a validator network exclusively through the production provisioning API."""
+        provisioner = CometBFTValidatorProvisioner(binary=binary)
+        homes_root = root / "cometbft"
+        identities = tuple(
+            provisioner.initialize_home(home=homes_root / f"node{index}")
+            for index in range(validators)
+        )
+        genesis_validators = tuple(
+            provisioner.genesis_validator(
+                identity,
+                name=f"node{index}",
+                voting_power=10,
+            )
+            for index, identity in enumerate(identities)
+        )
+        genesis_path = root / "genesis.json"
+        trust_anchor = CometBFTGenesisWriter(binary=binary).write(
+            path=genesis_path,
+            chain_id=chain_id,
+            genesis_time=datetime.now(UTC),
+            validators=genesis_validators,
+        )
+        for identity in identities:
+            provisioner.install_genesis(
+                identity=identity,
+                genesis_path=genesis_path,
+                genesis_trust_anchor=trust_anchor,
+            )
+
+        ports = _available_ports(validators * 3)
+        nodes = tuple(
+            _node(
+                binary=binary,
+                home=homes_root / f"node{index}",
+                ledger_path=root / f"node{index}" / "artifact-ledger.sqlite",
+                chain_id=chain_id,
+                name=f"node{index}",
+                ports=ports[index * 3 : index * 3 + 3],
+                log_directory=root / "logs",
+            )
+            for index in range(validators)
         )
         return cls(
             chain_id=chain_id,
