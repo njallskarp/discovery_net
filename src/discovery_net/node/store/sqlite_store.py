@@ -12,7 +12,7 @@ from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 from discovery_net.node.store import queries
 from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.node.store.queries import StoredArtifactLedgerEntry
-from discovery_net.wire import decode_envelope, encode_envelope
+from discovery_net.wire import decode_transaction, encode_transaction
 
 
 @final
@@ -87,13 +87,13 @@ def _stored_entry(entry: ArtifactLedgerEntry) -> StoredArtifactLedgerEntry:
     return StoredArtifactLedgerEntry(
         height=entry.height,
         transaction_index=entry.transaction_index,
-        transaction_bytes=encode_envelope(entry.envelope),
+        transaction_bytes=encode_transaction(entry.transaction),
     )
 
 
 def _ledger_entry(entry: StoredArtifactLedgerEntry) -> ArtifactLedgerEntry:
     return ArtifactLedgerEntry(
-        envelope=decode_envelope(entry.transaction_bytes),
+        transaction=decode_transaction(entry.transaction_bytes),
         height=entry.height,
         transaction_index=entry.transaction_index,
     )

@@ -13,7 +13,7 @@ from discovery_net.knowledge_graph import (
     RelationKind,
 )
 from discovery_net.node import ArtifactLedgerEntry, ArtifactLedgerSnapshot
-from discovery_net.wire import artifact_ref, sign_artifact
+from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -33,7 +33,7 @@ def test_refresh_preserves_canonical_provenance_without_copying_it() -> None:
     # The indexed view decodes the payload but keeps position and envelope on one ledger entry.
     contribution = _contribution(ContributionKind.FINDING, "A finding")
     entry = _entry(contribution, height=3)
-    reference = artifact_ref(entry.envelope)
+    reference = _ref(entry)
     index = KnowledgeGraphIndex()
 
     index.refresh(_snapshot(3, entry))
@@ -59,8 +59,8 @@ def test_queries_filter_artifacts_by_kind_in_ledger_order() -> None:
     )
     relation = _entry(
         ContributionRelation(
-            from_contribution=artifact_ref(proof.envelope),
-            to_contribution=artifact_ref(problem.envelope),
+            from_contribution=_ref(proof),
+            to_contribution=_ref(problem),
             kind=RelationKind.ABOUT,
             created_at=NOW,
         ),
@@ -71,29 +71,37 @@ def test_queries_filter_artifacts_by_kind_in_ledger_order() -> None:
     index.refresh(_snapshot(1, area, problem, proof, relation))
 
     assert _refs(index.contributions()) == (
-        artifact_ref(area.envelope),
-        artifact_ref(problem.envelope),
-        artifact_ref(proof.envelope),
+        _ref(area),
+        _ref(problem),
+        _ref(proof),
     )
-    assert _refs(index.contributions(ContributionKind.PROOF_ATTEMPT)) == (
-        artifact_ref(proof.envelope),
-    )
-    assert _refs(index.relations(RelationKind.ABOUT)) == (artifact_ref(relation.envelope),)
+    assert _refs(index.contributions(ContributionKind.PROOF_ATTEMPT)) == (_ref(proof),)
+    assert _refs(index.relations(RelationKind.ABOUT)) == (_ref(relation),)
 
 
-def test_graph_queries_share_one_adjacency_map() -> None:
-    # Parent and directed-relation queries distinguish artifacts stored in the same neighbor bucket.
+def test_directed_queries_share_one_incident_adjacency_map() -> None:
+    # One stored edge supports forward and reverse navigation without an inverse edge.
     problem = _entry(_contribution(ContributionKind.PROBLEM_STATEMENT, "A problem"))
-    problem_ref = artifact_ref(problem.envelope)
+    problem_ref = _ref(problem)
     reply = _entry(
-        _contribution(ContributionKind.DISCUSSION, "A reply", parent=problem_ref),
+        _contribution(ContributionKind.DISCUSSION, "A reply"),
         transaction_index=1,
+    )
+    reply_ref = _ref(reply)
+    replies_to = _entry(
+        ContributionRelation(
+            from_contribution=reply_ref,
+            to_contribution=problem_ref,
+            kind=RelationKind.REPLIES_TO,
+            created_at=NOW,
+        ),
+        transaction_index=2,
     )
     proof = _entry(
         _contribution(ContributionKind.PROOF_ATTEMPT, "A proof"),
-        transaction_index=2,
+        transaction_index=3,
     )
-    proof_ref = artifact_ref(proof.envelope)
+    proof_ref = _ref(proof)
     relation = _entry(
         ContributionRelation(
             from_contribution=proof_ref,
@@ -101,42 +109,19 @@ def test_graph_queries_share_one_adjacency_map() -> None:
             kind=RelationKind.ABOUT,
             created_at=NOW,
         ),
-        transaction_index=3,
+        transaction_index=4,
     )
     index = KnowledgeGraphIndex()
-    index.refresh(_snapshot(1, problem, reply, proof, relation))
+    index.refresh(_snapshot(1, problem, reply, replies_to, proof, relation))
 
-    assert _refs(index.children_of(problem_ref)) == (artifact_ref(reply.envelope),)
-    assert _refs(index.incoming_relations(problem_ref)) == (artifact_ref(relation.envelope),)
-    assert _refs(index.outgoing_relations(proof_ref, RelationKind.ABOUT)) == (
-        artifact_ref(relation.envelope),
+    assert _refs(index.incoming_relations(problem_ref, RelationKind.REPLIES_TO)) == (
+        _ref(replies_to),
     )
+    assert _refs(index.incoming_relations(problem_ref, RelationKind.ABOUT)) == (_ref(relation),)
+    assert _refs(index.outgoing_relations(reply_ref)) == (_ref(replies_to),)
+    assert _refs(index.outgoing_relations(proof_ref, RelationKind.ABOUT)) == (_ref(relation),)
     assert index.outgoing_relations(problem_ref) == ()
     assert index.incoming_relations(proof_ref) == ()
-
-
-def test_relations_remain_queryable_when_an_endpoint_is_not_indexed() -> None:
-    # A relation can identify graph edges before this node has indexed both endpoint artifacts.
-    source = _entry(_contribution(ContributionKind.FINDING, "Source"))
-    target = _entry(_contribution(ContributionKind.PROBLEM_STATEMENT, "Target"))
-    relation = _entry(
-        ContributionRelation(
-            from_contribution=artifact_ref(source.envelope),
-            to_contribution=artifact_ref(target.envelope),
-            kind=RelationKind.SUPPORTS,
-            created_at=NOW,
-        )
-    )
-    index = KnowledgeGraphIndex()
-
-    index.refresh(_snapshot(1, relation))
-
-    assert _refs(index.outgoing_relations(artifact_ref(source.envelope))) == (
-        artifact_ref(relation.envelope),
-    )
-    assert _refs(index.incoming_relations(artifact_ref(target.envelope))) == (
-        artifact_ref(relation.envelope),
-    )
 
 
 def test_refresh_replaces_the_projection_with_the_latest_snapshot() -> None:
@@ -149,8 +134,47 @@ def test_refresh_replaces_the_projection_with_the_latest_snapshot() -> None:
     index.refresh(_snapshot(2, second))
 
     assert index.indexed_height == 2
-    assert index.get(artifact_ref(first.envelope)) is None
-    assert _refs(index.contributions()) == (artifact_ref(second.envelope),)
+    assert index.get(_ref(first)) is None
+    assert _refs(index.contributions()) == (_ref(second),)
+
+
+def test_refresh_expands_every_artifact_in_one_atomic_transaction() -> None:
+    # The ledger stores one transaction while the graph exposes each signed artifact normally.
+    contribution_envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=_contribution(ContributionKind.FINDING, "A finding"),
+        private_key=PRIVATE_KEY,
+    )
+    target = _entry(_contribution(ContributionKind.QUESTION, "A question"))
+    target_envelope = target.transaction.envelopes[0]
+    relation_envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=ContributionRelation(
+            from_contribution=artifact_ref(contribution_envelope),
+            to_contribution=_ref(target),
+            kind=RelationKind.ABOUT,
+            created_at=NOW,
+        ),
+        private_key=PRIVATE_KEY,
+    )
+    entry = ArtifactLedgerEntry(
+        transaction=sign_transaction(
+            envelopes=(contribution_envelope, relation_envelope, target_envelope),
+            private_key=PRIVATE_KEY,
+        ),
+        height=1,
+        transaction_index=0,
+    )
+    index = KnowledgeGraphIndex()
+
+    index.refresh(_snapshot(1, entry))
+
+    contribution = index.get(artifact_ref(contribution_envelope))
+    relation = index.get(artifact_ref(relation_envelope))
+    assert isinstance(contribution, IndexedArtifact)
+    assert isinstance(relation, IndexedArtifact)
+    assert contribution.artifact_index == 0
+    assert relation.artifact_index == 1
 
 
 def test_failed_refresh_leaves_the_previous_projection_intact() -> None:
@@ -163,7 +187,7 @@ def test_failed_refresh_leaves_the_previous_projection_intact() -> None:
         index.refresh(_snapshot(2, first, first))
 
     assert index.indexed_height == 1
-    assert _refs(index.contributions()) == (artifact_ref(first.envelope),)
+    assert _refs(index.contributions()) == (_ref(first),)
 
 
 def test_query_kind_arguments_are_typed() -> None:
@@ -181,15 +205,12 @@ def test_query_kind_arguments_are_typed() -> None:
 def _contribution(
     kind: ContributionKind,
     title: str,
-    *,
-    parent: ArtifactRef | None = None,
 ) -> Contribution:
     return Contribution(
         kind=kind,
         title=title,
         body=f"Body for {title}",
         created_at=NOW,
-        parent=parent,
     )
 
 
@@ -199,12 +220,13 @@ def _entry(
     height: int = 1,
     transaction_index: int = 0,
 ) -> ArtifactLedgerEntry:
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=artifact,
+        private_key=PRIVATE_KEY,
+    )
     return ArtifactLedgerEntry(
-        envelope=sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=artifact,
-            private_key=PRIVATE_KEY,
-        ),
+        transaction=sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY),
         height=height,
         transaction_index=transaction_index,
     )
@@ -216,3 +238,7 @@ def _snapshot(height: int, *entries: ArtifactLedgerEntry) -> ArtifactLedgerSnaps
 
 def _refs(indexed: tuple[IndexedArtifact, ...]) -> tuple[ArtifactRef, ...]:
     return tuple(value.artifact_ref for value in indexed)
+
+
+def _ref(entry: ArtifactLedgerEntry) -> ArtifactRef:
+    return artifact_ref(entry.transaction.envelopes[0])

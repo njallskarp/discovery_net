@@ -14,7 +14,7 @@ from discovery_net.node import (
     TransactionCode,
     TransactionValidator,
 )
-from discovery_net.wire import encode_envelope, sign_artifact
+from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -26,17 +26,18 @@ def entry(
     height: int,
     transaction_index: int = 0,
 ) -> ArtifactLedgerEntry:
-    return ArtifactLedgerEntry(
-        envelope=sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=Contribution(
-                kind=ContributionKind.PROBLEM_STATEMENT,
-                title=title,
-                body=f"Body for {title}",
-                created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
-            ),
-            private_key=PRIVATE_KEY,
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=Contribution(
+            kind=ContributionKind.PROBLEM_STATEMENT,
+            title=title,
+            body=f"Body for {title}",
+            created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
         ),
+        private_key=PRIVATE_KEY,
+    )
+    return ArtifactLedgerEntry(
+        transaction=sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY),
         height=height,
         transaction_index=transaction_index,
     )
@@ -63,10 +64,31 @@ def test_snapshot_survives_a_new_store_instance(tmp_path: Path) -> None:
     assert SQLiteArtifactLedgerStore(path=path).load() == snapshot
 
 
+def test_store_preserves_one_atomic_transaction_as_one_ledger_row(tmp_path: Path) -> None:
+    path = tmp_path / "node" / "artifact-ledger.sqlite3"
+    first_envelope = entry("First", height=1).transaction.envelopes[0]
+    second_envelope = entry("Second", height=1).transaction.envelopes[0]
+    atomic_entry = ArtifactLedgerEntry(
+        transaction=sign_transaction(
+            envelopes=(first_envelope, second_envelope),
+            private_key=PRIVATE_KEY,
+        ),
+        height=1,
+        transaction_index=0,
+    )
+    snapshot = ArtifactLedgerSnapshot(height=1, entries=(atomic_entry,))
+
+    SQLiteArtifactLedgerStore(path=path).save(snapshot)
+
+    assert SQLiteArtifactLedgerStore(path=path).load() == snapshot
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM artifact_ledger_entries").fetchone() == (1,)
+
+
 def test_callback_handler_recovers_committed_state_from_sqlite(tmp_path: Path) -> None:
     path = tmp_path / "artifact-ledger.sqlite3"
     first = entry("First", height=1)
-    encoded = encode_envelope(first.envelope)
+    encoded = encode_transaction(first.transaction)
     handler = CometBFTCallbackHandler(
         validator=TransactionValidator(expected_chain_id=CHAIN_ID),
         store=SQLiteArtifactLedgerStore(path=path),
@@ -249,7 +271,7 @@ def test_store_rejects_entries_without_committed_state(tmp_path: Path) -> None:
             (
                 first.height,
                 first.transaction_index.to_bytes(8, "big"),
-                encode_envelope(first.envelope),
+                encode_transaction(first.transaction),
             ),
         )
 

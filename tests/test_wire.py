@@ -18,15 +18,20 @@ from discovery_net.wire import (
     CodecError,
     PayloadType,
     SignedEnvelope,
+    SignedTransaction,
     artifact_ref,
     decode_envelope,
     decode_payload,
+    decode_transaction,
     encode_envelope,
     encode_payload,
     encode_signing_payload,
+    encode_transaction,
     parse_artifact_ref,
     sign_artifact,
+    sign_transaction,
     verify_envelope,
+    verify_transaction,
 )
 
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -35,13 +40,12 @@ PUBLIC_KEY = bytes.fromhex("03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc
 CREATED_AT = datetime(2026, 8, 24, 12, 30, tzinfo=UTC)
 
 
-def sample_contribution(*, parent: ArtifactRef | None = None) -> Contribution:
+def sample_contribution() -> Contribution:
     return Contribution(
         kind=ContributionKind.PROBLEM_STATEMENT,
         title="Riemann hypothesis",
         body="All nontrivial zeros have real part one half.",
         created_at=CREATED_AT,
-        parent=parent,
     )
 
 
@@ -78,7 +82,7 @@ def test_contribution_payload_has_fixed_canonical_encoding() -> None:
     assert payload == (
         b'{"body":"All nontrivial zeros have real part one half.",'
         b'"created_at":"2026-08-24T12:30:00Z","kind":"problem_statement",'
-        b'"parent":null,"title":"Riemann hypothesis"}'
+        b'"title":"Riemann hypothesis"}'
     )
     assert decode_payload(payload_type, payload) == sample_contribution()
 
@@ -91,15 +95,6 @@ def test_relation_payload_round_trips_with_content_references() -> None:
     assert decode_payload(payload_type, payload) == relation
     assert parse_artifact_ref(relation.from_contribution) == relation.from_contribution
     assert parse_artifact_ref(relation.to_contribution) == relation.to_contribution
-
-
-def test_reply_payload_references_its_parent_content() -> None:
-    parent = artifact_ref(signed())
-    reply = sample_contribution(parent=parent)
-
-    payload_type, payload = encode_payload(reply)
-
-    assert decode_payload(payload_type, payload) == reply
 
 
 def test_datetimes_are_normalized_to_utc() -> None:
@@ -118,12 +113,12 @@ def test_signed_envelope_has_fixed_signing_bytes_and_round_trips() -> None:
         b'{"chain_id":"discovery-net-devnet","payload":'
         b'{"body":"All nontrivial zeros have real part one half.",'
         b'"created_at":"2026-08-24T12:30:00Z","kind":"problem_statement",'
-        b'"parent":null,"title":"Riemann hypothesis"},"payload_type":"contribution",'
+        b'"title":"Riemann hypothesis"},"payload_type":"contribution",'
         b'"signer_public_key":"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"}'
     )
     assert envelope.signature.hex() == (
-        "0f638c5f0d0b31ae69fe4e679fc8fd70d33542b88ffbf1f928890e498260b2d9"
-        "3dacb55b1300e4d840acf195b469c1990dc2331686282c0f5bd9e973b641ac02"
+        "9584f4f0a4a5ffbd3e82a8315b15013efeddbfcc12200e99542ede8f427a29a6"
+        "0869b1a5dc3aa7a217930ac28e6e06cf13094bb31a77ec49f30272f54854200a"
     )
     assert decode_envelope(encoded) == envelope
     assert verify_envelope(envelope)
@@ -135,7 +130,7 @@ def test_artifact_reference_is_canonical_cid_for_the_signed_envelope() -> None:
     reference = artifact_ref(envelope)
     cid = CID.decode(reference)
 
-    assert reference == "bafkreickvwi5x3dzjh5ap7qa5onmiusawgdigfdufxph4v5ubzgku2aymm"
+    assert reference == "bafkreib4yjvxpcf3guleuc5d65bubag3x57etiz3ximbazly7qmj23ypdy"
     assert parse_artifact_ref(reference) == reference
     assert cid.version == 1
     assert cid.base.name == "base32"
@@ -188,6 +183,49 @@ def test_signature_covers_chain_signer_and_payload() -> None:
     assert not verify_envelope(replace(envelope, signature=bytes(64)))
 
 
+def test_signed_transaction_round_trips_and_binds_its_artifacts() -> None:
+    envelopes = (signed(), signed(area_contribution()))
+    transaction = sign_transaction(envelopes=envelopes, private_key=PRIVATE_KEY)
+    encoded = encode_transaction(transaction)
+
+    assert decode_transaction(encoded) == transaction
+    assert verify_transaction(transaction)
+    assert not verify_transaction(
+        replace(transaction, envelopes=tuple(reversed(transaction.envelopes)))
+    )
+    assert not verify_transaction(replace(transaction, signature=bytes(64)))
+
+
+def test_signed_transaction_rejects_an_artifact_detached_after_signing() -> None:
+    transaction = sign_transaction(
+        envelopes=(signed(), signed(area_contribution())),
+        private_key=PRIVATE_KEY,
+    )
+
+    detached = replace(transaction, envelopes=(transaction.envelopes[0],))
+
+    assert not verify_transaction(detached)
+
+
+def test_transaction_requires_artifacts_from_one_chain_and_signer() -> None:
+    envelope = signed()
+    other_signer = sign_artifact(
+        chain_id=envelope.chain_id,
+        artifact=area_contribution(),
+        private_key=SECOND_PRIVATE_KEY,
+    )
+
+    with pytest.raises(ValueError, match="at least one"):
+        SignedTransaction(envelopes=(), signature=bytes(64))
+    with pytest.raises(ValueError, match="one chain"):
+        SignedTransaction(
+            envelopes=(envelope, replace(envelope, chain_id="another-chain")),
+            signature=bytes(64),
+        )
+    with pytest.raises(ValueError, match="one signer"):
+        SignedTransaction(envelopes=(envelope, other_signer), signature=bytes(64))
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -211,14 +249,14 @@ def test_decoder_rejects_noncanonical_duplicate_or_unknown_envelope_fields(
     [
         (
             b'{"body":1,"created_at":"2026-08-24T12:30:00Z",'
-            b'"kind":"problem_statement","parent":null,"title":"Riemann hypothesis"}'
+            b'"kind":"problem_statement","title":"Riemann hypothesis"}'
         ),
         (
             b'{"body":"x","created_at":"2026-08-24T12:30:00",'
-            b'"kind":"problem_statement","parent":null,"title":"Riemann hypothesis"}'
+            b'"kind":"problem_statement","title":"Riemann hypothesis"}'
         ),
-        b'{"body":"x","created_at":"2026-08-24T12:30:00Z","kind":"problem_statement","parent":null,"title":"x","unknown":true}',
-        b'{"body":"x","created_at":"2026-08-24T12:30:00Z","kind":"problem_statement","parent":null}',
+        b'{"body":"x","created_at":"2026-08-24T12:30:00Z","kind":"problem_statement","title":"x","unknown":true}',
+        b'{"body":"x","created_at":"2026-08-24T12:30:00Z","kind":"problem_statement"}',
     ],
 )
 def test_pydantic_rejects_wrong_types_naive_times_extra_and_missing_fields(

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from discovery_net.wire import encode_envelope
+from discovery_net.wire import encode_transaction
 from tests.integration._integration_network import IntegrationNetwork
 from tests.integration._transactions import signed_transaction
 
@@ -25,7 +25,7 @@ def test_application_and_cometbft_restart_then_commit_again(
         second_height = node.rpc.broadcast_commit(second)
         snapshot = node.wait_for_snapshot(minimum_height=second_height, minimum_entries=2)
 
-        assert tuple(encode_envelope(entry.envelope) for entry in snapshot.entries) == (
+        assert tuple(encode_transaction(entry.transaction) for entry in snapshot.entries) == (
             first,
             second,
         )
@@ -50,7 +50,7 @@ def test_cometbft_restart_reconnects_to_the_running_application(
         second_height = node.rpc.broadcast_commit(second)
         snapshot = node.wait_for_snapshot(minimum_height=second_height, minimum_entries=2)
 
-        assert tuple(encode_envelope(entry.envelope) for entry in snapshot.entries) == (
+        assert tuple(encode_transaction(entry.transaction) for entry in snapshot.entries) == (
             first,
             second,
         )

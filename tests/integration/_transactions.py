@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from discovery_net.knowledge_graph import Contribution, ContributionKind
-from discovery_net.wire import encode_envelope, sign_artifact
+from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
 
 
 def private_key(key_offset: int = 0) -> Ed25519PrivateKey:
@@ -33,13 +33,13 @@ def signed_transaction(
     key_offset: int = 0,
 ) -> bytes:
     """Return one deterministic valid transaction for the requested chain."""
-    return encode_envelope(
-        sign_artifact(
-            chain_id=chain_id,
-            artifact=problem_contribution(title),
-            private_key=private_key(key_offset),
-        )
+    signer = private_key(key_offset)
+    envelope = sign_artifact(
+        chain_id=chain_id,
+        artifact=problem_contribution(title),
+        private_key=signer,
     )
+    return encode_transaction(sign_transaction(envelopes=(envelope,), private_key=signer))
 
 
 def invalid_signature_transaction(chain_id: str) -> bytes:
@@ -55,4 +55,5 @@ def invalid_signature_transaction(chain_id: str) -> bytes:
         ),
         private_key=private_key,
     )
-    return encode_envelope(replace(envelope, signature=bytes(64)))
+    transaction = sign_transaction(envelopes=(envelope,), private_key=private_key)
+    return encode_transaction(replace(transaction, signature=bytes(64)))

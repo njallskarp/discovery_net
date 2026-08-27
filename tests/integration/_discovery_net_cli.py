@@ -13,9 +13,18 @@ from cryptography.hazmat.primitives.serialization import (
     NoEncryption,
     PrivateFormat,
 )
-from pydantic import BaseModel, ConfigDict, StrictBool, StrictStr, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-from discovery_net.knowledge_graph import ArtifactRef, ContributionKind
+from discovery_net.knowledge_graph import ArtifactRef, ContributionKind, RelationKind
 from discovery_net.wire import parse_artifact_ref
 
 _CLI_TIMEOUT_SECONDS = 15
@@ -24,19 +33,37 @@ _CLI_TIMEOUT_SECONDS = 15
 class _SubmissionOutput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    artifact_ref: StrictStr
+    artifact_refs: tuple[StrictStr, ...]
+    transaction_hash: StrictStr
+    check_tx_code: StrictInt
     accepted_for_broadcast: StrictBool
 
-    @field_validator("artifact_ref")
+    @field_validator("artifact_refs")
     @classmethod
-    def validate_artifact_ref(cls, value: str) -> str:
-        parse_artifact_ref(value)
+    def validate_artifact_refs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("artifact_refs must not be empty")
+        for reference in value:
+            parse_artifact_ref(reference)
         return value
+
+    @field_validator("transaction_hash")
+    @classmethod
+    def validate_transaction_hash(cls, value: str) -> str:
+        if len(value) != 64 or any(character not in "0123456789ABCDEF" for character in value):
+            raise ValueError("transaction_hash must be uppercase hexadecimal")
+        return value
+
+    @model_validator(mode="after")
+    def validate_acceptance(self) -> _SubmissionOutput:
+        if self.accepted_for_broadcast != (self.check_tx_code == 0):
+            raise ValueError("accepted_for_broadcast must reflect check_tx_code")
+        return self
 
 
 @final
 class DiscoveryNetCLI:
-    """Runs the production contribution command against one CometBFT RPC endpoint."""
+    """Runs production submission commands against one CometBFT RPC endpoint."""
 
     __slots__ = ("_private_key_path", "_rpc_url")
 
@@ -69,14 +96,16 @@ class DiscoveryNetCLI:
         kind: ContributionKind,
         title: str,
         body: str,
-        parent: ArtifactRef | None = None,
-    ) -> ArtifactRef:
-        """Submit one contribution and return its validated artifact reference."""
+        outgoing: tuple[tuple[RelationKind, ArtifactRef], ...] = (),
+        incoming: tuple[tuple[RelationKind, ArtifactRef], ...] = (),
+    ) -> tuple[ArtifactRef, ...]:
+        """Submit a contribution package and return all artifact references."""
         command = [
             sys.executable,
             "-m",
             "discovery_net.entrypoints.cli",
             "submit",
+            "contribution",
             "--private-key",
             str(self._private_key_path),
             "--kind",
@@ -88,9 +117,41 @@ class DiscoveryNetCLI:
             "--rpc-url",
             self._rpc_url,
         ]
-        if parent is not None:
-            command.extend(("--parent", parent))
+        for relation_kind, reference in outgoing:
+            command.extend(("--outgoing", f"{relation_kind.value}:{reference}"))
+        for relation_kind, reference in incoming:
+            command.extend(("--incoming", f"{relation_kind.value}:{reference}"))
+        return self._run(command)
 
+    def submit_relation(
+        self,
+        *,
+        kind: RelationKind,
+        from_contribution: ArtifactRef,
+        to_contribution: ArtifactRef,
+    ) -> ArtifactRef:
+        """Submit a post-hoc relation between committed contributions."""
+        return self._run(
+            [
+                sys.executable,
+                "-m",
+                "discovery_net.entrypoints.cli",
+                "submit",
+                "relation",
+                "--private-key",
+                str(self._private_key_path),
+                "--kind",
+                kind.value,
+                "--from",
+                from_contribution,
+                "--to",
+                to_contribution,
+                "--rpc-url",
+                self._rpc_url,
+            ]
+        )[0]
+
+    def _run(self, command: list[str]) -> tuple[ArtifactRef, ...]:
         try:
             completed = subprocess.run(
                 command,
@@ -116,4 +177,4 @@ class DiscoveryNetCLI:
             ) from error
         if not output.accepted_for_broadcast:
             raise AssertionError("Discovery Net CLI did not report CheckTx acceptance")
-        return ArtifactRef(output.artifact_ref)
+        return tuple(ArtifactRef(reference) for reference in output.artifact_refs)

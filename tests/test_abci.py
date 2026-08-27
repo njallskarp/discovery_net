@@ -14,7 +14,7 @@ from discovery_net.node import (
     TransactionCode,
     TransactionValidator,
 )
-from discovery_net.wire import encode_envelope, sign_artifact
+from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -49,10 +49,14 @@ def transaction(title: str) -> bytes:
         body=f"Body for {title}",
         created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
     )
-    return encode_envelope(
-        sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=contribution,
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=contribution,
+        private_key=PRIVATE_KEY,
+    )
+    return encode_transaction(
+        sign_transaction(
+            envelopes=(envelope,),
             private_key=PRIVATE_KEY,
         )
     )
@@ -144,7 +148,7 @@ def test_check_tx_maps_validation_code_without_changing_state() -> None:
     invalid = application.check_tx(abci.RequestCheckTx(tx=b"not-an-envelope"))
 
     assert accepted == abci.ResponseCheckTx(code=TransactionCode.ACCEPTED)
-    assert invalid == abci.ResponseCheckTx(code=TransactionCode.INVALID_ENVELOPE)
+    assert invalid == abci.ResponseCheckTx(code=TransactionCode.INVALID_TRANSACTION)
     assert store.snapshot is None
 
 
@@ -191,7 +195,7 @@ def test_finalize_block_preserves_transaction_order_and_returns_app_hash() -> No
 
     assert tuple(result.code for result in response.tx_results) == (
         TransactionCode.ACCEPTED,
-        TransactionCode.INVALID_ENVELOPE,
+        TransactionCode.INVALID_TRANSACTION,
         TransactionCode.DUPLICATE,
         TransactionCode.ACCEPTED,
     )

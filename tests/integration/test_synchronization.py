@@ -75,7 +75,7 @@ def test_cli_submission_to_non_validator_reaches_every_ledger(
             kind=ContributionKind.FINDING,
             title="A peer-to-peer finding",
             body="This contribution entered through a non-validator.",
-        )
+        )[0]
 
         snapshots = network.wait_for_convergence(minimum_entries=1)
 

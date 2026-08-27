@@ -27,13 +27,10 @@ class Contribution:
     title: str
     body: str
     created_at: datetime
-    parent: ArtifactRef | None = None
 
     def __post_init__(self) -> None:
         _require_non_blank(self.title, "title")
         _require_aware(self.created_at, "created_at")
-        if self.parent is not None:
-            _require_non_blank(self.parent, "parent")
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

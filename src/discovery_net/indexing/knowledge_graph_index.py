@@ -16,33 +16,43 @@ from discovery_net.knowledge_graph import (
 )
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
+from discovery_net.wire import SignedEnvelope, decode_payload
 from discovery_net.wire import artifact_ref as envelope_artifact_ref
-from discovery_net.wire import decode_payload
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class IndexedArtifact:
-    """A decoded artifact paired with its canonical ledger entry."""
+    """A decoded artifact and its position within a committed transaction."""
 
     ledger_entry: ArtifactLedgerEntry
+    artifact_index: int
     artifact: Artifact = field(init=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.ledger_entry, ArtifactLedgerEntry):
             raise TypeError("ledger_entry must be an ArtifactLedgerEntry")
+        if not isinstance(self.artifact_index, int) or isinstance(self.artifact_index, bool):
+            raise TypeError("artifact_index must be an integer")
+        if not 0 <= self.artifact_index < len(self.ledger_entry.transaction.envelopes):
+            raise ValueError("artifact_index must identify a transaction envelope")
         object.__setattr__(
             self,
             "artifact",
             decode_payload(
-                self.ledger_entry.envelope.payload_type,
-                self.ledger_entry.envelope.payload,
+                self.envelope.payload_type,
+                self.envelope.payload,
             ),
         )
 
     @property
+    def envelope(self) -> SignedEnvelope:
+        """Return the signed envelope containing this artifact."""
+        return self.ledger_entry.transaction.envelopes[self.artifact_index]
+
+    @property
     def artifact_ref(self) -> ArtifactRef:
         """Derive the artifact reference from its signed envelope."""
-        return envelope_artifact_ref(self.ledger_entry.envelope)
+        return envelope_artifact_ref(self.envelope)
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,14 +131,6 @@ class KnowledgeGraphIndex:
             raise TypeError("kind must be a RelationKind")
         return _indexed_neighbors(state, _RelationKindNode(kind))
 
-    def children_of(self, parent: ArtifactRef) -> tuple[IndexedArtifact, ...]:
-        """Return contributions that directly reply to a parent artifact."""
-        return tuple(
-            indexed
-            for indexed in _indexed_neighbors(self._state, parent)
-            if isinstance(indexed.artifact, Contribution) and indexed.artifact.parent == parent
-        )
-
     def incoming_relations(
         self,
         artifact_ref: ArtifactRef,
@@ -165,12 +167,16 @@ def _build_state(snapshot: ArtifactLedgerSnapshot) -> _GraphState:
     adjacency: defaultdict[_AdjacencyKey, list[ArtifactRef]] = defaultdict(list)
 
     for ledger_entry in snapshot.entries:
-        indexed = IndexedArtifact(ledger_entry=ledger_entry)
-        reference = indexed.artifact_ref
-        if reference in nodes:
-            raise ValueError("snapshot must not contain duplicate artifacts")
-        nodes[reference] = indexed
-        _connect(indexed, reference, adjacency)
+        for artifact_index in range(len(ledger_entry.transaction.envelopes)):
+            indexed = IndexedArtifact(
+                ledger_entry=ledger_entry,
+                artifact_index=artifact_index,
+            )
+            reference = indexed.artifact_ref
+            if reference in nodes:
+                raise ValueError("snapshot must not contain duplicate artifacts")
+            nodes[reference] = indexed
+            _connect(indexed, reference, adjacency)
 
     return _GraphState(
         height=snapshot.height,
@@ -187,8 +193,6 @@ def _connect(
     artifact = indexed.artifact
     if isinstance(artifact, Contribution):
         adjacency[_ContributionKindNode(artifact.kind)].append(reference)
-        if artifact.parent is not None:
-            adjacency[artifact.parent].append(reference)
         return
 
     adjacency[_RelationKindNode(artifact.kind)].append(reference)

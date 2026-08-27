@@ -18,25 +18,24 @@ from discovery_net.node import (
     TransactionCode,
     TransactionValidator,
 )
-from discovery_net.wire import encode_envelope, sign_artifact
+from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 
 
 def transaction(title: str) -> bytes:
-    return encode_envelope(
-        sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=Contribution(
-                kind=ContributionKind.PROBLEM_STATEMENT,
-                title=title,
-                body=f"Body for {title}",
-                created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
-            ),
-            private_key=PRIVATE_KEY,
-        )
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=Contribution(
+            kind=ContributionKind.PROBLEM_STATEMENT,
+            title=title,
+            body=f"Body for {title}",
+            created_at=datetime(2026, 8, 25, 12, tzinfo=UTC),
+        ),
+        private_key=PRIVATE_KEY,
     )
+    return encode_transaction(sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY))
 
 
 def adapter(path: Path) -> tuple[CometBFTABCIAdapter, SQLiteArtifactLedgerStore]:
@@ -88,7 +87,7 @@ def test_transport_runs_the_supported_consensus_lifecycle(
         code=TransactionCode.ACCEPTED
     )
     assert client.CheckTx(abci.RequestCheckTx(tx=b"not-an-envelope")) == abci.ResponseCheckTx(
-        code=TransactionCode.INVALID_ENVELOPE
+        code=TransactionCode.INVALID_TRANSACTION
     )
     assert tuple(
         client.PrepareProposal(

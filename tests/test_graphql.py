@@ -15,7 +15,7 @@ from discovery_net.knowledge_graph import (
 )
 from discovery_net.node import ArtifactLedgerEntry, ArtifactLedgerSnapshot
 from discovery_net.query import KnowledgeGraphQueries
-from discovery_net.wire import artifact_ref, sign_artifact
+from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-devnet"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
@@ -64,7 +64,7 @@ def test_graphql_composes_filtered_search_and_nested_graph_traversal() -> None:
                 kind
                 title
               }
-              replies: children(kind: DISCUSSION) {
+              replies: incomingContributions(via: REPLIES_TO, kind: DISCUSSION) {
                 kind
                 title
               }
@@ -150,7 +150,7 @@ def test_graphql_exposes_signed_relation_artifacts_and_resolved_endpoints() -> N
     assert artifact["signerPublicKey"] == PRIVATE_KEY.public_key().public_bytes_raw().hex()
     assert len(artifact["signature"]) == 128
     assert artifact["height"] == "1"
-    assert artifact["transactionIndex"] == "7"
+    assert artifact["transactionIndex"] == "8"
     assert artifact["createdAt"] == "2026-08-26T18:00:00+00:00"
     assert artifact["kind"] == "ABOUT"
     assert artifact["fromContributionRef"] == graph.references["proof"]
@@ -216,8 +216,11 @@ def _graph_fixture() -> _GraphFixture:
         _contribution(
             ContributionKind.DISCUSSION,
             "Could the domain be restricted?",
-            parent=references["proof"],
         ),
+    )
+    references["reply_to_proof"] = _append(
+        entries,
+        _relation(references["reply"], references["proof"], RelationKind.REPLIES_TO),
     )
     references["problem_about_area"] = _append(
         entries,
@@ -245,31 +248,29 @@ def _graph_fixture() -> _GraphFixture:
 
 
 def _append(entries: list[ArtifactLedgerEntry], artifact: Artifact) -> ArtifactRef:
+    envelope = sign_artifact(
+        chain_id=CHAIN_ID,
+        artifact=artifact,
+        private_key=PRIVATE_KEY,
+    )
     entry = ArtifactLedgerEntry(
-        envelope=sign_artifact(
-            chain_id=CHAIN_ID,
-            artifact=artifact,
-            private_key=PRIVATE_KEY,
-        ),
+        transaction=sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY),
         height=1,
         transaction_index=len(entries),
     )
     entries.append(entry)
-    return artifact_ref(entry.envelope)
+    return artifact_ref(envelope)
 
 
 def _contribution(
     kind: ContributionKind,
     title: str,
-    *,
-    parent: ArtifactRef | None = None,
 ) -> Contribution:
     return Contribution(
         kind=kind,
         title=title,
         body=f"Body for {title}",
         created_at=NOW,
-        parent=parent,
     )
 
 

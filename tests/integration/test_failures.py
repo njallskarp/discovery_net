@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from discovery_net.node import TransactionCode
-from discovery_net.wire import encode_envelope
+from discovery_net.wire import encode_transaction
 from tests.integration._integration_network import IntegrationNetwork
 from tests.integration._transactions import signed_transaction
 
@@ -80,4 +80,4 @@ def test_sqlite_failure_during_commit_is_atomic_and_replayed_after_restart(
         recovered = node.wait_for_snapshot(minimum_height=1, minimum_entries=1)
 
         assert len(recovered.entries) == 1
-        assert encode_envelope(recovered.entries[0].envelope) == transaction
+        assert encode_transaction(recovered.entries[0].transaction) == transaction
