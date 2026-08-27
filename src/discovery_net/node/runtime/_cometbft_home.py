@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import fcntl
 import json
 import os
@@ -14,8 +15,10 @@ from typing import final
 
 from discovery_net.node.runtime._cometbft_config import _CometBFTConfig
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
+from discovery_net.node.runtime._validator_identity_files import _VerifiedValidatorIdentity
 from discovery_net.node.runtime.genesis import _VerifiedGenesis
 from discovery_net.node.runtime.node_launch_settings import NodeLaunchSettings
+from discovery_net.node.runtime.validator_identity import ValidatorIdentity
 
 _REQUIRED_HOME_FILES = (
     Path("config/config.toml"),
@@ -23,6 +26,7 @@ _REQUIRED_HOME_FILES = (
     Path("config/priv_validator_key.json"),
     Path("data/priv_validator_state.json"),
 )
+_UNBOUND_VALIDATOR_GENESIS = b"{}\n"
 
 
 @final
@@ -53,6 +57,60 @@ class _CometBFTHome:
                 self._prepare_existing(genesis=genesis, settings=settings)
                 return
             self._prepare_new(genesis=genesis, settings=settings)
+
+    def provision_validator(self) -> ValidatorIdentity:
+        """Create one unstarted home whose validator identity never leaves it."""
+        parent = self._path.parent
+        parent.mkdir(parents=True, exist_ok=True)
+        lock_path = parent / f".{self._path.name}.initialize.lock"
+
+        with _exclusive_lock(lock_path):
+            if self._path.exists():
+                raise FileExistsError(f"CometBFT home already exists: {self._path}")
+            staging = Path(tempfile.mkdtemp(prefix=f".{self._path.name}.", dir=parent))
+            try:
+                self._process.initialize(home=staging)
+                _require_complete_home(staging)
+                _VerifiedValidatorIdentity.from_identity(
+                    ValidatorIdentity(directory=staging)
+                )
+                _replace_genesis(
+                    staging / "config" / "genesis.json",
+                    _UNBOUND_VALIDATOR_GENESIS,
+                )
+                _sync_tree(staging)
+                staging.rename(self._path)
+                _sync_directory(parent)
+            finally:
+                if staging.exists():
+                    shutil.rmtree(staging)
+        return ValidatorIdentity(directory=self._path)
+
+    def install_validator_genesis(self, *, genesis: _VerifiedGenesis) -> None:
+        """Bind one unstarted validator home to its final shared genesis."""
+        parent = self._path.parent
+        lock_path = parent / f".{self._path.name}.initialize.lock"
+
+        with _exclusive_lock(lock_path):
+            if self._path.is_symlink() or not self._path.is_dir():
+                raise ValueError("validator home must be a real directory")
+            _require_complete_home(self._path)
+            _require_unstarted_home(self._path)
+            identity = _VerifiedValidatorIdentity.from_identity(
+                ValidatorIdentity(directory=self._path)
+            )
+            encoded_public_key = base64.b64encode(identity.public_key).decode("ascii")
+            if (
+                "tendermint/PubKeyEd25519",
+                encoded_public_key,
+            ) not in genesis.document.validator_public_keys:
+                raise ValueError("validator identity is not a member of the genesis validator set")
+            installed_genesis = (self._path / "config" / "genesis.json").read_bytes()
+            if installed_genesis == genesis.content:
+                return
+            if installed_genesis != _UNBOUND_VALIDATOR_GENESIS:
+                raise ValueError("validator home is not awaiting its network genesis")
+            _replace_genesis(self._path / "config" / "genesis.json", genesis.content)
 
     def _prepare_new(self, *, genesis: _VerifiedGenesis, settings: NodeLaunchSettings) -> None:
         staging = Path(tempfile.mkdtemp(prefix=f".{self._path.name}.", dir=self._path.parent))
@@ -105,6 +163,17 @@ def _require_complete_home(home: Path) -> None:
         missing += ("config/genesis.json",)
     if missing:
         raise ValueError("CometBFT home is incomplete: " + ", ".join(sorted(missing)))
+
+
+def _require_unstarted_home(home: Path) -> None:
+    data_paths = tuple(
+        sorted(
+            path.relative_to(home / "data")
+            for path in (home / "data").rglob("*")
+        )
+    )
+    if data_paths != (Path("priv_validator_state.json"),):
+        raise ValueError("validator home has already created runtime state")
 
 
 def _validator_public_key(path: Path) -> tuple[str, str]:
