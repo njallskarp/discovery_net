@@ -25,6 +25,7 @@ from discovery_net.submission import (
 from discovery_net.submission._broadcast_response import _BroadcastResponse
 from discovery_net.submission._cometbft_rpc_client import _CometBFTRPCClient
 from discovery_net.wire import (
+    TRANSACTION_LIMITS,
     artifact_ref,
     decode_payload,
     decode_transaction,
@@ -205,6 +206,45 @@ def test_submitter_rejects_a_response_for_another_transaction() -> None:
         pytest.raises(SubmissionError, match="different transaction"),
     ):
         _submitter().submit_contribution(ARTIFACT)
+
+
+def test_submitter_rejects_too_many_artifacts_before_contacting_cometbft() -> None:
+    relations = (OutgoingRelation(kind=RelationKind.ABOUT, to_contribution=AREA_REF),) * (
+        TRANSACTION_LIMITS.maximum_artifacts
+    )
+
+    with (
+        patch.object(_CometBFTRPCClient, "fetch_chain_id", autospec=True) as fetch_chain_id,
+        patch.object(_CometBFTRPCClient, "broadcast_transaction", autospec=True) as broadcast,
+        pytest.raises(SubmissionError, match="256 artifacts"),
+    ):
+        _submitter().submit_contribution(ARTIFACT, relations=relations)
+
+    fetch_chain_id.assert_not_called()
+    broadcast.assert_not_called()
+
+
+def test_submitter_rejects_an_oversized_transaction_before_broadcast() -> None:
+    oversized = Contribution(
+        kind=ARTIFACT.kind,
+        title=ARTIFACT.title,
+        body="x" * TRANSACTION_LIMITS.maximum_encoded_bytes,
+        created_at=ARTIFACT.created_at,
+    )
+
+    with (
+        patch.object(
+            _CometBFTRPCClient,
+            "fetch_chain_id",
+            autospec=True,
+            return_value=CHAIN_ID,
+        ),
+        patch.object(_CometBFTRPCClient, "broadcast_transaction", autospec=True) as broadcast,
+        pytest.raises(SubmissionError, match="encoded bytes"),
+    ):
+        _submitter().submit_contribution(oversized)
+
+    broadcast.assert_not_called()
 
 
 def test_submitter_requires_an_ed25519_private_key() -> None:

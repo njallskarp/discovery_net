@@ -12,7 +12,9 @@ from discovery_net.submission.outgoing_relation import OutgoingRelation
 from discovery_net.submission.submission_error import SubmissionError
 from discovery_net.submission.submission_receipt import SubmissionReceipt
 from discovery_net.wire import (
+    TRANSACTION_LIMITS,
     SignedTransaction,
+    TransactionLimitError,
     artifact_ref,
     encode_transaction,
     sign_artifact,
@@ -53,6 +55,7 @@ class ArtifactSubmitter:
             not isinstance(relation, (IncomingRelation, OutgoingRelation)) for relation in relations
         ):
             raise TypeError("relations must contain incoming or outgoing relations")
+        _require_artifact_count(1 + len(relations))
 
         chain_id = self._rpc_client.fetch_chain_id()
         contribution_envelope = sign_artifact(
@@ -94,6 +97,11 @@ class ArtifactSubmitter:
 
     def _submit(self, signed_transaction: SignedTransaction) -> SubmissionReceipt:
         transaction = encode_transaction(signed_transaction)
+        try:
+            TRANSACTION_LIMITS.require_artifact_count(len(signed_transaction.envelopes))
+            TRANSACTION_LIMITS.require_encoded_size(transaction)
+        except TransactionLimitError as error:
+            raise SubmissionError(str(error)) from error
         response = self._rpc_client.broadcast_transaction(transaction)
         expected_hash = sha256(transaction).hexdigest().upper()
         if response.transaction_hash != expected_hash:
@@ -126,3 +134,10 @@ def _resolve_relation(
         kind=relation.kind,
         created_at=contribution.created_at,
     )
+
+
+def _require_artifact_count(artifact_count: int) -> None:
+    try:
+        TRANSACTION_LIMITS.require_artifact_count(artifact_count)
+    except TransactionLimitError as error:
+        raise SubmissionError(str(error)) from error

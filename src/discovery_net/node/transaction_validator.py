@@ -6,7 +6,9 @@ from enum import IntEnum
 from discovery_net.knowledge_graph import ArtifactRef, Contribution, ContributionRelation
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerLookup
 from discovery_net.wire import (
+    TRANSACTION_LIMITS,
     CodecError,
+    TransactionLimitError,
     artifact_ref,
     decode_payload,
     decode_transaction,
@@ -23,6 +25,8 @@ class TransactionCode(IntEnum):
     INVALID_SIGNATURE = 3
     DUPLICATE = 4
     MISSING_REFERENCE = 5
+    TRANSACTION_TOO_LARGE = 6
+    TOO_MANY_ARTIFACTS = 7
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -52,9 +56,21 @@ class TransactionValidator:
         """Return a deterministic result without modifying committed state."""
 
         try:
+            TRANSACTION_LIMITS.require_encoded_size(transaction)
+        except TransactionLimitError:
+            return TransactionResult(code=TransactionCode.TRANSACTION_TOO_LARGE)
+        except TypeError:
+            return TransactionResult(code=TransactionCode.INVALID_TRANSACTION)
+
+        try:
             signed_transaction = decode_transaction(transaction)
         except (CodecError, TypeError):
             return TransactionResult(code=TransactionCode.INVALID_TRANSACTION)
+
+        try:
+            TRANSACTION_LIMITS.require_artifact_count(len(signed_transaction.envelopes))
+        except TransactionLimitError:
+            return TransactionResult(code=TransactionCode.TOO_MANY_ARTIFACTS)
 
         if signed_transaction.chain_id != self.expected_chain_id:
             return TransactionResult(code=TransactionCode.WRONG_CHAIN)

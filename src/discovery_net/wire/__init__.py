@@ -21,13 +21,21 @@ from discovery_net.wire.signing import (
     verify_envelope,
     verify_transaction,
 )
+from discovery_net.wire.transaction_limits import (
+    TRANSACTION_LIMITS,
+    TransactionLimit,
+    TransactionLimitError,
+)
 
 __all__ = [
+    "TRANSACTION_LIMITS",
     "Artifact",
     "CodecError",
     "PayloadType",
     "SignedEnvelope",
     "SignedTransaction",
+    "TransactionLimit",
+    "TransactionLimitError",
     "artifact_ref",
     "decode_envelope",
     "decode_payload",
