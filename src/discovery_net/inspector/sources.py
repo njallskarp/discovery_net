@@ -15,4 +15,6 @@ class NodeObservationSource(Protocol):
 class ArtifactLedgerSnapshotReader(Protocol):
     """Reads the latest committed artifact-ledger snapshot without mutation."""
 
+    def committed_height(self) -> int | None: ...
+
     def load(self) -> ArtifactLedgerSnapshot | None: ...

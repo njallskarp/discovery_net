@@ -100,14 +100,74 @@ def test_service_reuses_the_graph_projection_at_an_unchanged_height() -> None:
 
     assert second.knowledge_graph == first.knowledge_graph
     assert len(second.knowledge_graph.contributions) == 8
+    assert reader.load_count == 1
+
+
+def test_service_checks_the_node_chain_when_the_ledger_height_is_unchanged() -> None:
+    # Cached graph data must not be combined with observations from another chain.
+    node_source = _MutableNodeSource(_node(chain_id="discovery-net-demo", height=8))
+    service = InspectorService(
+        node_source=node_source,
+        ledger_reader=_MutableLedgerReader(seed_ledger_snapshot()),
+    )
+    service.snapshot()
+    node_source.observation = _node(chain_id="another-chain", height=8)
+
+    with pytest.raises(ValueError, match="node chain does not match the indexed artifact ledger"):
+        service.snapshot()
+
+
+def test_service_rejects_removal_of_previously_committed_state() -> None:
+    # A replaced or truncated ledger cannot silently leave a stale graph marked as current.
+    reader = _MutableLedgerReader(seed_ledger_snapshot())
+    service = InspectorService(
+        node_source=SeedNodeObservationSource(
+            observation=_node(chain_id="discovery-net-demo", height=8)
+        ),
+        ledger_reader=reader,
+    )
+    service.snapshot()
+    reader.snapshot = None
+
+    with pytest.raises(ValueError, match="artifact ledger removed committed state"):
+        service.snapshot()
+
+
+def test_service_rejects_regression_of_the_committed_height() -> None:
+    # A replaced ledger cannot make the locally presented consensus history move backward.
+    reader = _MutableLedgerReader(seed_ledger_snapshot())
+    service = InspectorService(
+        node_source=SeedNodeObservationSource(
+            observation=_node(chain_id="discovery-net-demo", height=8)
+        ),
+        ledger_reader=reader,
+    )
+    service.snapshot()
+    reader.snapshot = ArtifactLedgerSnapshot(height=7, entries=())
+
+    with pytest.raises(ValueError, match="artifact ledger moved behind the indexed height"):
+        service.snapshot()
 
 
 class _MutableLedgerReader:
-    def __init__(self, snapshot: ArtifactLedgerSnapshot) -> None:
+    def __init__(self, snapshot: ArtifactLedgerSnapshot | None) -> None:
         self.snapshot = snapshot
+        self.load_count = 0
 
-    def load(self) -> ArtifactLedgerSnapshot:
+    def committed_height(self) -> int | None:
+        return None if self.snapshot is None else self.snapshot.height
+
+    def load(self) -> ArtifactLedgerSnapshot | None:
+        self.load_count += 1
         return self.snapshot
+
+
+class _MutableNodeSource:
+    def __init__(self, observation: NodeObservation) -> None:
+        self.observation = observation
+
+    def observe(self) -> NodeObservation:
+        return self.observation
 
 
 def _node(

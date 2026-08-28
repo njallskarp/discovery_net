@@ -65,12 +65,22 @@ class InspectorService:
         node = self._node_source.observe()
         if not isinstance(node, NodeObservation):
             raise TypeError("node source must return a NodeObservation")
-        ledger_snapshot = self._ledger_reader.load()
-        if ledger_snapshot is not None and not isinstance(ledger_snapshot, ArtifactLedgerSnapshot):
-            raise TypeError("ledger reader must return an ArtifactLedgerSnapshot or None")
+        committed_height = self._ledger_reader.committed_height()
+        if committed_height is not None and (
+            not isinstance(committed_height, int) or isinstance(committed_height, bool)
+        ):
+            raise TypeError("ledger reader must return an integer height or None")
 
         with self._lock:
-            self._refresh_index(ledger_snapshot, node.chain_id)
+            if self._indexed_chain_id is not None and self._indexed_chain_id != node.chain_id:
+                raise ValueError("node chain does not match the indexed artifact ledger")
+            if committed_height != self._indexed_height:
+                ledger_snapshot = self._ledger_reader.load()
+                if ledger_snapshot is not None and not isinstance(
+                    ledger_snapshot, ArtifactLedgerSnapshot
+                ):
+                    raise TypeError("ledger reader must return an ArtifactLedgerSnapshot or None")
+                self._refresh_index(ledger_snapshot, node.chain_id)
             observed_at = self._clock()
             return InspectorSnapshot(
                 observed_at=observed_at,
@@ -85,7 +95,13 @@ class InspectorService:
     ) -> None:
         if self._indexed_chain_id is not None and self._indexed_chain_id != node_chain_id:
             raise ValueError("node chain does not match the indexed artifact ledger")
-        if snapshot is None or snapshot.height == self._indexed_height:
+        if snapshot is None and self._indexed_height is not None:
+            raise ValueError("artifact ledger removed committed state")
+        if snapshot is None:
+            return
+        if self._indexed_height is not None and snapshot.height < self._indexed_height:
+            raise ValueError("artifact ledger moved behind the indexed height")
+        if snapshot.height == self._indexed_height:
             return
 
         ledger_chain_id = _snapshot_chain_id(snapshot)
@@ -168,6 +184,7 @@ def _contribution_view(indexed: IndexedArtifact) -> InspectorContribution:
         signature=indexed.envelope.signature.hex(),
         height=indexed.ledger_entry.height,
         transaction_index=indexed.ledger_entry.transaction_index,
+        artifact_index=indexed.artifact_index,
     )
 
 
@@ -185,4 +202,5 @@ def _relation_view(indexed: IndexedArtifact) -> InspectorRelation:
         signature=indexed.envelope.signature.hex(),
         height=indexed.ledger_entry.height,
         transaction_index=indexed.ledger_entry.transaction_index,
+        artifact_index=indexed.artifact_index,
     )

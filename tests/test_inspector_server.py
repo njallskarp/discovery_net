@@ -36,16 +36,30 @@ def test_server_exposes_the_browser_and_snapshot_without_write_routes() -> None:
             index, index_headers = _get(f"{base_url}/")
             stylesheet, _headers = _get(f"{base_url}/inspector.css")
             script, _headers = _get(f"{base_url}/inspector.js")
+            markdown, markdown_headers = _get(f"{base_url}/vendor/markdown-it/markdown-it.min.js")
+            purifier, _headers = _get(f"{base_url}/vendor/dompurify/purify.min.js")
+            katex, _headers = _get(f"{base_url}/vendor/katex/katex.min.js")
+            cytoscape, _headers = _get(f"{base_url}/vendor/cytoscape/cytoscape.min.js")
+            font, font_headers = _get(f"{base_url}/vendor/katex/fonts/KaTeX_Main-Regular.woff2")
             snapshot_bytes, snapshot_headers = _get(f"{base_url}/api/snapshot")
 
             snapshot = InspectorSnapshot.model_validate_json(snapshot_bytes)
             assert b"Discovery Net Inspector" in index
             assert b".knowledge-stage" in stylesheet
             assert b'fetch("/api/snapshot"' in script
+            assert b"markdownit" in markdown
+            assert b"DOMPurify" in purifier
+            assert b"katex" in katex
+            assert b"cytoscape" in cytoscape
+            assert font
             assert snapshot.node.chain_id == "discovery-net-demo"
             assert len(snapshot.node.peers) == 4
             assert len(snapshot.knowledge_graph.contributions) == 8
             assert index_headers["Content-Security-Policy"].startswith("default-src 'none'")
+            assert "font-src 'self'" in index_headers["Content-Security-Policy"]
+            assert "'unsafe-inline'" not in index_headers["Content-Security-Policy"]
+            assert markdown_headers["Content-Type"] == "text/javascript; charset=utf-8"
+            assert font_headers["Content-Type"] == "font/woff2"
             assert snapshot_headers["Cache-Control"] == "no-store"
 
             try:
@@ -83,6 +97,31 @@ def test_server_reports_an_unavailable_observation_without_leaking_details() -> 
         finally:
             server.shutdown()
             thread.join(timeout=2)
+
+
+def test_inspector_ui_uses_safe_local_renderers_and_consensus_ordering() -> None:
+    # The dependency-free frontend keeps rich rendering local, sanitized, and consensus ordered.
+    root = Path(__file__).resolve().parents[1]
+    static = root / "src" / "discovery_net" / "inspector" / "static"
+    index = (static / "index.html").read_text()
+    script = (static / "inspector.js").read_text()
+
+    assert "https://" not in index
+    assert "markdown-it 15.0.1" in index
+    assert "DOMPurify 3.4.14" in index
+    assert "KaTeX 0.18.4" in index
+    assert "Cytoscape.js 3.34.2" in index
+    assert "/vendor/markdown-it/markdown-it.min.js" in index
+    assert "/vendor/dompurify/purify.min.js" in index
+    assert "/vendor/katex/auto-render.min.js" in index
+    assert "/vendor/cytoscape/cytoscape.min.js" in index
+    assert "html: false" in script
+    assert 'FORBID_ATTR: ["style"]' in script
+    assert "trust: false" in script
+    assert "throwOnError: false" in script
+    assert 'roots: "#mathematics-root"' in script
+    assert "nodeDimensionsIncludeLabels: true" in script
+    assert "artifact.artifact_index" in script
 
 
 def test_inspector_process_starts_the_seeded_application() -> None:

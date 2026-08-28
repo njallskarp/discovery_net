@@ -4,6 +4,7 @@ from discovery_net.inspector.cometbft_observation_source import CometBFTObservat
 from discovery_net.inspector.models import InspectorSnapshot
 from discovery_net.inspector.service import InspectorService
 from discovery_net.inspector.sources import ArtifactLedgerSnapshotReader, NodeObservationSource
+from discovery_net.inspector.sqlite_ledger_reader import SQLiteArtifactLedgerReader
 
 __all__ = [
     "ArtifactLedgerSnapshotReader",
@@ -11,4 +12,5 @@ __all__ = [
     "InspectorService",
     "InspectorSnapshot",
     "NodeObservationSource",
+    "SQLiteArtifactLedgerReader",
 ]

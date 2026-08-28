@@ -17,11 +17,41 @@ _STATIC_TYPES: Final = {
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/inspector.css": ("inspector.css", "text/css; charset=utf-8"),
     "/inspector.js": ("inspector.js", "text/javascript; charset=utf-8"),
+    "/vendor/cytoscape/cytoscape.min.js": (
+        "vendor/cytoscape/cytoscape.min.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/vendor/dompurify/purify.min.js": (
+        "vendor/dompurify/purify.min.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/vendor/katex/auto-render.min.js": (
+        "vendor/katex/auto-render.min.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/vendor/katex/katex.min.css": (
+        "vendor/katex/katex.min.css",
+        "text/css; charset=utf-8",
+    ),
+    "/vendor/katex/katex.min.js": (
+        "vendor/katex/katex.min.js",
+        "text/javascript; charset=utf-8",
+    ),
+    "/vendor/markdown-it/markdown-it.min.js": (
+        "vendor/markdown-it/markdown-it.min.js",
+        "text/javascript; charset=utf-8",
+    ),
 }
 _CONTENT_SECURITY_POLICY: Final = (
     "default-src 'none'; script-src 'self'; style-src 'self'; "
-    "img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+    "font-src 'self'; img-src 'self' data:; connect-src 'self'; "
+    "base-uri 'none'; frame-ancestors 'none'"
 )
+_KATEX_FONT_TYPES: Final = {
+    ".ttf": "font/ttf",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+}
 
 
 @final
@@ -92,6 +122,8 @@ class _InspectorRequestHandler(BaseHTTPRequestHandler):
             return
         static = _STATIC_TYPES.get(path)
         if static is None:
+            static = _katex_font(path)
+        if static is None:
             self._json(HTTPStatus.NOT_FOUND, {"error": "not found"})
             return
         name, content_type = static
@@ -153,3 +185,17 @@ class _InspectorRequestHandler(BaseHTTPRequestHandler):
 
 def _static_resource(name: str) -> bytes:
     return files("discovery_net.inspector.static").joinpath(name).read_bytes()
+
+
+def _katex_font(path: str) -> tuple[str, str] | None:
+    prefix = "/vendor/katex/fonts/"
+    if not path.startswith(prefix):
+        return None
+    filename = path.removeprefix(prefix)
+    suffix = next(
+        (suffix for suffix in _KATEX_FONT_TYPES if filename.endswith(suffix)),
+        None,
+    )
+    if not filename or "/" in filename or suffix is None:
+        return None
+    return f"vendor/katex/fonts/{filename}", _KATEX_FONT_TYPES[suffix]

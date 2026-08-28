@@ -119,6 +119,7 @@ class InspectorContribution(_InspectorModel):
     signature: StrictStr
     height: PositiveInt
     transaction_index: NonNegativeInt
+    artifact_index: NonNegativeInt
 
 
 class InspectorRelation(_InspectorModel):
@@ -133,6 +134,7 @@ class InspectorRelation(_InspectorModel):
     signature: StrictStr
     height: PositiveInt
     transaction_index: NonNegativeInt
+    artifact_index: NonNegativeInt
 
 
 class InspectorKnowledgeGraph(_InspectorModel):

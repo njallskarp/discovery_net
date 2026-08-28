@@ -5,18 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light dark">
     <title>Discovery Net Inspector</title>
+    <link rel="stylesheet" href="/vendor/katex/katex.min.css">
     <link rel="stylesheet" href="/inspector.css">
   </head>
   <body>
     <div class="app-shell">
       <header class="app-header">
-        <div class="brand">
+        <a class="brand" href="#feed" data-view-link="feed">
           <span class="brand-mark" aria-hidden="true">∿</span>
-          <div>
-            <h1>Discovery Net</h1>
-            <p>Local node inspector</p>
-          </div>
-        </div>
+          <span>
+            <strong>Discovery Net</strong>
+            <small>Knowledge inspector</small>
+          </span>
+        </a>
+
+        <nav class="view-navigation" aria-label="Inspector views">
+          <button type="button" data-view="feed" aria-pressed="true">Feed</button>
+          <button type="button" data-view="explore" aria-pressed="false">Explore</button>
+          <button type="button" data-view="graph" aria-pressed="false">Graph</button>
+          <button type="button" data-view="network" aria-pressed="false">Network</button>
+        </nav>
+
         <div class="live-controls">
           <span class="live-state" id="liveState" aria-live="polite">
             <span class="live-dot" aria-hidden="true"></span>
@@ -30,99 +39,130 @@
       <main>
         <div class="error-message" id="errorMessage" role="alert" hidden></div>
 
-        <section class="summary-grid" aria-label="Local node status">
-          <article class="summary-item">
+        <section class="node-summary" aria-label="Local node status">
+          <div>
             <span>Chain</span>
             <strong id="chainValue">—</strong>
             <small id="syncValue">Waiting for observation</small>
-          </article>
-          <article class="summary-item">
-            <span>Committed height</span>
+          </div>
+          <div>
+            <span>Height</span>
             <strong id="heightValue" class="tabular">—</strong>
             <small id="consensusValue">Consensus unavailable</small>
-          </article>
-          <article class="summary-item">
-            <span>Direct peers</span>
+          </div>
+          <div>
+            <span>Peers</span>
             <strong id="peerValue" class="tabular">—</strong>
-            <small>Observed by this node only</small>
-          </article>
-          <article class="summary-item">
-            <span>Committed graph</span>
+            <small>Direct connections</small>
+          </div>
+          <div>
+            <span>Knowledge</span>
             <strong id="graphValue" class="tabular">—</strong>
             <small id="mempoolValue">Mempool unavailable</small>
-          </article>
+          </div>
         </section>
 
-        <section class="graph-grid">
-          <article class="graph-panel">
-            <div class="panel-heading">
-              <div>
-                <h2>Peer connections</h2>
-                <p>Local observation · direct connections only</p>
-              </div>
-              <span class="source-label source-local">Ego view</span>
+        <section class="view" id="feedView" data-view-panel="feed">
+          <div class="view-heading">
+            <div>
+              <p class="eyebrow">Committed activity</p>
+              <h1>Network feed</h1>
+              <p>Atomic transactions, ordered by their consensus position.</p>
             </div>
-            <div class="graph-stage peer-stage" id="peerGraph" aria-label="Direct peer graph"></div>
-            <div class="legend">
-              <span><i class="legend-node local-node"></i>Local node</span>
-              <span><i class="legend-node peer-node"></i>Direct peer</span>
-              <span><i class="legend-line outbound-line"></i>Outbound</span>
-              <span><i class="legend-line inbound-line"></i>Inbound</span>
-            </div>
-          </article>
-
-          <article class="graph-panel">
-            <div class="panel-heading knowledge-heading">
-              <div>
-                <h2>Knowledge graph</h2>
-                <p>Locally indexed consensus</p>
-              </div>
-              <label class="filter-label" for="kindFilter">
-                <span>Show</span>
-                <select id="kindFilter">
-                  <option value="all">All contribution kinds</option>
-                </select>
-              </label>
-            </div>
-            <div class="graph-stage knowledge-stage" id="knowledgeGraph" aria-label="Committed knowledge graph"></div>
-            <div class="legend">
-              <span><i class="legend-node area-node"></i>Area</span>
-              <span><i class="legend-node problem-node"></i>Problem</span>
-              <span><i class="legend-node work-node"></i>Mathematical work</span>
-              <span><i class="legend-node discourse-node"></i>Review and discussion</span>
-            </div>
-          </article>
+            <span class="provenance">Consensus-derived · read only</span>
+          </div>
+          <div class="feed-layout">
+            <div class="feed-list" id="feedList"></div>
+            <aside class="detail-panel sticky-detail" id="feedDetail">
+              <div class="empty-state">Select a contribution to read it and its discussion.</div>
+            </aside>
+          </div>
         </section>
 
-        <section class="inspection-grid">
-          <article class="detail-panel" aria-labelledby="detailTitle">
-            <div class="panel-heading">
-              <div>
-                <h2 id="detailTitle">Inspector</h2>
-                <p id="detailSubtitle">Select a node or committed artifact</p>
-              </div>
-              <span class="source-label" id="detailSource">Read only</span>
+        <section class="view" id="exploreView" data-view-panel="explore" hidden>
+          <div class="view-heading">
+            <div>
+              <p class="eyebrow">Knowledge catalog</p>
+              <h1>Explore mathematics</h1>
+              <p>Browse areas, problems, mathematical work, and discussion.</p>
             </div>
-            <div class="detail-content" id="detailContent" aria-live="polite"></div>
-          </article>
+            <span class="provenance">Locally indexed consensus</span>
+          </div>
+          <div class="explore-layout">
+            <section class="catalog-panel">
+              <nav class="breadcrumbs" id="exploreBreadcrumbs" aria-label="Knowledge path"></nav>
+              <div class="catalog-content" id="exploreCatalog"></div>
+            </section>
+            <aside class="detail-panel" id="exploreDetail">
+              <div class="empty-state">Choose an area or contribution to begin.</div>
+            </aside>
+          </div>
+        </section>
 
-          <aside class="activity-panel" aria-labelledby="activityTitle">
-            <div class="panel-heading">
-              <div>
-                <h2 id="activityTitle">Committed activity</h2>
-                <p>Newest ledger artifacts first</p>
-              </div>
+        <section class="view" id="graphView" data-view-panel="graph" hidden>
+          <div class="view-heading graph-heading">
+            <div>
+              <p class="eyebrow">Structure</p>
+              <h1>Knowledge graph</h1>
+              <p>One deterministic presentation tree with every committed relation retained.</p>
             </div>
-            <div class="activity-list" id="activityList"></div>
-          </aside>
+            <div class="graph-controls">
+              <label for="kindFilter">Show</label>
+              <select id="kindFilter">
+                <option value="all">All contribution kinds</option>
+              </select>
+              <button type="button" id="fitGraph">Fit graph</button>
+            </div>
+          </div>
+          <div class="graph-layout">
+            <div class="knowledge-stage" id="knowledgeGraph" aria-label="Committed knowledge graph"></div>
+            <aside class="detail-panel graph-detail" id="graphDetail">
+              <div class="empty-state">Select a node to inspect its content and relations.</div>
+            </aside>
+          </div>
+          <div class="legend">
+            <span><i class="legend-node area-node"></i>Area</span>
+            <span><i class="legend-node problem-node"></i>Problem</span>
+            <span><i class="legend-node work-node"></i>Mathematical work</span>
+            <span><i class="legend-node discourse-node"></i>Review and discussion</span>
+            <span><i class="legend-line real-relation-line"></i>Committed relation</span>
+          </div>
+        </section>
+
+        <section class="view" id="networkView" data-view-panel="network" hidden>
+          <div class="view-heading">
+            <div>
+              <p class="eyebrow">Local observation</p>
+              <h1>Peer network</h1>
+              <p>This node and its authenticated direct connections; it is not a global topology.</p>
+            </div>
+            <span class="provenance">Observed + peer-reported</span>
+          </div>
+          <div class="network-layout">
+            <div class="peer-stage" id="peerGraph" aria-label="Direct peer graph"></div>
+            <aside class="detail-panel" id="networkDetail"></aside>
+          </div>
+          <div class="legend">
+            <span><i class="legend-node local-node"></i>Local node</span>
+            <span><i class="legend-node peer-node"></i>Direct peer</span>
+            <span><i class="legend-line outbound-line"></i>Outbound</span>
+            <span><i class="legend-line inbound-line"></i>Inbound</span>
+          </div>
         </section>
 
         <footer>
           <span id="observedAt">No snapshot observed</span>
-          <span>Peer metadata is observed or peer-reported; knowledge is consensus-derived.</span>
+          <span>Knowledge is consensus-derived. Peer metadata is local or peer-reported.</span>
         </footer>
       </main>
     </div>
+
+    <!-- Vendored: markdown-it 15.0.1, DOMPurify 3.4.14, KaTeX 0.18.4, Cytoscape.js 3.34.2. -->
+    <script src="/vendor/markdown-it/markdown-it.min.js" defer></script>
+    <script src="/vendor/dompurify/purify.min.js" defer></script>
+    <script src="/vendor/katex/katex.min.js" defer></script>
+    <script src="/vendor/katex/auto-render.min.js" defer></script>
+    <script src="/vendor/cytoscape/cytoscape.min.js" defer></script>
     <script src="/inspector.js" defer></script>
   </body>
 </html>
