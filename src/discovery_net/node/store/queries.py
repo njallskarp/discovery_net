@@ -102,6 +102,30 @@ def select_entries(
         raise ValueError("artifact ledger database contains an invalid entry") from error
 
 
+def select_entries_after(
+    connection: sqlite3.Connection,
+    height: int,
+) -> tuple[StoredArtifactLedgerEntry, ...]:
+    """Return persisted entries committed after the supplied block height."""
+    if not isinstance(height, int) or isinstance(height, bool):
+        raise TypeError("height must be an integer")
+    if height < 0:
+        raise ValueError("height must be nonnegative")
+    rows = connection.execute(
+        """
+        SELECT height, transaction_index, transaction_bytes
+        FROM artifact_ledger_entries
+        WHERE height > ?
+        ORDER BY height, transaction_index
+        """,
+        (height,),
+    ).fetchall()
+    try:
+        return tuple(_stored_entry(row) for row in rows)
+    except (TypeError, ValueError) as error:
+        raise ValueError("artifact ledger database contains an invalid entry") from error
+
+
 def insert_entries(
     connection: sqlite3.Connection,
     entries: tuple[StoredArtifactLedgerEntry, ...],

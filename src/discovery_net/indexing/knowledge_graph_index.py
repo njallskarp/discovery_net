@@ -27,6 +27,7 @@ class IndexedArtifact:
     ledger_entry: ArtifactLedgerEntry
     artifact_index: int
     artifact: Artifact = field(init=False)
+    _artifact_ref: ArtifactRef = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.ledger_entry, ArtifactLedgerEntry):
@@ -43,6 +44,7 @@ class IndexedArtifact:
                 self.envelope.payload,
             ),
         )
+        object.__setattr__(self, "_artifact_ref", envelope_artifact_ref(self.envelope))
 
     @property
     def envelope(self) -> SignedEnvelope:
@@ -51,8 +53,8 @@ class IndexedArtifact:
 
     @property
     def artifact_ref(self) -> ArtifactRef:
-        """Derive the artifact reference from its signed envelope."""
-        return envelope_artifact_ref(self.envelope)
+        """Return the artifact reference derived from the signed envelope."""
+        return self._artifact_ref
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +96,33 @@ class KnowledgeGraphIndex:
         if not isinstance(snapshot, ArtifactLedgerSnapshot):
             raise TypeError("snapshot must be an ArtifactLedgerSnapshot")
         self._state = _build_state(snapshot)
+
+    def append(
+        self,
+        *,
+        entries: tuple[ArtifactLedgerEntry, ...],
+        height: int,
+    ) -> None:
+        """Atomically append newly committed entries and advance the indexed height."""
+        if not isinstance(entries, tuple):
+            raise TypeError("entries must be a tuple")
+        if any(not isinstance(entry, ArtifactLedgerEntry) for entry in entries):
+            raise TypeError("entries must contain ArtifactLedgerEntry values")
+        if not isinstance(height, int) or isinstance(height, bool):
+            raise TypeError("height must be an integer")
+        if height < self._state.height:
+            raise ValueError("height must not precede the indexed height")
+        if any(entry.height <= self._state.height for entry in entries):
+            raise ValueError("entries must follow the indexed height")
+        if any(entry.height > height for entry in entries):
+            raise ValueError("entry height must not exceed the indexed height")
+        if height == self._state.height and entries:
+            raise ValueError("entries cannot change an already indexed height")
+        self._state = _append_state(self._state, entries=entries, height=height)
+
+    def artifacts(self) -> tuple[IndexedArtifact, ...]:
+        """Return all artifacts in canonical ledger order."""
+        return tuple(self._state.nodes.values())
 
     def get(self, artifact_ref: ArtifactRef) -> IndexedArtifact | None:
         """Return an indexed artifact by reference, if present."""
@@ -180,6 +209,34 @@ def _build_state(snapshot: ArtifactLedgerSnapshot) -> _GraphState:
 
     return _GraphState(
         height=snapshot.height,
+        nodes=nodes,
+        adjacency={key: tuple(references) for key, references in adjacency.items()},
+    )
+
+
+def _append_state(
+    state: _GraphState,
+    *,
+    entries: tuple[ArtifactLedgerEntry, ...],
+    height: int,
+) -> _GraphState:
+    nodes = dict(state.nodes)
+    adjacency = defaultdict(list, {key: list(refs) for key, refs in state.adjacency.items()})
+
+    for ledger_entry in entries:
+        for artifact_index in range(len(ledger_entry.transaction.envelopes)):
+            indexed = IndexedArtifact(
+                ledger_entry=ledger_entry,
+                artifact_index=artifact_index,
+            )
+            reference = indexed.artifact_ref
+            if reference in nodes:
+                raise ValueError("entries must not contain duplicate artifacts")
+            nodes[reference] = indexed
+            _connect(indexed, reference, adjacency)
+
+    return _GraphState(
+        height=height,
         nodes=nodes,
         adjacency={key: tuple(references) for key, references in adjacency.items()},
     )

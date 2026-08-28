@@ -14,6 +14,7 @@ from discovery_net.inspector.models import (
     PeerObservation,
 )
 from discovery_net.inspector.service import InspectorService
+from discovery_net.inspector.sources import ArtifactLedgerUpdate
 from discovery_net.knowledge_graph import (
     ArtifactRef,
     Contribution,
@@ -46,17 +47,16 @@ class SeedNodeObservationSource:
 @final
 @dataclass(frozen=True, slots=True, kw_only=True)
 class SeedArtifactLedgerReader:
-    """Returns one deterministic committed ledger snapshot for the demo."""
+    """Returns deterministic committed ledger updates for the demo."""
 
     snapshot: ArtifactLedgerSnapshot
 
-    def committed_height(self) -> int:
-        """Return the seeded committed height."""
-        return self.snapshot.height
-
-    def load(self) -> ArtifactLedgerSnapshot:
-        """Return the seeded committed ledger snapshot."""
-        return self.snapshot
+    def updates_after(self, height: int) -> ArtifactLedgerUpdate:
+        """Return seeded entries committed after the supplied height."""
+        return ArtifactLedgerUpdate(
+            height=self.snapshot.height,
+            entries=tuple(entry for entry in self.snapshot.entries if entry.height > height),
+        )
 
 
 def seeded_inspector_service() -> InspectorService:

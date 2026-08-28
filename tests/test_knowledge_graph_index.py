@@ -177,6 +177,40 @@ def test_refresh_expands_every_artifact_in_one_atomic_transaction() -> None:
     assert relation.artifact_index == 1
 
 
+def test_append_extends_the_index_without_rebuilding_committed_history() -> None:
+    # Incremental updates preserve existing objects while adding later ledger entries.
+    first = _entry(_contribution(ContributionKind.FINDING, "First"))
+    second = _entry(_contribution(ContributionKind.FINDING, "Second"), height=2)
+    index = KnowledgeGraphIndex()
+    index.append(entries=(first,), height=1)
+    indexed_first = index.get(_ref(first))
+
+    index.append(entries=(second,), height=2)
+
+    assert index.indexed_height == 2
+    assert index.get(_ref(first)) is indexed_first
+    assert _refs(index.contributions()) == (_ref(first), _ref(second))
+    assert _refs(index.artifacts()) == (_ref(first), _ref(second))
+
+
+def test_failed_append_leaves_the_previous_projection_intact() -> None:
+    # Duplicate or non-forward changes fail before replacing the visible graph state.
+    first = _entry(_contribution(ContributionKind.FINDING, "First"))
+    duplicate = ArtifactLedgerEntry(
+        transaction=first.transaction,
+        height=2,
+        transaction_index=0,
+    )
+    index = KnowledgeGraphIndex()
+    index.append(entries=(first,), height=1)
+
+    with pytest.raises(ValueError, match="duplicate artifacts"):
+        index.append(entries=(duplicate,), height=2)
+
+    assert index.indexed_height == 1
+    assert _refs(index.artifacts()) == (_ref(first),)
+
+
 def test_failed_refresh_leaves_the_previous_projection_intact() -> None:
     # A complete state is swapped in only after every snapshot entry has been decoded and indexed.
     first = _entry(_contribution(ContributionKind.FINDING, "First"))

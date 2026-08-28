@@ -340,6 +340,11 @@ main {
   gap: 12px;
 }
 
+.load-older {
+  width: 100%;
+  margin-top: 12px;
+}
+
 .feed-card,
 .detail-panel,
 .catalog-panel,
@@ -783,6 +788,22 @@ main {
   align-items: center;
 }
 
+#graphView {
+  --graph-inline-gutter: max(28px, calc((100vw - 1480px) / 2 + 28px));
+
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+}
+
+#graphView .graph-heading {
+  padding-inline: var(--graph-inline-gutter);
+}
+
+#graphView .graph-layout {
+  position: relative;
+  display: block;
+}
+
 .graph-controls {
   display: flex;
   align-items: center;
@@ -811,6 +832,14 @@ main {
   background-size: 18px 18px;
 }
 
+#graphView .knowledge-stage {
+  height: max(440px, calc(100dvh - 280px));
+  min-height: 0;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+
 .peer-stage {
   min-height: 480px;
 }
@@ -818,6 +847,21 @@ main {
 .graph-detail {
   max-height: min(68vh, 720px);
   overflow: auto;
+}
+
+#graphView .graph-detail {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  right: var(--graph-inline-gutter);
+  width: min(380px, calc(100% - 56px));
+  max-height: calc(100% - 28px);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+#graphView > .legend {
+  padding-inline: var(--graph-inline-gutter);
 }
 
 .legend {
@@ -969,6 +1013,23 @@ footer {
   .peer-stage {
     height: 500px;
     min-height: 500px;
+  }
+
+  #graphView {
+    --graph-inline-gutter: 14px;
+  }
+
+  #graphView .knowledge-stage {
+    height: 500px;
+    min-height: 500px;
+  }
+
+  #graphView .graph-detail {
+    position: static;
+    width: auto;
+    max-height: none;
+    margin: 14px;
+    backdrop-filter: none;
   }
 
   .detail-grid {

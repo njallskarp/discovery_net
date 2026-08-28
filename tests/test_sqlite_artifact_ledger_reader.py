@@ -9,14 +9,19 @@ from discovery_net.node import SQLiteArtifactLedgerStore
 
 
 def test_reader_checks_height_before_loading_the_committed_snapshot(tmp_path: Path) -> None:
-    # The inspector can skip full transaction decoding while the ledger head is unchanged.
+    # The inspector decodes only entries committed after its indexed height.
     path = tmp_path / "artifact-ledger.sqlite"
     snapshot = seed_ledger_snapshot()
     SQLiteArtifactLedgerStore(path=path).save(snapshot)
     reader = SQLiteArtifactLedgerReader(path=path)
 
-    assert reader.committed_height() == snapshot.height
-    assert reader.load() == snapshot
+    initial = reader.updates_after(0)
+    unchanged = reader.updates_after(snapshot.height)
+
+    assert initial.height == snapshot.height
+    assert initial.entries == snapshot.entries
+    assert unchanged.height == snapshot.height
+    assert unchanged.entries == ()
 
 
 def test_reader_never_creates_a_missing_database(tmp_path: Path) -> None:
@@ -25,6 +30,6 @@ def test_reader_never_creates_a_missing_database(tmp_path: Path) -> None:
     reader = SQLiteArtifactLedgerReader(path=path)
 
     with pytest.raises(sqlite3.OperationalError):
-        reader.committed_height()
+        reader.updates_after(0)
 
     assert not path.exists()

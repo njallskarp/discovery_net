@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from functools import partial
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from typing import Final, Self, final
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
+
+from pydantic import BaseModel
 
 from discovery_net.inspector.service import InspectorService
+from discovery_net.wire import parse_artifact_ref
 
 _STATIC_TYPES: Final = {
     "/": ("index.html", "text/html; charset=utf-8"),
@@ -116,9 +120,23 @@ class _InspectorRequestHandler(BaseHTTPRequestHandler):
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
     def do_GET(self) -> None:
-        path = urlsplit(self.path).path
+        request = urlsplit(self.path)
+        path = request.path
         if path == "/api/snapshot":
             self._snapshot()
+            return
+        if path == "/api/node":
+            self._model(self._service.node_snapshot)
+            return
+        if path == "/api/graph":
+            self._graph(request.query)
+            return
+        if path == "/api/feed":
+            self._feed(request.query)
+            return
+        contribution_prefix = "/api/contributions/"
+        if path.startswith(contribution_prefix):
+            self._contribution(path.removeprefix(contribution_prefix))
             return
         static = _STATIC_TYPES.get(path)
         if static is None:
@@ -141,12 +159,62 @@ class _InspectorRequestHandler(BaseHTTPRequestHandler):
         return
 
     def _snapshot(self) -> None:
+        self._model(self._service.snapshot)
+
+    def _graph(self, query: str) -> None:
         try:
-            body = self._service.snapshot().model_dump_json().encode()
+            values = parse_qs(query, strict_parsing=True) if query else {}
+            _require_query_fields(values, {"after_height"})
+            after_height = _optional_query_integer(values, "after_height")
+        except ValueError as error:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        self._model(lambda: self._service.knowledge_graph(after_height=after_height))
+
+    def _feed(self, query: str) -> None:
+        try:
+            values = parse_qs(query, strict_parsing=True) if query else {}
+            _require_query_fields(values, {"before", "limit"})
+            before = _optional_feed_cursor(values)
+            limit = _optional_query_integer(values, "limit")
+            if limit is not None and not 1 <= limit <= 50:
+                raise ValueError("limit must be between 1 and 50")
+        except ValueError as error:
+            self._json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+            return
+        self._model(
+            lambda: self._service.feed_page(
+                before=before,
+                limit=20 if limit is None else limit,
+            )
+        )
+
+    def _contribution(self, value: str) -> None:
+        try:
+            artifact_ref = parse_artifact_ref(value)
+        except (TypeError, ValueError):
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "invalid contribution reference"})
+            return
+        try:
+            contribution = self._service.contribution(artifact_ref)
         except (OSError, TypeError, ValueError):
             self._json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                {"error": "inspector snapshot unavailable"},
+                {"error": "inspector data unavailable"},
+            )
+            return
+        if contribution is None:
+            self._json(HTTPStatus.NOT_FOUND, {"error": "contribution not found"})
+            return
+        self._model(lambda: contribution)
+
+    def _model(self, operation: Callable[[], BaseModel]) -> None:
+        try:
+            body = operation().model_dump_json().encode()
+        except (OSError, TypeError, ValueError):
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "inspector data unavailable"},
             )
             return
         self._response(
@@ -199,3 +267,30 @@ def _katex_font(path: str) -> tuple[str, str] | None:
     if not filename or "/" in filename or suffix is None:
         return None
     return f"vendor/katex/fonts/{filename}", _KATEX_FONT_TYPES[suffix]
+
+
+def _require_query_fields(values: dict[str, list[str]], allowed: set[str]) -> None:
+    unexpected = set(values) - allowed
+    if unexpected:
+        raise ValueError(f"unexpected query field: {min(unexpected)}")
+
+
+def _optional_query_integer(values: dict[str, list[str]], field_name: str) -> int | None:
+    raw = values.get(field_name)
+    if raw is None:
+        return None
+    if len(raw) != 1 or not raw[0].isdigit():
+        raise ValueError(f"{field_name} must be a nonnegative integer")
+    return int(raw[0])
+
+
+def _optional_feed_cursor(values: dict[str, list[str]]) -> tuple[int, int] | None:
+    raw = values.get("before")
+    if raw is None:
+        return None
+    if len(raw) != 1:
+        raise ValueError("before must be one feed cursor")
+    parts = raw[0].split(":")
+    if len(parts) != 2 or any(not part.isdigit() for part in parts):
+        raise ValueError("before must be a height:transaction-index cursor")
+    return int(parts[0]), int(parts[1])

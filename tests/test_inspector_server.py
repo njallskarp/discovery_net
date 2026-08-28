@@ -16,7 +16,13 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from discovery_net.inspector import InspectorService, InspectorSnapshot
-from discovery_net.inspector.models import NodeObservation
+from discovery_net.inspector.models import (
+    InspectorContribution,
+    InspectorFeedPage,
+    InspectorKnowledgeGraph,
+    InspectorNodeSnapshot,
+    NodeObservation,
+)
 from discovery_net.inspector.seed import SeedArtifactLedgerReader, seeded_inspector_service
 from discovery_net.inspector.server import InspectorServer
 from discovery_net.node import ArtifactLedgerSnapshot
@@ -42,19 +48,42 @@ def test_server_exposes_the_browser_and_snapshot_without_write_routes() -> None:
             cytoscape, _headers = _get(f"{base_url}/vendor/cytoscape/cytoscape.min.js")
             font, font_headers = _get(f"{base_url}/vendor/katex/fonts/KaTeX_Main-Regular.woff2")
             snapshot_bytes, snapshot_headers = _get(f"{base_url}/api/snapshot")
+            node_bytes, _headers = _get(f"{base_url}/api/node")
+            graph_bytes, _headers = _get(f"{base_url}/api/graph")
+            unchanged_graph_bytes, _headers = _get(f"{base_url}/api/graph?after_height=8")
+            feed_bytes, _headers = _get(f"{base_url}/api/feed?limit=2")
 
             snapshot = InspectorSnapshot.model_validate_json(snapshot_bytes)
+            node = InspectorNodeSnapshot.model_validate_json(node_bytes)
+            graph = InspectorKnowledgeGraph.model_validate_json(graph_bytes)
+            unchanged_graph = InspectorKnowledgeGraph.model_validate_json(unchanged_graph_bytes)
+            feed = InspectorFeedPage.model_validate_json(feed_bytes)
+            contribution_bytes, _headers = _get(
+                f"{base_url}/api/contributions/{graph.contributions[0].artifact_ref}"
+            )
+            contribution = InspectorContribution.model_validate_json(contribution_bytes)
             assert b"Discovery Net Inspector" in index
             assert b".knowledge-stage" in stylesheet
-            assert b'fetch("/api/snapshot"' in script
+            assert b"api.node()" in script
+            assert b"api.graph()" in script
+            assert b"api.feed()" in script
+            assert b"api.contribution(ref)" in script
             assert b"markdownit" in markdown
             assert b"DOMPurify" in purifier
             assert b"katex" in katex
             assert b"cytoscape" in cytoscape
             assert font
             assert snapshot.node.chain_id == "discovery-net-demo"
+            assert node.node.chain_id == "discovery-net-demo"
             assert len(snapshot.node.peers) == 4
             assert len(snapshot.knowledge_graph.contributions) == 8
+            assert len(graph.contributions) == 8
+            assert unchanged_graph.contributions == ()
+            assert unchanged_graph.relations == ()
+            assert len(feed.transactions) == 2
+            assert feed.next_before is not None
+            assert contribution.artifact_ref == graph.contributions[0].artifact_ref
+            assert contribution.body
             assert index_headers["Content-Security-Policy"].startswith("default-src 'none'")
             assert "font-src 'self'" in index_headers["Content-Security-Policy"]
             assert "'unsafe-inline'" not in index_headers["Content-Security-Policy"]
@@ -69,6 +98,14 @@ def test_server_exposes_the_browser_and_snapshot_without_write_routes() -> None:
                 assert json.loads(error.read()) == {"error": "read-only endpoint"}
             else:
                 raise AssertionError("the read-only inspector accepted a POST request")
+
+            try:
+                urlopen(f"{base_url}/api/feed?limit=0", timeout=2)
+            except HTTPError as error:
+                assert error.code == HTTPStatus.BAD_REQUEST
+                assert json.loads(error.read()) == {"error": "limit must be between 1 and 50"}
+            else:
+                raise AssertionError("an invalid feed page size was accepted")
         finally:
             server.shutdown()
             thread.join(timeout=2)
@@ -91,7 +128,7 @@ def test_server_reports_an_unavailable_observation_without_leaking_details() -> 
                 urlopen(url, timeout=2)
             except HTTPError as error:
                 assert error.code == HTTPStatus.SERVICE_UNAVAILABLE
-                assert json.loads(error.read()) == {"error": "inspector snapshot unavailable"}
+                assert json.loads(error.read()) == {"error": "inspector data unavailable"}
             else:
                 raise AssertionError("an unavailable source returned a successful snapshot")
         finally:
