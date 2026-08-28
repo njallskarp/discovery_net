@@ -26,17 +26,19 @@
   ]);
   const state = {
     currentView: "feed",
+    details: new Map(),
     exploreRef: null,
+    feedNextBefore: null,
+    feedTransactions: [],
     graphFingerprint: null,
-    knowledgeFingerprint: null,
     live: true,
     networkFingerprint: null,
     networkGraph: null,
     nextRefresh: Date.now(),
+    nodeSnapshot: null,
     refreshing: false,
     selectedPeerRef: "local",
     selectedRef: null,
-    snapshot: null,
     viewModel: null,
   };
 
@@ -58,6 +60,7 @@
     liveLabel: document.getElementById("liveLabel"),
     liveState: document.getElementById("liveState"),
     liveToggle: document.getElementById("liveToggle"),
+    loadOlder: document.getElementById("loadOlder"),
     mempoolValue: document.getElementById("mempoolValue"),
     networkDetail: document.getElementById("networkDetail"),
     observedAt: document.getElementById("observedAt"),
@@ -66,6 +69,32 @@
     refreshButton: document.getElementById("refreshButton"),
     syncValue: document.getElementById("syncValue"),
   };
+
+  class InspectorAPI {
+    async node() {
+      return this.get("/api/node");
+    }
+
+    async graph(afterHeight = null) {
+      const query = afterHeight === null ? "" : `?after_height=${afterHeight}`;
+      return this.get(`/api/graph${query}`);
+    }
+
+    async feed(before = null) {
+      const query = before === null ? "" : `?before=${encodeURIComponent(before)}`;
+      return this.get(`/api/feed${query}`);
+    }
+
+    async contribution(ref) {
+      return this.get(`/api/contributions/${encodeURIComponent(ref)}`);
+    }
+
+    async get(path) {
+      const response = await fetch(path, { cache: "no-store" });
+      if (!response.ok) throw new Error(`Inspector request failed with ${response.status}`);
+      return response.json();
+    }
+  }
 
   class MarkdownRenderer {
     constructor() {
@@ -192,32 +221,6 @@
         cursor = this.presentationParents.get(cursor) ?? null;
       }
       return path;
-    }
-
-    transactions() {
-      const groups = new Map();
-      [...this.contributions, ...this.relations].forEach((artifact, ordinal) => {
-        const key = `${artifact.height}:${artifact.transaction_index}`;
-        if (!groups.has(key)) {
-          groups.set(key, {
-            artifacts: [],
-            height: artifact.height,
-            transactionIndex: artifact.transaction_index,
-          });
-        }
-        groups.get(key).artifacts.push({ artifact, ordinal });
-      });
-      return [...groups.values()]
-        .map((group) => ({
-          ...group,
-          artifacts: group.artifacts
-            .sort((left, right) => artifactOrder(left) - artifactOrder(right))
-            .map(({ artifact }) => artifact),
-        }))
-        .sort(
-          (left, right) =>
-            right.height - left.height || right.transactionIndex - left.transactionIndex,
-        );
     }
 
     graphElements(kind) {
@@ -377,6 +380,7 @@
     }
   }
 
+  const api = new InspectorAPI();
   const markdownRenderer = new MarkdownRenderer();
   const knowledgeGraph = new RadialKnowledgeGraph(elements.knowledgeGraph, selectContribution);
 
@@ -397,6 +401,7 @@
     renderLiveState();
   });
   elements.refreshButton.addEventListener("click", refresh);
+  elements.loadOlder.addEventListener("click", loadOlderActivity);
   elements.kindFilter.addEventListener("change", () => renderKnowledgeGraph(true));
   elements.fitGraph.addEventListener("click", () => knowledgeGraph.fit());
 
@@ -405,20 +410,36 @@
     state.refreshing = true;
     elements.refreshButton.disabled = true;
     try {
-      const response = await fetch("/api/snapshot", { cache: "no-store" });
-      if (!response.ok) throw new Error(`Snapshot request failed with ${response.status}`);
-      state.snapshot = await response.json();
-      state.viewModel = new KnowledgeGraphViewModel(state.snapshot.knowledge_graph);
-      if (state.selectedRef && !state.viewModel.contribution(state.selectedRef)) {
-        state.selectedRef = null;
+      const nodeRequest = api.node().then((snapshot) => {
+        state.nodeSnapshot = snapshot;
+        renderSummary();
+        if (state.currentView === "network") renderPeerGraph();
+      });
+      if (!state.viewModel) {
+        const graphRequest = api.graph().then((graph) => applyGraphUpdate(graph));
+        const feedRequest = api.feed().then((page) => applyFeedPage(page, false));
+        await Promise.all([nodeRequest, graphRequest, feedRequest]);
+      } else {
+        await nodeRequest;
+        const previousHeight = state.viewModel.graph.indexed_height;
+        const graph = await api.graph(previousHeight);
+        const changed =
+          graph.indexed_height !== previousHeight ||
+          graph.contributions.length > 0 ||
+          graph.relations.length > 0;
+        if (changed) {
+          applyGraphUpdate(graph);
+          if (graph.contributions.length > 0 || graph.relations.length > 0) {
+            applyFeedPage(await api.feed(), false);
+          }
+        }
       }
       state.nextRefresh = Date.now() + REFRESH_INTERVAL_MS;
       elements.errorMessage.hidden = true;
       elements.liveState.classList.remove("error");
-      render();
     } catch (error) {
       elements.errorMessage.textContent =
-        error instanceof Error ? error.message : "Inspector snapshot unavailable";
+        error instanceof Error ? error.message : "Inspector data unavailable";
       elements.errorMessage.hidden = false;
       elements.liveState.classList.add("error");
     } finally {
@@ -428,18 +449,71 @@
     }
   }
 
-  function render() {
-    renderSummary();
-    const fingerprint = knowledgeFingerprint(state.viewModel);
-    if (fingerprint !== state.knowledgeFingerprint) {
-      state.knowledgeFingerprint = fingerprint;
-      renderKindFilter();
-      renderFeed();
-      renderExplore();
-      renderKnowledgeGraph(false);
-      renderSelectedDetails();
+  async function loadOlderActivity() {
+    if (!state.feedNextBefore) return;
+    elements.loadOlder.disabled = true;
+    try {
+      applyFeedPage(await api.feed(state.feedNextBefore), true);
+    } catch (error) {
+      elements.errorMessage.textContent =
+        error instanceof Error ? error.message : "Older activity unavailable";
+      elements.errorMessage.hidden = false;
+    } finally {
+      elements.loadOlder.disabled = false;
     }
-    renderPeerGraph();
+  }
+
+  function applyGraphUpdate(graph) {
+    const current = state.viewModel?.graph;
+    const merged = current
+      ? {
+          indexed_height: graph.indexed_height,
+          contributions: uniqueBy(
+            [...current.contributions, ...graph.contributions],
+            (contribution) => contribution.artifact_ref,
+          ),
+          relations: uniqueBy(
+            [...current.relations, ...graph.relations],
+            (relation) => relation.artifact_ref,
+          ),
+        }
+      : graph;
+    state.viewModel = new KnowledgeGraphViewModel(merged);
+    if (state.selectedRef && !state.viewModel.contribution(state.selectedRef)) {
+      state.selectedRef = null;
+    }
+    state.graphFingerprint = null;
+    renderSummary();
+    renderKindFilter();
+    renderActiveKnowledgeView();
+    renderSelectedDetails();
+  }
+
+  function applyFeedPage(page, append) {
+    page.transactions.forEach((transaction) => {
+      transaction.contributions.forEach((contribution) => {
+        state.details.set(contribution.artifact_ref, contribution);
+      });
+    });
+    state.feedTransactions = uniqueBy(
+      append
+        ? [...state.feedTransactions, ...page.transactions]
+        : [...page.transactions, ...state.feedTransactions],
+      (transaction) => `${transaction.height}:${transaction.transaction_index}`,
+    ).sort(
+      (left, right) =>
+        right.height - left.height || right.transaction_index - left.transaction_index,
+    );
+    if (append || state.feedNextBefore === null) state.feedNextBefore = page.next_before;
+    elements.loadOlder.hidden = state.feedNextBefore === null;
+    if (state.currentView === "feed") renderFeed();
+    renderSelectedDetails();
+  }
+
+  function renderActiveKnowledgeView() {
+    if (state.currentView === "feed") renderFeed();
+    if (state.currentView === "explore") renderExplore();
+    if (state.currentView === "graph") renderKnowledgeGraph(false);
   }
 
   function showView(view) {
@@ -451,27 +525,32 @@
     document.querySelectorAll("[data-view]").forEach((button) => {
       button.setAttribute("aria-pressed", String(button.dataset.view === view));
     });
+    renderActiveKnowledgeView();
+    renderSelectedDetails();
     if (view === "graph") {
       knowledgeGraph.resize();
       knowledgeGraph.fit();
     }
     if (view === "network") {
+      renderPeerGraph();
       state.networkGraph?.resize();
       state.networkGraph?.fit(undefined, 52);
     }
   }
 
   function renderSummary() {
-    const snapshot = state.snapshot;
+    const snapshot = state.nodeSnapshot;
     if (!snapshot) return;
     const node = snapshot.node;
-    const graph = snapshot.knowledge_graph;
+    const graph = state.viewModel?.graph;
     elements.chainValue.textContent = node.chain_id;
     elements.syncValue.textContent = node.catching_up ? "Catching up" : "Synchronized";
     elements.heightValue.textContent = node.application_height.toLocaleString();
     elements.consensusValue.textContent = `Round ${node.consensus_round} · ${humanize(node.consensus_step)}`;
     elements.peerValue.textContent = node.peers.length.toLocaleString();
-    elements.graphValue.textContent = `${graph.contributions.length} nodes · ${graph.relations.length} edges`;
+    elements.graphValue.textContent = graph
+      ? `${graph.contributions.length} nodes · ${graph.relations.length} edges`
+      : "Indexing…";
     elements.mempoolValue.textContent = `${node.mempool_transactions} transactions in local mempool`;
     elements.observedAt.textContent = `Observed ${new Date(snapshot.observed_at).toLocaleString()}`;
   }
@@ -491,7 +570,7 @@
   function renderFeed() {
     const viewModel = state.viewModel;
     if (!viewModel) return;
-    const groups = viewModel.transactions();
+    const groups = state.feedTransactions;
     if (groups.length === 0) {
       elements.feedList.replaceChildren(emptyState("No committed artifacts yet."));
       return;
@@ -503,20 +582,20 @@
         const heading = document.createElement("header");
         const position = document.createElement("span");
         position.className = "consensus-position";
-        position.textContent = `Block ${group.height} · transaction ${group.transactionIndex}`;
+        position.textContent = `Block ${group.height} · transaction ${group.transaction_index}`;
         const count = document.createElement("span");
         count.className = "artifact-count";
-        count.textContent = `${group.artifacts.length} atomic artifact${group.artifacts.length === 1 ? "" : "s"}`;
+        const artifactCount = group.contributions.length + group.relations.length;
+        count.textContent = `${artifactCount} atomic artifact${artifactCount === 1 ? "" : "s"}`;
         heading.append(position, count);
         const content = document.createElement("div");
         content.className = "feed-card-content";
-        group.artifacts.forEach((artifact) => {
-          if ("title" in artifact) {
-            content.append(feedContribution(artifact));
-          }
+        group.contributions.forEach((contribution) => {
+          content.append(feedContribution(contribution));
         });
-        const relations = group.artifacts.filter((artifact) => "from_contribution" in artifact);
-        if (relations.length > 0) content.append(relationContext(relations, viewModel));
+        if (group.relations.length > 0) {
+          content.append(relationContext(group.relations, viewModel));
+        }
         article.append(heading, content);
         return article;
       }),
@@ -646,7 +725,7 @@
   }
 
   function renderPeerGraph() {
-    const node = state.snapshot?.node;
+    const node = state.nodeSnapshot?.node;
     if (!node) return;
     const fingerprint = `${node.node_id}:${node.peers.map((peer) => `${peer.node_id}:${peer.direction}`).join(",")}`;
     if (fingerprint === state.networkFingerprint) {
@@ -691,7 +770,7 @@
   }
 
   function renderNetworkDetails() {
-    const node = state.snapshot?.node;
+    const node = state.nodeSnapshot?.node;
     if (!node) return;
     if (state.selectedPeerRef === "local") {
       elements.networkDetail.replaceChildren(
@@ -729,28 +808,48 @@
     );
   }
 
-  function selectContribution(ref) {
+  async function selectContribution(ref) {
     state.selectedRef = ref;
     renderSelectedDetails();
     knowledgeGraph.highlight(ref);
+    if (state.details.has(ref)) return;
+    try {
+      state.details.set(ref, await api.contribution(ref));
+      if (state.selectedRef === ref) renderSelectedDetails();
+    } catch (error) {
+      if (state.selectedRef !== ref) return;
+      const message = error instanceof Error ? error.message : "Contribution unavailable";
+      [elements.feedDetail, elements.exploreDetail, elements.graphDetail].forEach((container) => {
+        container.replaceChildren(emptyState(message));
+      });
+    }
   }
 
   function renderSelectedDetails() {
     const viewModel = state.viewModel;
     if (!viewModel || !state.selectedRef) return;
-    [elements.feedDetail, elements.exploreDetail, elements.graphDetail].forEach((container) => {
-      renderContributionDetail(container, state.selectedRef, viewModel);
-    });
+    const container = {
+      explore: elements.exploreDetail,
+      feed: elements.feedDetail,
+      graph: elements.graphDetail,
+    }[state.currentView];
+    if (!container) return;
+    const detail = state.details.get(state.selectedRef);
+    if (!detail) {
+      container.replaceChildren(emptyState("Loading contribution…"));
+      return;
+    }
+    renderContributionDetail(container, state.selectedRef, detail, viewModel);
   }
 
-  function renderContributionDetail(container, ref, viewModel) {
-    const contribution = viewModel.contribution(ref);
-    if (!contribution) return;
+  function renderContributionDetail(container, ref, contribution, viewModel) {
+    const summary = viewModel.contribution(ref);
+    if (!summary) return;
     const relations = viewModel.incidentRelations(ref);
     const article = document.createElement("article");
     article.className = "artifact-detail";
     article.append(
-      detailHeading(contribution.title, humanize(contribution.kind), "Consensus-derived"),
+      detailHeading(summary.title, humanize(summary.kind), "Consensus-derived"),
       markdownRenderer.render(contribution.body),
       detailGrid([
         ["Artifact reference", contribution.artifact_ref, true],
@@ -815,12 +914,16 @@
       relationLabel.textContent = humanize(relation.kind);
       const title = linkButton(contribution.title, () => selectContribution(contribution.artifact_ref));
       title.className = "thread-title";
-      const body = markdownRenderer.render(contribution.body);
-      body.classList.add("thread-body");
       const children = document.createElement("div");
       children.className = "thread-children";
       appendThreadChildren(children, contribution.artifact_ref, viewModel, seen);
-      branch.append(relationLabel, title, body);
+      branch.append(relationLabel, title);
+      const detail = state.details.get(contribution.artifact_ref);
+      if (detail) {
+        const body = markdownRenderer.render(detail.body);
+        body.classList.add("thread-body");
+        branch.append(body);
+      }
       if (children.childElementCount > 0) branch.append(children);
       container.append(branch);
     });
@@ -1002,15 +1105,6 @@
     return Number.isInteger(artifact.artifact_index) ? artifact.artifact_index : fallback;
   }
 
-  function artifactOrder({ artifact, ordinal }) {
-    return Number.isInteger(artifact.artifact_index) ? artifact.artifact_index : 1_000_000 + ordinal;
-  }
-
-  function knowledgeFingerprint(viewModel) {
-    if (!viewModel) return null;
-    return `${viewModel.graph.indexed_height}:${viewModel.contributions.map((item) => item.artifact_ref).join(",")}:${viewModel.relations.map((item) => item.artifact_ref).join(",")}`;
-  }
-
   function uniqueBy(values, key) {
     const seen = new Set();
     return values.filter((value) => {
@@ -1072,7 +1166,7 @@
       elements.liveLabel.textContent = "Connection error";
       return;
     }
-    if (!state.snapshot) {
+    if (!state.nodeSnapshot) {
       elements.liveLabel.textContent = "Connecting";
       return;
     }

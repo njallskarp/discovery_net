@@ -122,6 +122,18 @@ class InspectorContribution(_InspectorModel):
     artifact_index: NonNegativeInt
 
 
+class InspectorContributionSummary(_InspectorModel):
+    """Contribution metadata sufficient for topology and catalog views."""
+
+    artifact_ref: StrictStr
+    kind: ContributionKind
+    title: StrictStr
+    created_at: AwareDatetime
+    height: PositiveInt
+    transaction_index: NonNegativeInt
+    artifact_index: NonNegativeInt
+
+
 class InspectorRelation(_InspectorModel):
     """A committed directed relation projected for graph inspection."""
 
@@ -137,12 +149,56 @@ class InspectorRelation(_InspectorModel):
     artifact_index: NonNegativeInt
 
 
+class InspectorRelationSummary(_InspectorModel):
+    """Relation metadata sufficient for topology and traversal."""
+
+    artifact_ref: StrictStr
+    kind: RelationKind
+    from_contribution: StrictStr
+    to_contribution: StrictStr
+    created_at: AwareDatetime
+    height: PositiveInt
+    transaction_index: NonNegativeInt
+    artifact_index: NonNegativeInt
+
+
 class InspectorKnowledgeGraph(_InspectorModel):
-    """The locally indexed committed contribution graph."""
+    """A topology-only update from the locally indexed contribution graph."""
 
     indexed_height: NonNegativeInt
+    contributions: tuple[InspectorContributionSummary, ...]
+    relations: tuple[InspectorRelationSummary, ...]
+
+
+class InspectorFeedTransaction(_InspectorModel):
+    """One committed transaction rendered as an atomic feed item."""
+
+    height: PositiveInt
+    transaction_index: NonNegativeInt
     contributions: tuple[InspectorContribution, ...]
     relations: tuple[InspectorRelation, ...]
+
+
+class InspectorFeedPage(_InspectorModel):
+    """One reverse-chronological page of committed transactions."""
+
+    indexed_height: NonNegativeInt
+    transactions: tuple[InspectorFeedTransaction, ...]
+    next_before: StrictStr | None
+
+
+class InspectorNodeSnapshot(_InspectorModel):
+    """One timestamped observation of the local node and its direct peers."""
+
+    observed_at: AwareDatetime
+    node: InspectorNode
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_aware_observed_at(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("observed_at must be timezone-aware")
+        return value
 
 
 class InspectorSnapshot(_InspectorModel):

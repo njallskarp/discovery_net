@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from functools import lru_cache
 
 from multiformats import CID, multihash
 from pydantic import (
@@ -228,6 +229,11 @@ def parse_artifact_ref(value: str) -> ArtifactRef:
 
     if not isinstance(value, str):
         raise TypeError("artifact reference must be a string")
+    return _parse_artifact_ref(value)
+
+
+@lru_cache(maxsize=8192)
+def _parse_artifact_ref(value: str) -> ArtifactRef:
     try:
         cid = CID.decode(value)
     except (KeyError, ValueError) as error:

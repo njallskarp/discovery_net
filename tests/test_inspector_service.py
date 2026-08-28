@@ -14,6 +14,8 @@ from discovery_net.inspector.seed import (
     seed_ledger_snapshot,
     seeded_inspector_service,
 )
+from discovery_net.inspector.sources import ArtifactLedgerUpdate
+from discovery_net.knowledge_graph import ArtifactRef
 from discovery_net.node import ArtifactLedgerSnapshot
 from discovery_net.wire import verify_transaction
 
@@ -100,7 +102,7 @@ def test_service_reuses_the_graph_projection_at_an_unchanged_height() -> None:
 
     assert second.knowledge_graph == first.knowledge_graph
     assert len(second.knowledge_graph.contributions) == 8
-    assert reader.load_count == 1
+    assert reader.requested_heights == [0, 8]
 
 
 def test_service_checks_the_node_chain_when_the_ledger_height_is_unchanged() -> None:
@@ -129,7 +131,7 @@ def test_service_rejects_removal_of_previously_committed_state() -> None:
     service.snapshot()
     reader.snapshot = None
 
-    with pytest.raises(ValueError, match="artifact ledger removed committed state"):
+    with pytest.raises(ValueError, match="artifact ledger moved behind the indexed height"):
         service.snapshot()
 
 
@@ -149,17 +151,76 @@ def test_service_rejects_regression_of_the_committed_height() -> None:
         service.snapshot()
 
 
+def test_node_snapshot_does_not_read_the_artifact_ledger() -> None:
+    # Status polling remains fast and independent from graph synchronization.
+    reader = _MutableLedgerReader(seed_ledger_snapshot())
+    service = InspectorService(
+        node_source=SeedNodeObservationSource(
+            observation=_node(chain_id="discovery-net-demo", height=8)
+        ),
+        ledger_reader=reader,
+    )
+
+    snapshot = service.node_snapshot()
+
+    assert snapshot.node.application_height == 8
+    assert reader.requested_heights == []
+
+
+def test_graph_updates_exclude_bodies_and_known_history() -> None:
+    # Topology polling returns only metadata committed after the browser cursor.
+    service = seeded_inspector_service()
+
+    complete = service.knowledge_graph()
+    unchanged = service.knowledge_graph(after_height=complete.indexed_height)
+
+    assert complete.contributions
+    assert not hasattr(complete.contributions[0], "body")
+    assert unchanged.indexed_height == complete.indexed_height
+    assert unchanged.contributions == ()
+    assert unchanged.relations == ()
+
+
+def test_feed_pages_transactions_without_loading_the_entire_history() -> None:
+    # Feed pagination preserves atomic transactions and supplies an opaque next cursor.
+    service = seeded_inspector_service()
+
+    first = service.feed_page(limit=2)
+    assert len(first.transactions) == 2
+    assert first.next_before is not None
+    before_height, before_index = (int(part) for part in first.next_before.split(":"))
+    second = service.feed_page(before=(before_height, before_index), limit=2)
+
+    assert len(second.transactions) == 2
+    assert second.transactions[0].height < first.transactions[-1].height
+
+
+def test_contribution_detail_loads_one_full_body_by_reference() -> None:
+    # Detail requests add the body and signature only for the selected contribution.
+    service = seeded_inspector_service()
+    summary = service.knowledge_graph().contributions[0]
+
+    detail = service.contribution(ArtifactRef(summary.artifact_ref))
+
+    assert detail is not None
+    assert detail.artifact_ref == summary.artifact_ref
+    assert detail.body
+    assert detail.signature
+
+
 class _MutableLedgerReader:
     def __init__(self, snapshot: ArtifactLedgerSnapshot | None) -> None:
         self.snapshot = snapshot
-        self.load_count = 0
+        self.requested_heights: list[int] = []
 
-    def committed_height(self) -> int | None:
-        return None if self.snapshot is None else self.snapshot.height
-
-    def load(self) -> ArtifactLedgerSnapshot | None:
-        self.load_count += 1
-        return self.snapshot
+    def updates_after(self, height: int) -> ArtifactLedgerUpdate:
+        self.requested_heights.append(height)
+        if self.snapshot is None:
+            return ArtifactLedgerUpdate(height=0, entries=())
+        return ArtifactLedgerUpdate(
+            height=self.snapshot.height,
+            entries=tuple(entry for entry in self.snapshot.entries if entry.height > height),
+        )
 
 
 class _MutableNodeSource:
