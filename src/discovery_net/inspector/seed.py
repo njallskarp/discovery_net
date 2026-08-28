@@ -50,6 +50,10 @@ class SeedArtifactLedgerReader:
 
     snapshot: ArtifactLedgerSnapshot
 
+    def committed_height(self) -> int:
+        """Return the seeded committed height."""
+        return self.snapshot.height
+
     def load(self) -> ArtifactLedgerSnapshot:
         """Return the seeded committed ledger snapshot."""
         return self.snapshot
