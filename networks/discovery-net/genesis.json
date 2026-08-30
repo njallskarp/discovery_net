@@ -1,0 +1,81 @@
+{
+  "genesis_time": "2026-08-30T21:38:10.000000Z",
+  "chain_id": "discovery-net",
+  "initial_height": "1",
+  "consensus_params": {
+    "block": {
+      "max_bytes": "55600190",
+      "max_gas": "-1"
+    },
+    "evidence": {
+      "max_age_num_blocks": "100000",
+      "max_age_duration": "172800000000000",
+      "max_bytes": "1048576"
+    },
+    "validator": {
+      "pub_key_types": [
+        "ed25519"
+      ]
+    },
+    "version": {
+      "app": "0"
+    },
+    "abci": {
+      "vote_extensions_enable_height": "0"
+    },
+    "authority": {
+      "authority": ""
+    }
+  },
+  "validators": [
+    {
+      "address": "3CAEA18EE4BBFE18DBD552EC5848151EC39DE642",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "BWBDfPkN++J/OAoudAFehktUOa9CQdd5Cr9Ugk41kr8="
+      },
+      "power": "10",
+      "name": "node-njall-1"
+    },
+    {
+      "address": "1152703823322292CB181734526E8FC960EF6E2F",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "R6GeCaNU8jGzgy6sLI8/QnLsstP//Bya0N+7E4Fgyb0="
+      },
+      "power": "10",
+      "name": "node-abu-1"
+    },
+    {
+      "address": "206A1F6A30DAE52E1FF1945C8FF9951047863499",
+      "pub_key": {
+        "type": "tendermint/PubKeyEd25519",
+        "value": "zPgeEXkVp3P1FFovl0oTWFZaQAx0bGOimLykUiQ2ixE="
+      },
+      "power": "10",
+      "name": "node-helgi-1"
+    }
+  ],
+  "app_hash": "",
+  "app_state": {
+    "validator_governance": {
+      "operators": [
+        {
+          "consensus_public_key": "0560437cf90dfbe27f380a2e74015e864b5439af4241d7790abf54824e3592bf",
+          "governance_public_key": "ec31832a0f8b5567d4a9ffa4711debfcbe3c14516e38feecd338d6cbf92c9700"
+        },
+        {
+          "consensus_public_key": "47a19e09a354f231b3832eac2c8f3f4272ecb2d3fffc1c9ad0dfbb138160c9bd",
+          "governance_public_key": "25165e6df1b5a0b5b0b6ff3e125096849bc4f7b5cdfc8a792eb24d060c84f297"
+        },
+        {
+          "consensus_public_key": "ccf81e117915a773f5145a2f974a1358565a400c746c63a298bca45224368b11",
+          "governance_public_key": "b8f355f8c571e67359d0788e25d3637fa327102abbeeea641fb67d22062c6125"
+        }
+      ],
+      "proposals": [],
+      "scheduled_change": null,
+      "validator_power": 10
+    }
+  }
+}
