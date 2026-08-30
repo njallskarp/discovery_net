@@ -79,10 +79,12 @@ cd deploy/gcp/single-node/terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Set `project_id`, `name`, `operator_members`, `acme_email`, and one public IPv4 `/32` for
-every peer or trusted NAT egress address. Leave `inspector_hostname = ""` to use the static
-public IP directly. Do not use private, Tailscale, or changing client addresses unless that
-is intentionally the peer's stable public egress.
+Set `project_id`, `name`, `operator_members`, and one public IPv4 `/32` for every peer or
+trusted NAT egress address. Supply the ACME contact locally, either as `acme_email` in the
+ignored `terraform.tfvars` or for each Terraform invocation with
+`TF_VAR_acme_email='operator@example.com'`. Leave `inspector_hostname = ""` to use the
+static public IP directly. Do not use private, Tailscale, or changing client addresses unless
+that is intentionally the peer's stable public egress.
 
 ```bash
 terraform init
