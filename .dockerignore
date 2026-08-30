@@ -4,8 +4,14 @@
 .pytest_cache
 .ruff_cache
 .venv
+.terraform
+*.pem
+*.sqlite*
+*.tfstate*
+*.tfvars
 __pycache__
 build
 dist
+run
 tests
-
+tmp

@@ -79,6 +79,7 @@ services:
       - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
       - --persistent-peers=${PERSISTENT_PEERS:-}
       - --no-address-book-strict
+      - --allow-duplicate-ip
       - --no-create-empty-blocks
     depends_on:
       application:

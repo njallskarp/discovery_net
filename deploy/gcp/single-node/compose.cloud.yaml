@@ -1,0 +1,277 @@
+services:
+  application:
+    cpus: "1.50"
+    mem_limit: 640m
+    restart: unless-stopped
+    healthcheck:
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_interval: 2s
+      start_period: 2m
+
+  cometbft:
+    cpus: "1.00"
+    mem_limit: 384m
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; socket.create_connection(('comet-private', 26657), timeout=2).close()
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks:
+      private: {}
+      p2p:
+        aliases:
+          - comet-p2p
+      p2p-edge: {}
+    command:
+      - discovery-cometbft
+      - --home
+      - /var/lib/discovery-net/cometbft
+      - --moniker
+      - ${NODE_NAME:?Set a human-readable node name}
+      - --genesis
+      - /run/discovery-net/genesis.json
+      - --genesis-sha256
+      - ${GENESIS_SHA256:?Set the trusted genesis SHA-256 digest}
+      - --chain-id
+      - ${CHAIN_ID:?Set the trusted genesis chain ID}
+      - --abci-endpoint
+      - application:26658
+      - --rpc-listen-endpoint
+      - comet-private:26657
+      - --p2p-listen-endpoint
+      - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
+      - --p2p-advertised-endpoint
+      - ${P2P_ADVERTISED_ENDPOINT:?Set the externally reachable P2P endpoint}
+      - --persistent-peers=${PERSISTENT_PEERS:-}
+      - --peer-exchange
+      - --address-book-strict
+      - --allow-duplicate-ip
+      - --no-create-empty-blocks
+      - --log-level
+      - info
+
+  rpc:
+    cpus: "0.25"
+    mem_limit: 64m
+    restart: unless-stopped
+    user: "101:101"
+    networks: !override
+      - private
+      - edge
+
+  p2p-gateway:
+    image: nginxinc/nginx-unprivileged:1.29.1-alpine@sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e
+    cap_drop:
+      - ALL
+    cpus: "0.25"
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+    mem_limit: 64m
+    pids_limit: 64
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=8m,mode=1777
+    user: "101:101"
+    entrypoint:
+      - nginx
+    command:
+      - -g
+      - daemon off;
+    depends_on:
+      cometbft:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ../deploy/gcp/single-node/p2p-gateway.conf
+        target: /etc/nginx/nginx.conf
+        read_only: true
+    ports:
+      - target: 8080
+        published: 26656
+        host_ip: 0.0.0.0
+        protocol: tcp
+    networks:
+      - p2p
+      - p2p-edge
+
+  inspector:
+    image: ${DISCOVERY_NET_IMAGE:-discovery-net-node:local}
+    build:
+      context: ..
+      dockerfile: localnet/Dockerfile
+    user: ${DISCOVERY_NET_UID:-10001}:${DISCOVERY_NET_GID:-10001}
+    command:
+      - discovery-inspector
+      - --ledger-path
+      - /var/lib/discovery-net/artifact-ledger.sqlite
+      - --cometbft-rpc-url
+      - http://comet-private:26657
+      - --listen-host
+      - 0.0.0.0
+      - --listen-port
+      - "8765"
+    cap_drop:
+      - ALL
+    depends_on:
+      cometbft:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from urllib.request import urlopen; urlopen('http://127.0.0.1:8765/api/node', timeout=1).close()
+      interval: 5s
+      timeout: 2s
+      retries: 12
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+    cpus: "0.50"
+    mem_limit: 256m
+    pids_limit: 128
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - type: bind
+        source: ${LEDGER_DATA_DIRECTORY:?Set an absolute ledger data directory}
+        target: /var/lib/discovery-net
+        read_only: true
+    networks:
+      - private
+      - edge
+
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    user: ${DISCOVERY_NET_UID:-10001}:${DISCOVERY_NET_GID:-10001}
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    depends_on:
+      inspector:
+        condition: service_healthy
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      INSPECTOR_ADDRESS: ${INSPECTOR_ADDRESS:?Set the inspector IP address or hostname}
+      INSPECTOR_TLS_MODE: ${INSPECTOR_TLS_MODE:?Set ip or hostname certificate mode}
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+    cpus: "0.25"
+    mem_limit: 128m
+    pids_limit: 64
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - type: bind
+        source: ../deploy/gcp/single-node/Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+      - type: bind
+        source: ${CADDY_DATA_DIRECTORY:?Set an absolute Caddy data directory}
+        target: /data
+      - type: bind
+        source: ${CADDY_CONFIG_DIRECTORY:?Set an absolute Caddy config directory}
+        target: /config
+    ports:
+      - target: 80
+        published: 80
+        host_ip: 0.0.0.0
+        protocol: tcp
+      - target: 443
+        published: 443
+        host_ip: 0.0.0.0
+        protocol: tcp
+    networks:
+      - edge
+
+  inspector-cert-monitor:
+    image: ${DISCOVERY_NET_IMAGE:-discovery-net-node:local}
+    build:
+      context: ..
+      dockerfile: localnet/Dockerfile
+    user: ${DISCOVERY_NET_UID:-10001}:${DISCOVERY_NET_GID:-10001}
+    command:
+      - python
+      - -c
+      - import time; time.sleep(2147483647)
+    cap_drop:
+      - ALL
+    depends_on:
+      caddy:
+        condition: service_started
+    environment:
+      INSPECTOR_ADDRESS: ${INSPECTOR_ADDRESS:?Set the inspector IP address or hostname}
+      INSPECTOR_TLS_MODE: ${INSPECTOR_TLS_MODE:?Set ip or hostname certificate mode}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - /run/discovery-net/check-inspector-certificate.py
+        - --expected-address
+        - ${INSPECTOR_ADDRESS:?Set the inspector IP address or hostname}
+        - --connect-host
+        - caddy
+        - --minimum-valid-seconds
+        - "86400"
+        - --tls-mode
+        - ${INSPECTOR_TLS_MODE:?Set ip or hostname certificate mode}
+      interval: 10m
+      timeout: 15s
+      retries: 3
+      start_interval: 15s
+      start_period: 5m
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+    cpus: "0.10"
+    mem_limit: 64m
+    pids_limit: 32
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=4m,mode=1777
+    volumes:
+      - type: bind
+        source: ../deploy/gcp/single-node/scripts/check-inspector-certificate.py
+        target: /run/discovery-net/check-inspector-certificate.py
+        read_only: true
+    networks:
+      - edge
+
+networks:
+  p2p-edge: {}
