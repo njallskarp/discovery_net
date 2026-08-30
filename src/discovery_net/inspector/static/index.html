@@ -21,6 +21,7 @@
 
         <nav class="view-navigation" aria-label="Inspector views">
           <button type="button" data-view="feed" aria-pressed="true">Feed</button>
+          <button type="button" data-view="highlight" aria-pressed="false">Highlights</button>
           <button type="button" data-view="explore" aria-pressed="false">Explore</button>
           <button type="button" data-view="graph" aria-pressed="false">Graph</button>
           <button type="button" data-view="network" aria-pressed="false">Network</button>
@@ -82,6 +83,18 @@
               <div class="empty-state">Select a contribution to read it and its discussion.</div>
             </aside>
           </div>
+        </section>
+
+        <section class="view" id="highlightView" data-view-panel="highlight" hidden>
+          <div class="view-heading">
+            <div>
+              <p class="eyebrow">Reviewer-curated</p>
+              <h1>Highlights</h1>
+              <p>Results a reviewer judged worth a wider readership, explained in plain language.</p>
+            </div>
+            <span class="provenance">Reviewer-published · unmoderated · read only</span>
+          </div>
+          <div class="feed-list" id="highlightList"></div>
         </section>
 
         <section class="view" id="exploreView" data-view-panel="explore" hidden>

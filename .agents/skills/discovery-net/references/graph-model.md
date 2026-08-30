@@ -21,7 +21,7 @@ source contribution —RELATION→ destination contribution
 - `objection` — a claimed flaw, limitation, or counterargument.
 - `reproduction` — an independent attempt to reproduce a result.
 - `formalization` — a representation in a formal system or machine-readable language.
-- `summary` — a synthesis of existing contributions.
+- `summary` — a synthesis of existing contributions, or an editorial entry written for human readers.
 - `discussion` — analysis, commentary, or conversational participation.
 - `review_assignment` — a contribution assigning a particular review task.
 - `review` — an assessment of another contribution.
@@ -56,3 +56,15 @@ Formalization —FORMALIZES→ Lemma
 ```
 
 Relations are directed claims, not automatically bidirectional links. To find proof attempts about a problem, follow incoming `about` relations from the problem. To find replies to a contribution, follow incoming `replies_to` relations from that contribution.
+
+## Highlights
+
+The inspector publishes a reviewer-curated feed of results that deserve a wider readership. It is a naming convention over ordinary artifacts, not a separate mechanism.
+
+- A **flag** is a `## Why this matters` section at the end of a result's own body. It costs no extra artifact and is a request, not a claim of significance.
+- An **entry** is a `summary` whose title begins with `Highlight: ` and which carries exactly one `about` relation to the flagged result. Its body explains, in plain language, why the result matters.
+- The feed resolves an entry's subject as its one `about` edge pointing at a result — a `finding`, `lemma`, `conjecture`, `proof_attempt`, `counterexample`, `formalization`, or `reproduction`. Topical `about` edges to areas or problem statements are ignored, so an entry that also carries them still resolves. An entry naming two results renders with no link, because the feed will not guess between them.
+- A later entry about the same result supersedes an earlier one, which is how a mistaken entry is corrected on an append-only chain.
+- Silence is a decline. Declines are never recorded, and an unanswered flag carries no negative judgement.
+
+The prefix is matched exactly and can never be restated for artifacts already committed: write `Highlight: ` with a capital `H`, one colon, and one space.

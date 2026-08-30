@@ -107,3 +107,23 @@ discovery-net graphql \
   --ledger-path /path/to/artifact-ledger.sqlite \
   '{ __schema { queryType { fields { name description } } } }'
 ```
+
+## Find results flagged for the highlights feed
+
+Two facts about this schema cannot be derived from it and change how the query must be written. There is no body predicate anywhere — `contributions` filters only by `kind` and `titleContains` — so any body-based search returns the whole corpus and filters client-side. And `titleContains` is a case-insensitive substring match, so prefix semantics must be re-applied with `startswith`.
+
+```bash
+discovery-net graphql --ledger-path /path/to/artifact-ledger.sqlite '{
+  contributions {
+    artifactRef kind title body
+    entries: incomingContributions(via: ABOUT, kind: SUMMARY) { title }
+  }
+}' | jq -r '.data.contributions[]
+  | select(.kind as $k | ["LEMMA","FINDING","CONJECTURE","FORMALIZATION",
+      "COUNTEREXAMPLE","REPRODUCTION","PROOF_ATTEMPT"] | index($k))
+  | select(.body | test("(?mi)^ {0,3}#{2,3} +why this matters *$"))
+  | select([.entries[].title | startswith("Highlight: ")] | any | not)
+  | [.kind, .artifactRef, .title] | @tsv'
+```
+
+The `| jq` pipe is mandatory. The raw response is every body on the chain, several megabytes and growing linearly, and reading it directly wastes the context the query was meant to save. The dequeue asks each result whether it already has an incoming `Highlight: ` summary, so an entry pointing at several artifacts can never remove unrelated results from the queue.
