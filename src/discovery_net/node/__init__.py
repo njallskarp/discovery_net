@@ -2,8 +2,9 @@
 
 from discovery_net.node.abci import CometBFTABCIAdapter
 from discovery_net.node.abci_grpc_server import ABCIGRPCServer
+from discovery_net.node.application_state import ApplicationStateSnapshot, ApplicationStateStore
 from discovery_net.node.cometbft_callback_handler import (
-    ArtifactLedgerHead,
+    ApplicationHead,
     CometBFTCallbackHandler,
     FinalizeBlockResult,
 )
@@ -16,6 +17,7 @@ from discovery_net.node.local_artifact_ledger import (
 from discovery_net.node.store import (
     ArtifactLedgerSnapshot,
     ArtifactLedgerStore,
+    SQLiteApplicationStateStore,
     SQLiteArtifactLedgerStore,
 )
 from discovery_net.node.transaction_validator import (
@@ -23,10 +25,19 @@ from discovery_net.node.transaction_validator import (
     TransactionResult,
     TransactionValidator,
 )
+from discovery_net.node.validator_governance import (
+    GovernanceDecision,
+    ValidatorGovernanceConfig,
+    ValidatorGovernanceState,
+    ValidatorPowerUpdate,
+)
 
 __all__ = [
     "ABCIGRPCServer",
     "AppendOutcome",
+    "ApplicationHead",
+    "ApplicationStateSnapshot",
+    "ApplicationStateStore",
     "ArtifactLedgerEntry",
     "ArtifactLedgerHead",
     "ArtifactLedgerLookup",
@@ -35,9 +46,16 @@ __all__ = [
     "CometBFTABCIAdapter",
     "CometBFTCallbackHandler",
     "FinalizeBlockResult",
+    "GovernanceDecision",
     "LocalArtifactLedger",
+    "SQLiteApplicationStateStore",
     "SQLiteArtifactLedgerStore",
     "TransactionCode",
     "TransactionResult",
     "TransactionValidator",
+    "ValidatorGovernanceConfig",
+    "ValidatorGovernanceState",
+    "ValidatorPowerUpdate",
 ]
+
+ArtifactLedgerHead = ApplicationHead

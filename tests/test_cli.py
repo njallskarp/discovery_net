@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.serialization import (
     Encoding,
     NoEncryption,
     PrivateFormat,
+    PublicFormat,
 )
 
 from discovery_net.entrypoints.cli import main
@@ -24,15 +25,25 @@ from discovery_net.knowledge_graph import (
 from discovery_net.node import (
     ArtifactLedgerEntry,
     ArtifactLedgerSnapshot,
-    SQLiteArtifactLedgerStore,
+    SQLiteApplicationStateStore,
 )
 from discovery_net.submission import (
     ArtifactSubmitter,
     IncomingRelation,
     OutgoingRelation,
     SubmissionReceipt,
+    ValidatorGovernanceReceipt,
+    ValidatorGovernanceSubmitter,
 )
-from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
+from discovery_net.wire import (
+    ValidatorMembershipProposal,
+    artifact_ref,
+    decode_validator_nomination,
+    sign_artifact,
+    sign_transaction,
+    verify_validator_nomination,
+)
+from tests.runtime_test_support import write_validator_identity
 
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 TRANSACTION_HASH = "A" * 64
@@ -400,6 +411,97 @@ def test_cli_returns_failure_with_a_structured_graphql_error(
     assert errors[0]["message"] == "Cannot query field 'unknownField' on type 'Query'."
 
 
+def test_cli_keeps_candidate_keys_separate_and_submits_a_sponsored_nomination(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    home = tmp_path / "candidate"
+    write_validator_identity(home, seed_byte=71)
+    governance_key = Ed25519PrivateKey.from_private_bytes(bytes([72]) * 32)
+    governance_private_path = tmp_path / "governance.pem"
+    governance_private_path.write_bytes(
+        governance_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+    )
+    governance_public_path = tmp_path / "governance.pub.pem"
+    governance_public_path.write_bytes(
+        governance_key.public_key().public_bytes(
+            Encoding.PEM,
+            PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    consensus_nomination = tmp_path / "consensus-nomination.json"
+    nomination = tmp_path / "nomination.json"
+
+    assert (
+        main(
+            (
+                "validator",
+                "nominate-consensus",
+                "--home",
+                str(home),
+                "--chain-id",
+                "discovery-1",
+                "--governance-public-key",
+                str(governance_public_path),
+                "--output",
+                str(consensus_nomination),
+            )
+        )
+        == 0
+    )
+    capsys.readouterr()
+    assert (
+        main(
+            (
+                "validator",
+                "complete-nomination",
+                "--consensus-nomination",
+                str(consensus_nomination),
+                "--governance-private-key",
+                str(governance_private_path),
+                "--output",
+                str(nomination),
+            )
+        )
+        == 0
+    )
+    completed = decode_validator_nomination(nomination.read_bytes())
+    assert verify_validator_nomination(completed)
+    capsys.readouterr()
+
+    submitter = MagicMock(spec=ValidatorGovernanceSubmitter)
+    submitter.submit.return_value = ValidatorGovernanceReceipt(
+        proposal_id=bytes([73]) * 32,
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
+    )
+    with patch(
+        "discovery_net.entrypoints.cli.ValidatorGovernanceSubmitter",
+        return_value=submitter,
+    ):
+        exit_code = main(
+            (
+                "validator",
+                "propose-add",
+                "--nomination",
+                str(nomination),
+                "--governance-private-key",
+                str(governance_private_path),
+            )
+        )
+
+    assert exit_code == 0
+    proposal = submitter.submit.call_args.args[0]
+    assert isinstance(proposal, ValidatorMembershipProposal)
+    assert proposal.nomination == completed
+    assert json.loads(capsys.readouterr().out) == {
+        "proposal_id": (bytes([73]) * 32).hex(),
+        "transaction_hash": TRANSACTION_HASH,
+        "check_tx_code": 0,
+        "accepted_for_broadcast": True,
+    }
+
+
 def _write_private_key(directory: Path) -> Path:
     path = directory / "agent.pem"
     path.write_bytes(
@@ -451,7 +553,7 @@ def _write_ledger(directory: Path) -> tuple[Path, dict[str, ArtifactRef]]:
         transaction_index=3,
     )
     ledger_path = directory / "ledger.sqlite"
-    SQLiteArtifactLedgerStore(path=ledger_path).save(
+    SQLiteApplicationStateStore(path=ledger_path).save_artifact_ledger(
         ArtifactLedgerSnapshot(
             height=1,
             entries=(*entries, finding_entry, relation_entry),

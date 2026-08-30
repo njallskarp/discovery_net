@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from discovery_net.node.runtime.cometbft_genesis_writer import CometBFTGenesisWriter
@@ -19,6 +21,8 @@ from discovery_net.node.runtime.cometbft_validator_provisioner import (
 from discovery_net.node.runtime.genesis import GenesisTrustAnchor
 from discovery_net.node.runtime.genesis_validator import GenesisValidator
 from discovery_net.node.runtime.validator_identity import ValidatorIdentity
+from discovery_net.node.validator_governance import ValidatorGovernanceConfig
+from discovery_net.wire.validator_governance import ValidatorOperator
 
 
 class _HomeOutput(BaseModel):
@@ -75,10 +79,16 @@ def _initialize_validator(arguments: argparse.Namespace) -> None:
 
 
 def _export_validator(arguments: argparse.Namespace) -> None:
+    governance_public_key = (
+        None
+        if arguments.governance_public_key is None
+        else _read_ed25519_public_key(arguments.governance_public_key)
+    )
     validator = CometBFTValidatorProvisioner().genesis_validator(
         ValidatorIdentity(directory=arguments.home),
         name=arguments.name,
         voting_power=arguments.voting_power,
+        governance_public_key=governance_public_key,
     )
     _write_new_public_file(
         arguments.output,
@@ -94,11 +104,13 @@ def _export_validator(arguments: argparse.Namespace) -> None:
 
 def _create_genesis(arguments: argparse.Namespace) -> None:
     validators = tuple(_read_validator(path) for path in arguments.validators)
+    validator_governance = _validator_governance(validators)
     trust_anchor = CometBFTGenesisWriter(binary=arguments.cometbft_binary).write(
         path=arguments.output,
         chain_id=arguments.chain_id,
         genesis_time=arguments.genesis_time,
         validators=validators,
+        validator_governance=validator_governance,
     )
     _emit(
         _GenesisOutput(
@@ -134,6 +146,44 @@ def _read_validator(path: Path) -> GenesisValidator:
         raise ValueError(f"validator descriptor could not be read: {path}") from error
     except ValidationError as error:
         raise ValueError(f"validator descriptor is invalid: {path}") from error
+
+
+def _validator_governance(
+    validators: tuple[GenesisValidator, ...],
+) -> ValidatorGovernanceConfig | None:
+    governance_keys = tuple(validator.governance_public_key for validator in validators)
+    if all(key is None for key in governance_keys):
+        return None
+    if any(key is None for key in governance_keys):
+        raise ValueError(
+            "every validator descriptor must include a governance key, or none may include one"
+        )
+    return ValidatorGovernanceConfig(
+        operators=tuple(
+            sorted(
+                (
+                    ValidatorOperator(
+                        consensus_public_key=validator.public_key,
+                        governance_public_key=key,
+                    )
+                    for validator, key in zip(validators, governance_keys, strict=True)
+                    if key is not None
+                ),
+                key=lambda operator: operator.consensus_public_key,
+            )
+        ),
+        validator_power=validators[0].voting_power,
+    )
+
+
+def _read_ed25519_public_key(path: Path) -> bytes:
+    try:
+        public_key = load_pem_public_key(path.read_bytes())
+    except (OSError, ValueError) as error:
+        raise ValueError(f"governance public key could not be read: {path}") from error
+    if not isinstance(public_key, Ed25519PublicKey):
+        raise ValueError(f"governance public key must be Ed25519: {path}")
+    return public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
 
 
 def _write_new_public_file(path: Path, content: bytes) -> None:
@@ -196,6 +246,11 @@ def _argument_parser() -> argparse.ArgumentParser:
     export.add_argument("--output", required=True, type=Path)
     export.add_argument("--name", required=True)
     export.add_argument("--voting-power", default=10, type=int)
+    export.add_argument(
+        "--governance-public-key",
+        type=Path,
+        help="PEM Ed25519 public key used for validator-membership approvals",
+    )
 
     create = commands.add_parser(
         "create-genesis",

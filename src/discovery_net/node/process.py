@@ -9,7 +9,7 @@ from pathlib import Path
 from discovery_net.node.abci import CometBFTABCIAdapter
 from discovery_net.node.abci_grpc_server import ABCIGRPCServer
 from discovery_net.node.cometbft_callback_handler import CometBFTCallbackHandler
-from discovery_net.node.store.sqlite_store import SQLiteArtifactLedgerStore
+from discovery_net.node.store.sqlite_store import SQLiteApplicationStateStore
 from discovery_net.node.transaction_validator import TransactionValidator
 
 _DEFAULT_ABCI_LISTEN_ADDRESS = "127.0.0.1:26658"
@@ -22,7 +22,7 @@ def main() -> None:
         adapter=CometBFTABCIAdapter(
             handler=CometBFTCallbackHandler(
                 validator=TransactionValidator(expected_chain_id=arguments.chain_id),
-                store=SQLiteArtifactLedgerStore(path=arguments.ledger_path),
+                store=SQLiteApplicationStateStore(path=arguments.ledger_path),
             )
         ),
         listen_address=arguments.abci_listen_address,

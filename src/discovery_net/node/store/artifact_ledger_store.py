@@ -1,4 +1,4 @@
-# Defines the contract for persisting committed artifact-ledger state.
+# Defines the ordered artifact-ledger view within committed application state.
 
 from dataclasses import dataclass
 from typing import Protocol
@@ -27,7 +27,7 @@ class ArtifactLedgerSnapshot:
 
 
 class ArtifactLedgerStore(Protocol):
-    """Loads and atomically persists artifact-ledger snapshots."""
+    """Loads and persists the artifact-ledger view of a legacy chain."""
 
     def load(self) -> ArtifactLedgerSnapshot | None: ...
 

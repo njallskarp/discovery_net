@@ -36,6 +36,13 @@ CREATE TABLE IF NOT EXISTS artifact_ledger_entries (
 )
 """
 
+_CREATE_GOVERNANCE_TABLE: Final = """
+CREATE TABLE IF NOT EXISTS validator_governance_state (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    state_bytes BLOB NOT NULL CHECK (typeof(state_bytes) = 'blob')
+)
+"""
+
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class StoredArtifactLedgerEntry:
@@ -57,9 +64,10 @@ class StoredArtifactLedgerEntry:
 
 
 def create_schema(connection: sqlite3.Connection) -> None:
-    """Create the artifact-ledger tables when they do not exist."""
+    """Create the application-state tables when they do not exist."""
     connection.execute(_CREATE_STATE_TABLE)
     connection.execute(_CREATE_ENTRIES_TABLE)
+    connection.execute(_CREATE_GOVERNANCE_TABLE)
 
 
 def select_committed_height(connection: sqlite3.Connection) -> int | None:
@@ -160,6 +168,36 @@ def upsert_committed_height(connection: sqlite3.Connection, height: int) -> None
         DO UPDATE SET committed_height = excluded.committed_height
         """,
         (height,),
+    )
+
+
+def select_validator_governance_state(connection: sqlite3.Connection) -> bytes | None:
+    """Return encoded validator-governance state when the chain enables it."""
+    row = connection.execute(
+        "SELECT state_bytes FROM validator_governance_state WHERE singleton = 1"
+    ).fetchone()
+    if row is None:
+        return None
+    if len(row) != 1:
+        raise ValueError("validator-governance query returned an invalid row")
+    return _bytes(row[0], "validator-governance state")
+
+
+def upsert_validator_governance_state(
+    connection: sqlite3.Connection,
+    state_bytes: bytes,
+) -> None:
+    """Insert or replace the singleton validator-governance state value."""
+    if not isinstance(state_bytes, bytes):
+        raise TypeError("state_bytes must be bytes")
+    connection.execute(
+        """
+        INSERT INTO validator_governance_state (singleton, state_bytes)
+        VALUES (1, ?)
+        ON CONFLICT(singleton)
+        DO UPDATE SET state_bytes = excluded.state_bytes
+        """,
+        (state_bytes,),
     )
 
 

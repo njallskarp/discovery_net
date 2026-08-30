@@ -7,7 +7,7 @@ import binascii
 import hashlib
 import os
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 
 from discovery_net.node.runtime.genesis_validator import GenesisValidator
 from discovery_net.node.runtime.validator_identity import ValidatorIdentity
+from discovery_net.wire.validator_governance import ConsensusValidatorNomination
+from discovery_net.wire.validator_governance_signing import nominate_validator_consensus
 
 _PUBLIC_KEY_TYPE = "tendermint/PubKeyEd25519"
 _PRIVATE_KEY_TYPE = "tendermint/PrivKeyEd25519"
@@ -84,6 +86,7 @@ class _PrivateValidatorState(BaseModel):
 @dataclass(frozen=True, slots=True)
 class _VerifiedValidatorIdentity:
     public_key: bytes
+    _private_key: Ed25519PrivateKey = field(repr=False, compare=False)
 
     @classmethod
     def from_identity(cls, identity: ValidatorIdentity) -> Self:
@@ -100,24 +103,43 @@ class _VerifiedValidatorIdentity:
 
         public_key = _decode_key(key.pub_key.value, _PUBLIC_KEY_BYTES, "public key")
         private_key = _decode_key(key.priv_key.value, _PRIVATE_KEY_BYTES, "private key")
-        derived_public_key = (
-            Ed25519PrivateKey.from_private_bytes(private_key[:32])
-            .public_key()
-            .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        signing_key = Ed25519PrivateKey.from_private_bytes(private_key[:32])
+        derived_public_key = signing_key.public_key().public_bytes(
+            serialization.Encoding.Raw, serialization.PublicFormat.Raw
         )
         if private_key[32:] != public_key or derived_public_key != public_key:
             raise ValueError("validator private key does not match its public key")
         expected_address = hashlib.sha256(public_key).digest()[:20].hex().upper()
         if key.address != expected_address:
             raise ValueError("validator address does not match its public key")
-        return cls(public_key=public_key)
+        return cls(public_key=public_key, _private_key=signing_key)
 
-    def genesis_validator(self, *, name: str, voting_power: int) -> GenesisValidator:
+    def genesis_validator(
+        self,
+        *,
+        name: str,
+        voting_power: int,
+        governance_public_key: bytes | None = None,
+    ) -> GenesisValidator:
         """Return the public genesis descriptor for this identity."""
         return GenesisValidator(
             name=name,
             public_key=self.public_key,
+            governance_public_key=governance_public_key,
             voting_power=voting_power,
+        )
+
+    def nominate(
+        self,
+        *,
+        chain_id: str,
+        governance_public_key: bytes,
+    ) -> ConsensusValidatorNomination:
+        """Create a nomination without exposing the consensus private key."""
+        return nominate_validator_consensus(
+            chain_id=chain_id,
+            consensus_private_key=self._private_key,
+            governance_public_key=governance_public_key,
         )
 
 

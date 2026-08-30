@@ -10,8 +10,16 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
+from cryptography.hazmat.primitives.serialization import (
+    Encoding,
+    PublicFormat,
+    load_pem_private_key,
+    load_pem_public_key,
+)
 from pydantic import BaseModel, ConfigDict
 
 from discovery_net.entrypoints.graphql import GraphQLQueryExecutor
@@ -23,15 +31,31 @@ from discovery_net.knowledge_graph import (
     ContributionRelation,
     RelationKind,
 )
-from discovery_net.node import SQLiteArtifactLedgerStore
+from discovery_net.node import SQLiteApplicationStateStore
+from discovery_net.node.runtime import CometBFTValidatorProvisioner, ValidatorIdentity
 from discovery_net.query import KnowledgeGraphQueries
 from discovery_net.submission import (
     ArtifactSubmitter,
     IncomingRelation,
     OutgoingRelation,
     SubmissionError,
+    ValidatorGovernanceReceipt,
+    ValidatorGovernanceSubmitter,
 )
-from discovery_net.wire import PayloadType, parse_artifact_ref
+from discovery_net.wire import (
+    PayloadType,
+    ValidatorGovernanceTransaction,
+    ValidatorMembershipOperation,
+    ValidatorOperator,
+    approve_validator_proposal,
+    complete_validator_nomination,
+    decode_consensus_validator_nomination,
+    decode_validator_nomination,
+    encode_consensus_validator_nomination,
+    encode_validator_nomination,
+    parse_artifact_ref,
+    propose_validator_membership,
+)
 
 _DEFAULT_COMETBFT_RPC_URL = "http://127.0.0.1:26657"
 
@@ -87,6 +111,59 @@ class _GraphQLOutput(BaseModel):
     errors: tuple[dict[str, object], ...]
 
 
+class _ValidatorNominationOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    consensus_public_key: str
+    governance_public_key: str
+    nomination: str
+
+
+class _ValidatorSubmissionOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    proposal_id: str
+    transaction_hash: str
+    check_tx_code: int
+    accepted_for_broadcast: bool
+
+
+class _ValidatorOperatorOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    consensus_public_key: str
+    governance_public_key: str
+
+
+class _ValidatorProposalOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    proposal_id: str
+    operation: ValidatorMembershipOperation
+    operator: _ValidatorOperatorOutput
+    approvals: tuple[str, ...]
+
+
+class _ScheduledValidatorChangeOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    proposal_id: str
+    operation: ValidatorMembershipOperation
+    operator: _ValidatorOperatorOutput
+    effective_height: int
+
+
+class _ValidatorStatusOutput(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    committed_height: int
+    approval_threshold: int
+    validator_power: int
+    operators: tuple[_ValidatorOperatorOutput, ...]
+    proposals: tuple[_ValidatorProposalOutput, ...]
+    scheduled_change: _ScheduledValidatorChangeOutput | None
+
+
 def main(arguments: Sequence[str] | None = None) -> int:
     """Run one Discovery Net command and return its process exit code."""
     parsed = _argument_parser().parse_args(arguments)
@@ -95,6 +172,8 @@ def main(arguments: Sequence[str] | None = None) -> int:
             return _submit(parsed)
         if parsed.command == "query":
             return _query(parsed)
+        if parsed.command == "validator":
+            return _validator(parsed)
         return _graphql(parsed)
     except (OSError, sqlite3.Error, TypeError, ValueError, SubmissionError) as error:
         _write_error(error)
@@ -175,11 +254,144 @@ def _graphql(arguments: argparse.Namespace) -> int:
     return 0 if execution.succeeded else 1
 
 
+def _validator(arguments: argparse.Namespace) -> int:
+    if arguments.validator_action == "nominate-consensus":
+        consensus_nomination = CometBFTValidatorProvisioner().nominate_validator(
+            ValidatorIdentity(directory=arguments.home),
+            chain_id=arguments.chain_id,
+            governance_public_key=_load_public_key(arguments.governance_public_key),
+        )
+        _write_new_public_file(
+            arguments.output,
+            encode_consensus_validator_nomination(consensus_nomination),
+        )
+        _write_output(
+            _ValidatorNominationOutput(
+                consensus_public_key=consensus_nomination.operator.consensus_public_key.hex(),
+                governance_public_key=consensus_nomination.operator.governance_public_key.hex(),
+                nomination=str(arguments.output),
+            )
+        )
+        return 0
+
+    if arguments.validator_action == "complete-nomination":
+        consensus_nomination = decode_consensus_validator_nomination(
+            arguments.consensus_nomination.read_bytes()
+        )
+        signed_nomination = complete_validator_nomination(
+            nomination=consensus_nomination,
+            governance_private_key=_load_private_key(arguments.governance_private_key),
+        )
+        _write_new_public_file(
+            arguments.output,
+            encode_validator_nomination(signed_nomination),
+        )
+        _write_output(
+            _ValidatorNominationOutput(
+                consensus_public_key=signed_nomination.operator.consensus_public_key.hex(),
+                governance_public_key=signed_nomination.operator.governance_public_key.hex(),
+                nomination=str(arguments.output),
+            )
+        )
+        return 0
+
+    if arguments.validator_action == "status":
+        _write_output(_validator_status(arguments.ledger_path))
+        return 0
+
+    submitter = ValidatorGovernanceSubmitter(cometbft_rpc_url=arguments.rpc_url)
+    governance_private_key = _load_private_key(arguments.governance_private_key)
+    transaction: ValidatorGovernanceTransaction
+    if arguments.validator_action == "propose-add":
+        signed_nomination = decode_validator_nomination(arguments.nomination.read_bytes())
+        transaction = propose_validator_membership(
+            chain_id=signed_nomination.chain_id,
+            operation=ValidatorMembershipOperation.ADD,
+            operator=signed_nomination.operator,
+            sponsor_private_key=governance_private_key,
+            nomination=signed_nomination,
+        )
+    elif arguments.validator_action == "propose-remove":
+        transaction = propose_validator_membership(
+            chain_id=submitter.chain_id(),
+            operation=ValidatorMembershipOperation.REMOVE,
+            operator=ValidatorOperator(
+                consensus_public_key=arguments.consensus_public_key,
+                governance_public_key=arguments.operator_governance_public_key,
+            ),
+            sponsor_private_key=governance_private_key,
+        )
+    elif arguments.validator_action == "approve":
+        transaction = approve_validator_proposal(
+            chain_id=submitter.chain_id(),
+            proposal_id=arguments.proposal_id,
+            private_key=governance_private_key,
+        )
+    else:
+        raise AssertionError("unknown validator action")
+    receipt = submitter.submit(transaction)
+    _write_validator_receipt(receipt)
+    return 0 if receipt.accepted else 1
+
+
+def _validator_status(ledger_path: Path) -> _ValidatorStatusOutput:
+    if not ledger_path.is_file():
+        raise FileNotFoundError(f"artifact ledger does not exist: {ledger_path}")
+    snapshot = SQLiteApplicationStateStore(path=ledger_path).load()
+    if snapshot is None or snapshot.validator_governance is None:
+        raise ValueError("validator governance is not enabled in this ledger")
+    state = snapshot.validator_governance
+    scheduled = state.scheduled_change
+    return _ValidatorStatusOutput(
+        committed_height=snapshot.height,
+        approval_threshold=state.approval_threshold,
+        validator_power=state.validator_power,
+        operators=tuple(_operator_output(value) for value in state.operators),
+        proposals=tuple(
+            _ValidatorProposalOutput(
+                proposal_id=value.proposal_id.hex(),
+                operation=value.proposal.operation,
+                operator=_operator_output(value.proposal.operator),
+                approvals=tuple(key.hex() for key in value.approvals),
+            )
+            for value in state.proposals
+        ),
+        scheduled_change=(
+            None
+            if scheduled is None
+            else _ScheduledValidatorChangeOutput(
+                proposal_id=scheduled.proposal_id.hex(),
+                operation=scheduled.operation,
+                operator=_operator_output(scheduled.operator),
+                effective_height=scheduled.effective_height,
+            )
+        ),
+    )
+
+
+def _operator_output(operator: ValidatorOperator) -> _ValidatorOperatorOutput:
+    return _ValidatorOperatorOutput(
+        consensus_public_key=operator.consensus_public_key.hex(),
+        governance_public_key=operator.governance_public_key.hex(),
+    )
+
+
+def _write_validator_receipt(receipt: ValidatorGovernanceReceipt) -> None:
+    _write_output(
+        _ValidatorSubmissionOutput(
+            proposal_id=receipt.proposal_id.hex(),
+            transaction_hash=receipt.transaction_hash,
+            check_tx_code=receipt.check_tx_code,
+            accepted_for_broadcast=receipt.accepted,
+        )
+    )
+
+
 def _load_queries(ledger_path: Path) -> KnowledgeGraphQueries:
     if not ledger_path.is_file():
         raise FileNotFoundError(f"artifact ledger does not exist: {ledger_path}")
 
-    snapshot = SQLiteArtifactLedgerStore(path=ledger_path).load()
+    snapshot = SQLiteApplicationStateStore(path=ledger_path).load_artifact_ledger()
     index = KnowledgeGraphIndex()
     if snapshot is not None:
         index.refresh(snapshot)
@@ -370,6 +582,61 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="operation to execute when the document contains multiple operations",
     )
     graphql.add_argument("document", help="GraphQL query document")
+
+    validator = commands.add_parser(
+        "validator",
+        help="nominate, approve, and inspect validator membership",
+    )
+    validator_actions = validator.add_subparsers(dest="validator_action", required=True)
+
+    nominate_consensus = validator_actions.add_parser(
+        "nominate-consensus",
+        help="sign a candidate nomination without importing its governance private key",
+    )
+    nominate_consensus.add_argument("--home", required=True, type=Path)
+    nominate_consensus.add_argument("--chain-id", required=True)
+    nominate_consensus.add_argument("--governance-public-key", required=True, type=Path)
+    nominate_consensus.add_argument("--output", required=True, type=Path)
+
+    complete_nomination = validator_actions.add_parser(
+        "complete-nomination",
+        help="add the offline governance signature to a consensus-signed nomination",
+    )
+    complete_nomination.add_argument("--consensus-nomination", required=True, type=Path)
+    complete_nomination.add_argument("--governance-private-key", required=True, type=Path)
+    complete_nomination.add_argument("--output", required=True, type=Path)
+
+    propose_add = validator_actions.add_parser(
+        "propose-add",
+        help="sponsor a candidate nomination as the first approval",
+    )
+    propose_add.add_argument("--nomination", required=True, type=Path)
+    _add_governance_submission_arguments(propose_add)
+
+    propose_remove = validator_actions.add_parser(
+        "propose-remove",
+        help="sponsor removal of one exact validator operator",
+    )
+    propose_remove.add_argument("--consensus-public-key", required=True, type=_raw_public_key)
+    propose_remove.add_argument(
+        "--operator-governance-public-key",
+        required=True,
+        type=_raw_public_key,
+    )
+    _add_governance_submission_arguments(propose_remove)
+
+    approve = validator_actions.add_parser(
+        "approve",
+        help="approve a committed validator-membership proposal",
+    )
+    approve.add_argument("proposal_id", type=_proposal_id)
+    _add_governance_submission_arguments(approve)
+
+    validator_status = validator_actions.add_parser(
+        "status",
+        help="show committed validator-governance state",
+    )
+    validator_status.add_argument("--ledger-path", required=True, type=Path)
     return parser
 
 
@@ -384,6 +651,15 @@ def _add_submission_arguments(parser: argparse.ArgumentParser) -> None:
         "--rpc-url",
         default=_DEFAULT_COMETBFT_RPC_URL,
         help=f"local CometBFT RPC URL (default: {_DEFAULT_COMETBFT_RPC_URL})",
+    )
+
+
+def _add_governance_submission_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--governance-private-key", required=True, type=Path)
+    parser.add_argument(
+        "--rpc-url",
+        default=_DEFAULT_COMETBFT_RPC_URL,
+        help=f"CometBFT RPC URL (default: {_DEFAULT_COMETBFT_RPC_URL})",
     )
 
 
@@ -449,6 +725,45 @@ def _load_private_key(path: Path) -> Ed25519PrivateKey:
     if not isinstance(private_key, Ed25519PrivateKey):
         raise ValueError("private key file must contain an Ed25519 private key")
     return private_key
+
+
+def _load_public_key(path: Path) -> bytes:
+    try:
+        public_key = load_pem_public_key(path.read_bytes())
+    except (TypeError, ValueError) as error:
+        raise ValueError("public key file must contain an Ed25519 PEM public key") from error
+    if not isinstance(public_key, Ed25519PublicKey):
+        raise ValueError("public key file must contain an Ed25519 public key")
+    return public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
+
+
+def _raw_public_key(value: str) -> bytes:
+    return _fixed_hex(value, byte_length=32, description="public key")
+
+
+def _proposal_id(value: str) -> bytes:
+    return _fixed_hex(value, byte_length=32, description="proposal ID")
+
+
+def _fixed_hex(value: str, *, byte_length: int, description: str) -> bytes:
+    try:
+        decoded = bytes.fromhex(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"{description} must be hexadecimal") from error
+    if len(decoded) != byte_length or value.lower() != decoded.hex():
+        raise argparse.ArgumentTypeError(
+            f"{description} must be {byte_length * 2} hexadecimal characters"
+        )
+    return decoded
+
+
+def _write_new_public_file(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("xb") as output:
+            output.write(content)
+    except FileExistsError:
+        raise FileExistsError(f"output already exists: {path}") from None
 
 
 if __name__ == "__main__":

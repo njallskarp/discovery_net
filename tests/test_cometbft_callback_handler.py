@@ -12,8 +12,9 @@ from discovery_net.knowledge_graph import (
 )
 from discovery_net.node import (
     AppendOutcome,
+    ApplicationHead,
+    ApplicationStateSnapshot,
     ArtifactLedgerEntry,
-    ArtifactLedgerHead,
     ArtifactLedgerSnapshot,
     CometBFTCallbackHandler,
     FinalizeBlockResult,
@@ -37,20 +38,23 @@ PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 
 
 @dataclass(slots=True)
-class MemoryArtifactLedgerStore:
+class MemoryApplicationStateStore:
     snapshot: ArtifactLedgerSnapshot | None = None
     failures_remaining: int = 0
     save_calls: int = 0
     saved_snapshots: list[ArtifactLedgerSnapshot] = field(default_factory=list)
 
-    def load(self) -> ArtifactLedgerSnapshot | None:
-        return self.snapshot
+    def load(self) -> ApplicationStateSnapshot | None:
+        if self.snapshot is None:
+            return None
+        return ApplicationStateSnapshot(artifact_ledger=self.snapshot)
 
-    def save(self, snapshot: ArtifactLedgerSnapshot) -> None:
+    def save(self, state: ApplicationStateSnapshot) -> None:
         self.save_calls += 1
         if self.failures_remaining:
             self.failures_remaining -= 1
             raise OSError("persistence failed")
+        snapshot = state.artifact_ledger
         self.snapshot = snapshot
         self.saved_snapshots.append(snapshot)
 
@@ -82,9 +86,9 @@ def transaction(title: str, *, chain_id: str = CHAIN_ID) -> bytes:
 
 
 def callback_handler(
-    store: MemoryArtifactLedgerStore | None = None,
-) -> tuple[CometBFTCallbackHandler, MemoryArtifactLedgerStore]:
-    artifact_store = store if store is not None else MemoryArtifactLedgerStore()
+    store: MemoryApplicationStateStore | None = None,
+) -> tuple[CometBFTCallbackHandler, MemoryApplicationStateStore]:
+    artifact_store = store if store is not None else MemoryApplicationStateStore()
     return (
         CometBFTCallbackHandler(
             validator=TransactionValidator(expected_chain_id=CHAIN_ID),
@@ -142,7 +146,7 @@ def test_check_tx_and_finalize_block_enforce_identical_resource_limits() -> None
 
 def test_committed_head_changes_only_after_successful_commit() -> None:
     handler, _ = callback_handler()
-    initial_head = ArtifactLedgerHead(
+    initial_head = ApplicationHead(
         height=0,
         state_hash=LocalArtifactLedger().state_hash(),
     )
@@ -155,7 +159,7 @@ def test_committed_head_changes_only_after_successful_commit() -> None:
 
     handler.commit()
 
-    assert handler.committed_head() == ArtifactLedgerHead(
+    assert handler.committed_head() == ApplicationHead(
         height=1,
         state_hash=finalized.state_hash,
     )
@@ -169,6 +173,7 @@ def test_initialize_chain_validates_genesis_without_changing_state() -> None:
         chain_id=CHAIN_ID,
         initial_height=1,
         genesis_state=b"",
+        genesis_validators=(),
     )
 
     assert state_hash == initial_head.state_hash
@@ -198,6 +203,7 @@ def test_initialize_chain_rejects_unsupported_genesis(
             chain_id=chain_id,
             initial_height=initial_height,
             genesis_state=genesis_state,
+            genesis_validators=(),
         )
 
 
@@ -210,6 +216,7 @@ def test_initialize_chain_must_precede_block_execution() -> None:
             chain_id=CHAIN_ID,
             initial_height=1,
             genesis_state=b"",
+            genesis_validators=(),
         )
 
 
@@ -425,7 +432,7 @@ def test_finalize_block_requires_an_integer_height(height: object) -> None:
 
 
 def test_failed_persistence_preserves_pending_and_committed_state_for_retry() -> None:
-    store = MemoryArtifactLedgerStore(failures_remaining=1)
+    store = MemoryApplicationStateStore(failures_remaining=1)
     handler, _ = callback_handler(store)
     encoded = transaction("First")
     handler.finalize_block(height=1, transactions=(encoded,))
@@ -487,7 +494,7 @@ def test_uncommitted_block_can_be_reexecuted_after_restart() -> None:
     ],
 )
 def test_handler_rejects_invalid_stored_transactions(transaction: SignedTransaction) -> None:
-    store = MemoryArtifactLedgerStore(
+    store = MemoryApplicationStateStore(
         snapshot=ArtifactLedgerSnapshot(
             height=1,
             entries=(
@@ -506,7 +513,7 @@ def test_handler_rejects_invalid_stored_transactions(transaction: SignedTransact
 
 def test_handler_rejects_duplicate_artifacts_in_stored_state() -> None:
     transaction = signed_transaction("First")
-    store = MemoryArtifactLedgerStore(
+    store = MemoryApplicationStateStore(
         snapshot=ArtifactLedgerSnapshot(
             height=1,
             entries=(

@@ -12,6 +12,7 @@ from discovery_net.node.runtime._validator_identity_files import _VerifiedValida
 from discovery_net.node.runtime.genesis import GenesisTrustAnchor, _VerifiedGenesis
 from discovery_net.node.runtime.genesis_validator import GenesisValidator
 from discovery_net.node.runtime.validator_identity import ValidatorIdentity
+from discovery_net.wire.validator_governance import ConsensusValidatorNomination
 
 
 @final
@@ -44,6 +45,7 @@ class CometBFTValidatorProvisioner:
         *,
         name: str,
         voting_power: int,
+        governance_public_key: bytes | None = None,
     ) -> GenesisValidator:
         """Return the shareable public descriptor of one pristine identity."""
         if not isinstance(identity, ValidatorIdentity):
@@ -51,6 +53,7 @@ class CometBFTValidatorProvisioner:
         return _VerifiedValidatorIdentity.from_identity(identity).genesis_validator(
             name=name,
             voting_power=voting_power,
+            governance_public_key=governance_public_key,
         )
 
     def install_genesis(
@@ -78,4 +81,19 @@ class CometBFTValidatorProvisioner:
             process=self._process,
         ).install_validator_genesis(
             genesis=genesis,
+        )
+
+    def nominate_validator(
+        self,
+        identity: ValidatorIdentity,
+        *,
+        chain_id: str,
+        governance_public_key: bytes,
+    ) -> ConsensusValidatorNomination:
+        """Create a candidate nomination while keeping its consensus key encapsulated."""
+        if not isinstance(identity, ValidatorIdentity):
+            raise TypeError("identity must be a ValidatorIdentity")
+        return _VerifiedValidatorIdentity.from_identity(identity).nominate(
+            chain_id=chain_id,
+            governance_public_key=governance_public_key,
         )

@@ -1,5 +1,9 @@
-# Centralizes the CometBFT v0.40 limits enforced while forming a network.
+# Re-exports the CometBFT limits used by network-formation internals.
 
-MAX_CHAIN_ID_CHARACTERS = 50
-MAX_TOTAL_VOTING_POWER = ((1 << 63) - 1) // 8
-MAX_VALIDATORS = 10_000
+from discovery_net.cometbft_limits import (
+    MAX_CHAIN_ID_CHARACTERS,
+    MAX_TOTAL_VOTING_POWER,
+    MAX_VALIDATORS,
+)
+
+__all__ = ["MAX_CHAIN_ID_CHARACTERS", "MAX_TOTAL_VOTING_POWER", "MAX_VALIDATORS"]

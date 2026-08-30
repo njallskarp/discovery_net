@@ -7,6 +7,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2 as abci
 from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.node import (
+    ApplicationStateSnapshot,
     ArtifactLedgerSnapshot,
     CometBFTABCIAdapter,
     CometBFTCallbackHandler,
@@ -26,20 +27,22 @@ PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 
 
 @dataclass(slots=True)
-class MemoryArtifactLedgerStore:
+class MemoryApplicationStateStore:
     snapshot: ArtifactLedgerSnapshot | None = None
 
-    def load(self) -> ArtifactLedgerSnapshot | None:
-        return self.snapshot
+    def load(self) -> ApplicationStateSnapshot | None:
+        if self.snapshot is None:
+            return None
+        return ApplicationStateSnapshot(artifact_ledger=self.snapshot)
 
-    def save(self, snapshot: ArtifactLedgerSnapshot) -> None:
-        self.snapshot = snapshot
+    def save(self, state: ApplicationStateSnapshot) -> None:
+        self.snapshot = state.artifact_ledger
 
 
 def adapter(
-    store: MemoryArtifactLedgerStore | None = None,
-) -> tuple[CometBFTABCIAdapter, MemoryArtifactLedgerStore]:
-    ledger_store = store if store is not None else MemoryArtifactLedgerStore()
+    store: MemoryApplicationStateStore | None = None,
+) -> tuple[CometBFTABCIAdapter, MemoryApplicationStateStore]:
+    ledger_store = store if store is not None else MemoryApplicationStateStore()
     handler = CometBFTCallbackHandler(
         validator=TransactionValidator(expected_chain_id=CHAIN_ID),
         store=ledger_store,

@@ -13,7 +13,7 @@ from typing import cast
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from discovery_net.node import ArtifactLedgerSnapshot, SQLiteArtifactLedgerStore
+from discovery_net.node import ArtifactLedgerSnapshot, SQLiteApplicationStateStore
 from tests.integration._cometbft_rpc_client import CometBFTRPCClient
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -113,7 +113,7 @@ class DockerNode:
         """Load this node's committed application state from its isolated store."""
         if not self.ledger_path.exists():
             return None
-        return SQLiteArtifactLedgerStore(path=self.ledger_path).load()
+        return SQLiteApplicationStateStore(path=self.ledger_path).load_artifact_ledger()
 
     def assert_remote_rpc_is_unreachable(self, remote_alias: str, remote_port: int) -> None:
         """Require both P2P-direct and Docker-host routes to reject remote RPC."""

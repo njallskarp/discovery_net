@@ -26,6 +26,13 @@ docker run --rm \
   discovery-network initialize-validator \
   --home /work/node-a/cometbft-data/cometbft
 
+openssl genpkey -algorithm ED25519 -out "$ROOT/node-a-governance.pem"
+chmod 600 "$ROOT/node-a-governance.pem"
+openssl pkey \
+  -in "$ROOT/node-a-governance.pem" \
+  -pubout \
+  -out "$ROOT/node-a-governance.pub.pem"
+
 docker run --rm \
   --user "$(id -u):$(id -g)" \
   --mount "type=bind,source=$ROOT,target=/work" \
@@ -33,7 +40,8 @@ docker run --rm \
   discovery-network export-validator \
   --home /work/node-a/cometbft-data/cometbft \
   --output /work/validator-a.json \
-  --name validator-a
+  --name validator-a \
+  --governance-public-key /work/node-a-governance.pub.pem
 ```
 
 Create and install genesis:
@@ -121,7 +129,12 @@ docker compose \
   --home /var/lib/discovery-net/cometbft
 ```
 
-For multiple genesis validators, each operator runs `initialize-validator` and `export-validator`. Include every resulting descriptor in the single `create-genesis` command.
+The governance private key is separate from the CometBFT signing key and does not enter
+genesis. Back it up securely. For multiple genesis validators, each operator runs
+`initialize-validator` and `export-validator` with its own governance public key. Include
+every descriptor in the single `create-genesis` command. All governed genesis validators
+must have equal voting power. Omitting governance keys from every descriptor creates a
+legacy fixed-validator network; mixing governed and ungoverned descriptors is rejected.
 
 ## Join an existing network
 
@@ -183,6 +196,73 @@ docker compose \
 curl http://127.0.0.1:26667/status
 ```
 
-The joining node needs no validator initialization. On its first start, the launcher creates a persistent node identity, verifies the supplied genesis, connects to the bootstrap peer, and synchronizes the chain.
+The joining node needs no manual validator initialization. On its first start, the launcher
+creates a persistent node and validator identity, verifies the supplied genesis, connects to
+the bootstrap peer, and synchronizes the chain.
+
+## Promote a synchronized node to validator
+
+Admission is asynchronous and does not pause artifact transactions. Each validator has equal
+power. A proposal passes at `floor(2N/3)+1` approvals from the current `N` validators; its
+CometBFT update becomes active two block heights later.
+
+First create the candidate's governance key outside the node and give only its public key to
+the candidate host:
+
+```bash
+openssl genpkey -algorithm ED25519 -out node-b-governance.pem
+chmod 600 node-b-governance.pem
+openssl pkey -in node-b-governance.pem -pubout -out node-b-governance.pub.pem
+```
+
+After node B is caught up, have its consensus key sign the nomination. The consensus private
+key never leaves its CometBFT home and the governance private key is not present:
+
+```bash
+discovery-net validator nominate-consensus \
+  --home "$ROOT/node-b/cometbft-data/cometbft" \
+  --chain-id "$CHAIN_ID" \
+  --governance-public-key node-b-governance.pub.pem \
+  --output node-b-consensus-nomination.json
+```
+
+Move that public JSON file back to the governance-key holder and complete it offline:
+
+```bash
+discovery-net validator complete-nomination \
+  --consensus-nomination node-b-consensus-nomination.json \
+  --governance-private-key node-b-governance.pem \
+  --output node-b-nomination.json
+```
+
+One current validator sponsors the nomination. Its signed proposal counts as the first
+approval and prints the proposal ID:
+
+```bash
+discovery-net validator propose-add \
+  --nomination node-b-nomination.json \
+  --governance-private-key node-a-governance.pem \
+  --rpc-url http://127.0.0.1:26657
+```
+
+After that proposal commits, other current validator operators approve the printed ID in
+later transactions:
+
+```bash
+discovery-net validator approve PROPOSAL_ID \
+  --governance-private-key operator-governance.pem \
+  --rpc-url http://127.0.0.1:26657
+```
+
+Inspect committed progress directly from any node's ledger:
+
+```bash
+discovery-net validator status \
+  --ledger-path "$ROOT/node-a/ledger-data/artifact-ledger.sqlite"
+```
+
+Do not approve a candidate until it is caught up, reachable by the validator peers, and
+configured to keep running. Candidate consent, sponsor authorization, every approval, the
+current validator-set binding, and the delayed equal-power update are consensus-validated.
 
 This Docker workflow currently supports peers sharing a Docker host and external Docker P2P network. Connecting nodes on different physical machines still needs a deliberate P2P port exposure or gateway increment.
