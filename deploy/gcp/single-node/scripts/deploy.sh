@@ -190,5 +190,8 @@ if [[ "$START_INSPECTOR" == "false" ]]; then
   compose up -d --remove-orphans application cometbft rpc p2p-gateway
 else
   compose up -d --remove-orphans
+  # Compose does not recreate a container when only bind-mounted file contents change.
+  # Restart Caddy so every idempotent deploy loads the reviewed proxy and TLS policy.
+  compose restart caddy
 fi
 compose ps
