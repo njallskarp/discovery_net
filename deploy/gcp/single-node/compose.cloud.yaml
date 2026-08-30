@@ -4,9 +4,21 @@ services:
 
   cometbft:
     restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import socket; socket.create_connection(('comet-private', 26657), timeout=2).close()
+      interval: 5s
+      timeout: 3s
+      retries: 12
     networks:
-      - private
-      - p2p
+      private: {}
+      p2p:
+        aliases:
+          - comet-p2p
+      p2p-edge: {}
     command:
       - discovery-cometbft
       - --home
@@ -27,7 +39,7 @@ services:
       - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
       - --p2p-advertised-endpoint
       - ${P2P_ADVERTISED_ENDPOINT:?Set the externally reachable P2P endpoint}
-      - --persistent-peers=${PERSISTENT_PEERS:?Set at least one trusted persistent peer}
+      - --persistent-peers=${PERSISTENT_PEERS:-}
       - --peer-exchange
       - --address-book-strict
       - --allow-duplicate-ip

@@ -3,58 +3,78 @@
 This deployment creates one non-validator Discovery Net node with:
 
 - an `e2-small` VM, static IPv4, and persistent data disk;
-- P2P port `26656` restricted to trusted public IPs;
-- public read-only inspector on HTTPS;
-- RPC bound to VM loopback and reached through IAP;
+- P2P port `26656` restricted to trusted public `/32` addresses;
+- RPC bound to VM loopback and reached through Google IAP;
+- an optional public, GET-only inspector on HTTPS;
 - daily data-disk snapshots retained for seven days;
 - unattended package security updates.
 
-The node generates its own P2P identity on the data disk. Contributor keys, validator
-keys, ledger databases, and Terraform state must not be committed or passed to Terraform.
+The ledger is derived from committed blocks. A new node can rebuild it by syncing the same
+chain; do not copy a ledger database merely to move compute. This deployment does not add a
+validator. Its generated validator key must have voting power zero.
 
 | Port | Access | Destination |
 |---|---|---|
-| `80`, `443` | Public | Caddy, then GET-only inspector |
+| `80`, `443` | Public, when enabled | Caddy, then the GET-only inspector |
 | `26656` | Trusted `/32` CIDRs | P2P gateway, then CometBFT |
 | `22` | Google IAP only | OS Login SSH |
 | `26657` | VM loopback only | Read and transaction-broadcast RPC |
 | `26658`, `8765` | Container networks only | ABCI and inspector |
 
-The cloud overlay replaces the local-development CometBFT command. Its production policy
-is explicit:
+The public inspector has no submission endpoint. Caddy rejects non-GET requests, the
+inspector opens SQLite read-only, and neither container mounts P2P, validator, or contributor
+private keys. It does expose public graph data, signer public keys, and node/peer metadata.
+
+## Runtime policy
+
+The cloud overlay owns the complete production command so local testing defaults cannot leak
+into this deployment.
 
 | Setting | Cloud value | Reason |
 |---|---|---|
-| Peer exchange | enabled | Discover other reachable network peers |
-| Strict address book | enabled | Reject private and unroutable advertised addresses |
-| Duplicate peer IPs | enabled | Permit trusted nodes behind one NAT; the firewall still requires approved `/32` source IPs |
+| Peer exchange | enabled | Discover other reachable peers after bootstrap |
+| Strict address book | enabled | Reject private or unroutable advertised addresses |
+| Duplicate peer IPs | enabled | The P2P proxy gives inbound peers one container source IP; the GCP firewall still enforces approved public `/32` sources |
 | Empty blocks | disabled | Avoid blocks without transactions |
-| RPC unsafe methods, CORS, gRPC, pprof | disabled | Enforced by the launcher, not operator input |
+| RPC unsafe methods, CORS, gRPC, pprof | disabled | Enforced by the launcher |
 
-Do not add cloud flags to `localnet/compose.yaml`; the cloud overlay owns the complete
-production command so local test settings cannot leak into this deployment.
+The Docker networks have distinct jobs:
+
+| Network | Purpose |
+|---|---|
+| `private` | Internal ABCI and CometBFT RPC traffic |
+| `p2p` | Internal CometBFT-to-P2P-gateway traffic |
+| `p2p-edge` | P2P gateway ingress and CometBFT outbound peer dialing |
+| `edge` | VM-loopback RPC publishing and inspector-to-Caddy traffic |
+
+No container port is public unless Compose explicitly publishes it. The RPC proxy needs both
+`private` and `edge`; without `edge`, Docker records the binding but cannot route it.
+CometBFT needs `p2p-edge` to dial public persistent peers.
 
 ## 1. Provision Google Cloud
 
-Prerequisites: a billed Google Cloud project, Terraform, `gcloud`, a DNS hostname, the
-trusted genesis file and SHA-256, and at least one reachable peer.
+Prerequisites: Terraform, `gcloud`, a billing account, the trusted genesis and SHA-256, at
+least one trusted peer public egress IP, and an IAM user or group for operations.
 
-Authenticate and select the project:
+Create a dedicated project if one does not already exist:
 
 ```bash
+gcloud projects create PROJECT_ID --name='Discovery Net node'
+gcloud billing projects link PROJECT_ID --billing-account=BILLING_ACCOUNT_ID
 gcloud auth application-default login
 gcloud config set project PROJECT_ID
 ```
 
-Create the local Terraform values file:
+Create the ignored local values file:
 
 ```bash
 cd deploy/gcp/single-node/terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Set the project, operator IAM identity, and one public IPv4 `/32` for each peer or trusted
-NAT egress address. Then apply:
+Set `project_id`, `name`, `operator_members`, and one public IPv4 `/32` for every peer
+or trusted NAT egress address. Do not use private, Tailscale, or changing client addresses
+unless that is intentionally the peer's stable public egress.
 
 ```bash
 terraform init
@@ -65,19 +85,21 @@ terraform apply tfplan
 terraform output
 ```
 
-Listed operators receive IAP tunnel access, OS Admin Login on this instance, and read-only
-Compute Engine visibility required by `gcloud compute ssh`.
+On a brand-new project, Google APIs can remain unavailable briefly after their enable calls
+complete. If the first apply reports `SERVICE_DISABLED`, `accessNotConfigured`, or an API
+403, wait 30–60 seconds, run a new `terraform plan`, and apply it. Terraform is idempotent;
+do not delete the project or already-created resources.
 
-Create a DNS `A` record for the inspector hostname using the `public_ip` output. Wait for
-DNS resolution before starting Caddy.
+Terraform state contains infrastructure identifiers and is required for safe future changes.
+It is ignored by Git. Preserve it in an approved encrypted location or configure an approved
+remote backend before multiple operators manage the node.
 
-The instance and data disk have deletion protection. To intentionally remove them, first
-set instance `deletion_protection = false` and remove the disk `prevent_destroy` lifecycle
-rule in a reviewed change. Automatic snapshots incur standard snapshot storage charges.
+The instance and data disk have deletion protection. Intentional deletion requires a reviewed
+change to both the instance deletion-protection setting and the disk `prevent_destroy` rule.
 
-## 2. Install the node
+## 2. Stage reviewed source and trusted genesis
 
-Connect through IAP using the `iap_ssh_command` Terraform output. Confirm host bootstrap:
+Use the `iap_ssh_command` output and confirm bootstrap:
 
 ```bash
 sudo systemctl status google-startup-scripts.service --no-pager
@@ -85,77 +107,179 @@ sudo findmnt /srv/discovery-net
 sudo docker version
 ```
 
-Clone and pin the reviewed source revision:
+Do not put a GitHub token or SSH key on the VM. A public checkout is acceptable, but an archive
+of the exact reviewed commit works for public and private repositories. From a trusted checkout:
 
 ```bash
-sudo git clone https://github.com/njallskarp/discovery_net.git /opt/discovery-net
-cd /opt/discovery-net
-sudo git checkout REVIEWED_COMMIT
+git archive --format=tar --output=/tmp/discovery-net.tar REVIEWED_COMMIT
+printf '%s\n' REVIEWED_COMMIT > /tmp/discovery-net.revision
+gcloud compute scp --project PROJECT_ID --zone ZONE --tunnel-through-iap \
+  /tmp/discovery-net.tar /tmp/discovery-net.revision NODE_NAME:/tmp/
+rm /tmp/discovery-net.tar /tmp/discovery-net.revision
 ```
 
-Copy the trusted genesis through IAP from the operator machine:
+On the VM:
 
 ```bash
-gcloud compute scp \
-  --project PROJECT_ID \
-  --zone ZONE \
-  --tunnel-through-iap \
+sudo install -d -o root -g root -m 0755 /opt/discovery-net
+sudo tar -xf /tmp/discovery-net.tar -C /opt/discovery-net
+sudo install -o root -g root -m 0444 \
+  /tmp/discovery-net.revision /opt/discovery-net/.source-revision
+rm /tmp/discovery-net.tar /tmp/discovery-net.revision
+```
+
+Copy the trusted genesis through IAP, then install it read-only for the service account:
+
+```bash
+gcloud compute scp --project PROJECT_ID --zone ZONE --tunnel-through-iap \
   ./genesis.json NODE_NAME:/tmp/genesis.json
-
-gcloud compute ssh NODE_NAME \
-  --project PROJECT_ID \
-  --zone ZONE \
-  --tunnel-through-iap \
-  --command 'sudo install -o 10001 -g 10001 -m 0440 /tmp/genesis.json /srv/discovery-net/genesis.json && rm /tmp/genesis.json'
+gcloud compute ssh NODE_NAME --project PROJECT_ID --zone ZONE \
+  --tunnel-through-iap --command \
+  'sudo install -o 10001 -g 10001 -m 0440 /tmp/genesis.json /srv/discovery-net/genesis.json && rm /tmp/genesis.json'
 ```
 
-On the VM, create the environment file from the example:
+Create the root-only configuration:
 
 ```bash
 sudo cp /opt/discovery-net/deploy/gcp/single-node/node.env.example \
   /etc/discovery-net/node.env
+sudo chown root:root /etc/discovery-net/node.env
 sudo chmod 0600 /etc/discovery-net/node.env
 sudoedit /etc/discovery-net/node.env
 ```
 
 Set these values exactly:
 
-- `CHAIN_ID` and `GENESIS_SHA256` from the trusted genesis;
-- `P2P_ADVERTISED_ENDPOINT` to `PUBLIC_IP:26656`;
-- `PERSISTENT_PEERS` to comma-separated `node-id@public-ip:26656` entries;
-- `INSPECTOR_HOSTNAME` to the DNS hostname;
-- `ACME_EMAIL` to the certificate contact email.
+- tag `DISCOVERY_NET_IMAGE` with the reviewed commit;
+- set `CHAIN_ID` and `GENESIS_SHA256` from the trusted genesis;
+- set `P2P_ADVERTISED_ENDPOINT` to `PUBLIC_IP:26656`;
+- list reachable public `node-id@ip:26656` values in `PERSISTENT_PEERS`;
+- set the inspector hostname and ACME email before enabling the inspector.
 
-Start the services:
+`PERSISTENT_PEERS` may be empty for the first node when every existing peer is behind NAT.
+In that case, an allowlisted existing peer must dial this node after it starts.
+
+## 3. Choose the P2P identity
+
+For a new identity, skip this section. The launcher creates a complete CometBFT home and a new
+non-validator identity on first start.
+
+To retain a stopped node's P2P node ID, migrate only its `config/node_key.json`. Never copy
+`priv_validator_key.json`, `priv_validator_state.json`, the ledger, or CometBFT block state.
+The source and cloud nodes must never run concurrently with the same P2P key.
+
+While the source node is still available but before the cloud node starts, copy its node key
+through IAP without printing it:
+
+```bash
+gcloud compute scp --project PROJECT_ID --zone ZONE --tunnel-through-iap \
+  /LOCAL/COMETBFT/HOME/config/node_key.json NODE_NAME:/tmp/node_key.json
+gcloud compute ssh NODE_NAME --project PROJECT_ID --zone ZONE \
+  --tunnel-through-iap --command \
+  'sudo install -o root -g root -m 0600 /tmp/node_key.json /tmp/staged-node-key.json && rm /tmp/node_key.json'
+```
+
+Prepare a complete home offline:
 
 ```bash
 cd /opt/discovery-net
-sudo deploy/gcp/single-node/scripts/deploy.sh
+sudo deploy/gcp/single-node/scripts/prepare-p2p-identity.sh \
+  /tmp/staged-node-key.json
+sudo rm /tmp/staged-node-key.json
 ```
 
-The peer operators must allow this node's public IP and accept its node ID. Display it with:
+The script builds the reviewed image, initializes into an atomic staging directory with no
+network, installs the trusted genesis and P2P key, retains a newly generated cloud validator
+identity, verifies that validator is not in the genesis set, and prints only the public node
+ID. Do not copy a node key into an otherwise empty home: an incomplete existing home fails
+closed.
+
+## 4. Configure the peer side
+
+The GCP firewall admits P2P only from `trusted_p2p_cidrs`. The peer must also know the cloud
+address. Append this value to the peer's persistent-peer configuration:
+
+```text
+CLOUD_NODE_ID@CLOUD_PUBLIC_IP:26656
+```
+
+If the existing peer is behind NAT, it initiates the connection to GCP; no home-router port
+forward is required. If both nodes have public endpoints, either can dial. From an allowlisted
+peer host, this should succeed after the cloud node starts:
 
 ```bash
-sudo docker compose \
-  --env-file /etc/discovery-net/node.env \
-  -f localnet/compose.yaml \
-  -f deploy/gcp/single-node/compose.cloud.yaml \
-  exec -T cometbft \
-  cometbft show-node-id --home /var/lib/discovery-net/cometbft
+nc -vz CLOUD_PUBLIC_IP 26656
 ```
 
-## 3. Verify and submit locally
+## 5. Start and cut over
 
-On the VM:
+Without a ready DNS hostname, start only the node, loopback RPC, and P2P gateway:
 
 ```bash
 cd /opt/discovery-net
+sudo deploy/gcp/single-node/scripts/deploy.sh --node-only
+```
+
+For a reused P2P identity, use this order:
+
+1. Prepare the cloud identity offline and record its node ID.
+2. Stop the source node without deleting its bind-mounted data.
+3. Start the cloud node with `--node-only`.
+4. Restart or reconnect an allowlisted peer so it dials the cloud address.
+5. Verify the peer ID, chain ID, and zero voting power.
+
+If cutover fails, leave the source stopped while collecting evidence. Do not automatically
+restart it: first stop the cloud CometBFT service or otherwise prove the cloud copy is offline.
+Running both copies of one P2P identity creates duplicate-ID disconnects.
+
+To enable the inspector later, create the DNS `A` record for `INSPECTOR_HOSTNAME`, wait for
+it to resolve to the Terraform `public_ip`, then run:
+
+```bash
+sudo deploy/gcp/single-node/scripts/deploy.sh --full
+```
+
+## 6. Verify and submit locally
+
+On the VM, the inspector URL is optional:
+
+```bash
+cd /opt/discovery-net
+sudo deploy/gcp/single-node/scripts/verify.sh
 sudo INSPECTOR_URL=https://INSPECTOR_HOSTNAME \
   deploy/gcp/single-node/scripts/verify.sh
 ```
 
-Open the private RPC tunnel using the `rpc_tunnel_command` Terraform output. Keep that
-process running. Local agents can then use the existing CLI without moving the key:
+The verifier prints node ID, height, catch-up state, and voting power.
+`catching_up=true` during first replay is expected and is not a deployment failure. On an
+`e2-small`, application replay can make HTTP status requests slow; the production health
+check tests the RPC TCP listener so active replay is not marked unhealthy.
+
+Verify that an existing peer sees the cloud node:
+
+```bash
+curl -fsS http://127.0.0.1:26657/net_info \
+  | jq -r '.result.peers[] | [.node_info.id,.node_info.moniker,.remote_ip,.is_outbound] | @tsv'
+```
+
+After catch-up, compare its height with a trusted peer and inspect the derived ledger:
+
+```bash
+sudo python3 - <<'PY'
+import sqlite3
+
+uri = "file:/srv/discovery-net/ledger-data/artifact-ledger.sqlite?mode=ro"
+with sqlite3.connect(uri, uri=True) as connection:
+    height = connection.execute(
+        "SELECT committed_height FROM artifact_ledger_state WHERE singleton = 1"
+    ).fetchone()[0]
+    entries = connection.execute("SELECT count(*) FROM artifact_ledger_entries").fetchone()[0]
+print(f"ledger_height={height} entries={entries}")
+PY
+```
+
+Open the private RPC tunnel using the Terraform `rpc_tunnel_command`. Local agents can submit
+through the existing CLI while the contributor key remains local:
 
 ```bash
 discovery-net submit contribution \
@@ -166,7 +290,22 @@ discovery-net submit contribution \
   --body 'Body'
 ```
 
-Only the signed transaction crosses the tunnel. The contributor private key remains local.
+Only the signed transaction crosses the IAP tunnel.
+
+## Troubleshooting
+
+| Symptom | Cause and action |
+|---|---|
+| First Terraform apply returns API 403 | Fresh-project API propagation. Wait 30–60 seconds, re-plan, and re-apply. |
+| VM cannot clone the repository | Do not install GitHub credentials. Transfer `git archive` for the reviewed commit through IAP. |
+| Launcher reports an incomplete CometBFT home | A key was copied into an empty home. Remove only the unstarted partial home after verifying its exact path, then use `prepare-p2p-identity.sh`. Never delete a started home as a repair. |
+| Peer reports duplicate/self node ID | Both copies of a migrated P2P key are running. Stop one immediately. |
+| Cloud logs `network is unreachable` for a public peer | The CometBFT service lacks `p2p-edge` or the deployed overlay is stale. Update and recreate CometBFT. |
+| Cloud has no peers | Check the GCP `/32`, the peer's actual public egress IP, both node IDs, the peer's persistent-peer list, and port `26656`. A NAT peer must dial outbound. |
+| RPC binding exists but `curl 127.0.0.1:26657/status` fails | The RPC proxy lacks `edge` or is stale. Check `docker compose config`, recreate `rpc`, and confirm `ss -ltnp` shows loopback only. |
+| CometBFT is marked unhealthy while blocks execute | An older overlay used a 2-second HTTP health probe. Deploy the TCP-listener health check in the current overlay. |
+| Caddy cannot obtain a certificate | DNS must resolve to the static IP and ports 80/443 must reach the VM. Use `--node-only` until then. |
+| Ledger height trails CometBFT | The application is still replaying committed blocks. Do not copy or edit the SQLite database. |
 
 ## Operations
 
@@ -180,10 +319,12 @@ sudo docker compose --env-file /etc/discovery-net/node.env \
   -f localnet/compose.yaml -f deploy/gcp/single-node/compose.cloud.yaml \
   logs --tail=200
 
-# Update trusted peer IPs
+# Update trusted peer IPs from the operator checkout
 cd deploy/gcp/single-node/terraform
 terraform plan -out=tfplan && terraform apply tfplan
 ```
 
-Never expose ports `26657`, `26658`, or `8765`, copy a validator key to this node, or put
-private material in Terraform variables, VM metadata, Compose environment files, or Git.
+Never expose ports `26657`, `26658`, or `8765`; run two nodes with one P2P key; copy a
+validator key into this non-validator; or put private keys, ledger files, credentials,
+Terraform state, or secrets in Git, Terraform variables, VM metadata, or Compose environment
+files.

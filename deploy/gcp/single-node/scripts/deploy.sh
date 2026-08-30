@@ -10,7 +10,23 @@ REPOSITORY_ROOT="$(cd -- "$DEPLOY_DIRECTORY/../../.." && pwd)"
 readonly REPOSITORY_ROOT
 readonly BASE_COMPOSE="$REPOSITORY_ROOT/localnet/compose.yaml"
 readonly CLOUD_COMPOSE="$DEPLOY_DIRECTORY/compose.cloud.yaml"
+
+MODE="full"
+if [[ "${1:-}" == "--node-only" ]]; then
+  MODE="node-only"
+  shift
+elif [[ "${1:-}" == "--full" ]]; then
+  shift
+elif [[ "${1:-}" == --* ]]; then
+  echo "error: usage: deploy.sh [--node-only|--full] [ENV_FILE]" >&2
+  exit 1
+fi
+readonly MODE
 readonly ENV_FILE="${1:-/etc/discovery-net/node.env}"
+if (( $# > 1 )); then
+  echo "error: usage: deploy.sh [--node-only|--full] [ENV_FILE]" >&2
+  exit 1
+fi
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "error: run as root" >&2
@@ -74,6 +90,10 @@ compose() {
 }
 
 compose config --quiet
-compose build --pull
-compose up -d --remove-orphans
+compose build --pull application cometbft
+if [[ "$MODE" == "node-only" ]]; then
+  compose up -d --remove-orphans application cometbft rpc p2p-gateway
+else
+  compose up -d --remove-orphans
+fi
 compose ps
