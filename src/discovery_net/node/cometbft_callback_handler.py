@@ -13,6 +13,10 @@ from discovery_net.node.local_artifact_ledger import (
     ArtifactLedgerEntry,
     LocalArtifactLedger,
 )
+from discovery_net.node.scheduled_validator_activation import (
+    ScheduledValidatorActivation,
+    ValidatorPowerUpdate,
+)
 from discovery_net.node.store.artifact_ledger_store import (
     ArtifactLedgerSnapshot,
     ArtifactLedgerStore,
@@ -33,6 +37,7 @@ class FinalizeBlockResult:
 
     transaction_results: tuple[TransactionResult, ...]
     state_hash: bytes
+    validator_updates: tuple[ValidatorPowerUpdate, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -61,6 +66,7 @@ class CometBFTCallbackHandler:
         "_pending_block",
         "_store",
         "_validator",
+        "_validator_activation",
     )
 
     def __init__(
@@ -68,7 +74,17 @@ class CometBFTCallbackHandler:
         *,
         validator: TransactionValidator,
         store: ArtifactLedgerStore,
+        validator_activation: ScheduledValidatorActivation | None = None,
     ) -> None:
+        if validator_activation is not None and not isinstance(
+            validator_activation, ScheduledValidatorActivation
+        ):
+            raise TypeError("validator_activation must be a ScheduledValidatorActivation or None")
+        if (
+            validator_activation is not None
+            and validator_activation.chain_id != validator.expected_chain_id
+        ):
+            raise ValueError("validator activation belongs to a different chain")
         snapshot = store.load()
         if snapshot is None:
             committed_height = 0
@@ -79,6 +95,7 @@ class CometBFTCallbackHandler:
 
         self._validator = validator
         self._store = store
+        self._validator_activation = validator_activation
         self._committed_height = committed_height
         self._committed_ledger = committed_ledger
         self._pending_block: _PendingBlock | None = None
@@ -186,6 +203,11 @@ class CometBFTCallbackHandler:
             return FinalizeBlockResult(
                 transaction_results=tuple(transaction_results),
                 state_hash=ledger.state_hash(),
+                validator_updates=(
+                    ()
+                    if self._validator_activation is None
+                    else self._validator_activation.updates_at(height)
+                ),
             )
 
     def commit(self) -> tuple[ArtifactLedgerEntry, ...]:

@@ -8,7 +8,7 @@ import hashlib
 
 from pydantic import BaseModel, ConfigDict, PositiveInt, field_serializer, field_validator
 
-from discovery_net.node.runtime._cometbft_limits import MAX_TOTAL_VOTING_POWER
+from discovery_net.node._cometbft_limits import MAX_TOTAL_VOTING_POWER
 
 _ED25519_PUBLIC_KEY_BYTES = 32
 

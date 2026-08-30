@@ -11,8 +11,10 @@ from discovery_net.node import (
     CometBFTABCIAdapter,
     CometBFTCallbackHandler,
     LocalArtifactLedger,
+    ScheduledValidatorActivation,
     TransactionCode,
     TransactionValidator,
+    ValidatorPowerUpdate,
 )
 from discovery_net.wire import (
     TRANSACTION_LIMITS,
@@ -38,11 +40,13 @@ class MemoryArtifactLedgerStore:
 
 def adapter(
     store: MemoryArtifactLedgerStore | None = None,
+    validator_activation: ScheduledValidatorActivation | None = None,
 ) -> tuple[CometBFTABCIAdapter, MemoryArtifactLedgerStore]:
     ledger_store = store if store is not None else MemoryArtifactLedgerStore()
     handler = CometBFTCallbackHandler(
         validator=TransactionValidator(expected_chain_id=CHAIN_ID),
         store=ledger_store,
+        validator_activation=validator_activation,
     )
     return CometBFTABCIAdapter(handler=handler), ledger_store
 
@@ -207,6 +211,26 @@ def test_finalize_block_preserves_transaction_order_and_returns_app_hash() -> No
     assert len(response.app_hash) == 32
     assert store.snapshot is None
     assert abci.ResponseFinalizeBlock.FromString(response.SerializeToString()) == response
+
+
+def test_finalize_block_translates_scheduled_validator_assignments() -> None:
+    validators = (
+        ValidatorPowerUpdate(public_key=bytes([1]) * 32, voting_power=10),
+        ValidatorPowerUpdate(public_key=bytes([2]) * 32, voting_power=10),
+    )
+    application, _ = adapter(
+        validator_activation=ScheduledValidatorActivation(
+            chain_id=CHAIN_ID,
+            activation_height=1,
+            validators=validators,
+        )
+    )
+
+    response = application.finalize_block(abci.RequestFinalizeBlock(height=1))
+
+    assert tuple(
+        (update.pub_key.ed25519, update.power) for update in response.validator_updates
+    ) == tuple((validator.public_key, validator.voting_power) for validator in validators)
 
 
 def test_finalize_block_rejects_an_oversized_transaction_that_bypassed_check_tx() -> None:

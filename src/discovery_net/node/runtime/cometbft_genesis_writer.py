@@ -13,7 +13,7 @@ from typing import final
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
-from discovery_net.node.runtime._cometbft_limits import (
+from discovery_net.node._cometbft_limits import (
     MAX_CHAIN_ID_CHARACTERS,
     MAX_TOTAL_VOTING_POWER,
     MAX_VALIDATORS,

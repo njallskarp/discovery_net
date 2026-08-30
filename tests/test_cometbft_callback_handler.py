@@ -18,9 +18,11 @@ from discovery_net.node import (
     CometBFTCallbackHandler,
     FinalizeBlockResult,
     LocalArtifactLedger,
+    ScheduledValidatorActivation,
     TransactionCode,
     TransactionResult,
     TransactionValidator,
+    ValidatorPowerUpdate,
 )
 from discovery_net.wire import (
     TRANSACTION_LIMITS,
@@ -83,12 +85,14 @@ def transaction(title: str, *, chain_id: str = CHAIN_ID) -> bytes:
 
 def callback_handler(
     store: MemoryArtifactLedgerStore | None = None,
+    validator_activation: ScheduledValidatorActivation | None = None,
 ) -> tuple[CometBFTCallbackHandler, MemoryArtifactLedgerStore]:
     artifact_store = store if store is not None else MemoryArtifactLedgerStore()
     return (
         CometBFTCallbackHandler(
             validator=TransactionValidator(expected_chain_id=CHAIN_ID),
             store=artifact_store,
+            validator_activation=validator_activation,
         ),
         artifact_store,
     )
@@ -387,6 +391,32 @@ def test_empty_block_advances_committed_height_without_changing_state_hash() -> 
 
     next_result = handler.finalize_block(height=2, transactions=())
     assert next_result.state_hash == empty_hash
+
+
+def test_scheduled_validator_assignments_are_emitted_once_without_changing_app_state() -> None:
+    validators = (
+        ValidatorPowerUpdate(public_key=bytes([1]) * 32, voting_power=10),
+        ValidatorPowerUpdate(public_key=bytes([2]) * 32, voting_power=10),
+    )
+    handler, _ = callback_handler(
+        validator_activation=ScheduledValidatorActivation(
+            chain_id=CHAIN_ID,
+            activation_height=2,
+            validators=validators,
+        )
+    )
+    empty_hash = LocalArtifactLedger().state_hash()
+
+    before = handler.finalize_block(height=1, transactions=())
+    handler.commit()
+    activated = handler.finalize_block(height=2, transactions=())
+    handler.commit()
+    after = handler.finalize_block(height=3, transactions=())
+
+    assert before.validator_updates == ()
+    assert activated.validator_updates == validators
+    assert after.validator_updates == ()
+    assert before.state_hash == activated.state_hash == after.state_hash == empty_hash
 
 
 def test_handler_enforces_finalize_and_commit_sequence() -> None:

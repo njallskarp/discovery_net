@@ -99,11 +99,29 @@ class IntegrationNode:
         """Return the persistent-peer address used by other CometBFT nodes."""
         return f"{self._node_id}@{self._p2p_address}"
 
-    def start_application(self) -> None:
+    def start_application(
+        self,
+        *,
+        validator_activation_path: Path | None = None,
+        validator_activation_sha256: str | None = None,
+    ) -> None:
         """Start the Discovery Net process and wait for its ABCI listener."""
         if self._application_process is not None:
             raise RuntimeError("the Discovery Net application is already running")
+        if (validator_activation_path is None) != (validator_activation_sha256 is None):
+            raise ValueError("validator activation path and digest must be provided together")
         self._application_generation += 1
+        if validator_activation_path is None:
+            validator_activation_arguments: tuple[str, ...] = ()
+        else:
+            if validator_activation_sha256 is None:
+                raise AssertionError("validated validator activation digest is missing")
+            validator_activation_arguments = (
+                "--validator-activation",
+                str(validator_activation_path),
+                "--validator-activation-sha256",
+                validator_activation_sha256,
+            )
         process = BackgroundProcess(
             command=(
                 sys.executable,
@@ -115,6 +133,7 @@ class IntegrationNode:
                 str(self._ledger_path),
                 "--abci-listen-address",
                 self._application_address,
+                *validator_activation_arguments,
             ),
             log_path=self._log_directory
             / f"{self._name}-application-{self._application_generation}.log",

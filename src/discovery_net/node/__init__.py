@@ -13,6 +13,10 @@ from discovery_net.node.local_artifact_ledger import (
     ArtifactLedgerLookup,
     LocalArtifactLedger,
 )
+from discovery_net.node.scheduled_validator_activation import (
+    ScheduledValidatorActivation,
+    ValidatorPowerUpdate,
+)
 from discovery_net.node.store import (
     ArtifactLedgerSnapshot,
     ArtifactLedgerStore,
@@ -37,7 +41,9 @@ __all__ = [
     "FinalizeBlockResult",
     "LocalArtifactLedger",
     "SQLiteArtifactLedgerStore",
+    "ScheduledValidatorActivation",
     "TransactionCode",
     "TransactionResult",
     "TransactionValidator",
+    "ValidatorPowerUpdate",
 ]

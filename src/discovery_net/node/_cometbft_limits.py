@@ -1,4 +1,4 @@
-# Centralizes the CometBFT v0.40 limits enforced while forming a network.
+# Centralizes CometBFT limits shared by network formation and consensus callbacks.
 
 MAX_CHAIN_ID_CHARACTERS = 50
 MAX_TOTAL_VOTING_POWER = ((1 << 63) - 1) // 8
