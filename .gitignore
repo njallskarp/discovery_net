@@ -20,3 +20,9 @@ dist/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# graphify: keep the generated graph + report, drop the local build cache
+# and the machine-specific interpreter/root sidecars.
+graphify-out/cache/
+graphify-out/.graphify_python
+graphify-out/.graphify_root
