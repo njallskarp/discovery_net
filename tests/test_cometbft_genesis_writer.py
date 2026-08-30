@@ -30,7 +30,7 @@ def _initialize_template(_process: _CometBFTProcess, *, home: Path) -> None:
 def test_writer_forms_deterministic_genesis_from_public_descriptors(tmp_path: Path) -> None:
     validators = (
         GenesisValidator(name="a", public_key=bytes(range(32)), voting_power=10),
-        GenesisValidator(name="b", public_key=bytes(range(1, 33)), voting_power=20),
+        GenesisValidator(name="b", public_key=bytes(range(1, 33)), voting_power=10),
     )
     first_path = tmp_path / "first.json"
     second_path = tmp_path / "second.json"
@@ -93,12 +93,34 @@ def test_writer_rejects_total_voting_power_overflow_before_invoking_cometbft(
     maximum = ((1 << 63) - 1) // 8
     validators = (
         GenesisValidator(name="a", public_key=bytes(range(32)), voting_power=maximum),
-        GenesisValidator(name="b", public_key=bytes(range(1, 33)), voting_power=1),
+        GenesisValidator(name="b", public_key=bytes(range(1, 33)), voting_power=maximum),
     )
 
     with (
         patch.object(_CometBFTProcess, "initialize", autospec=True) as initialize,
         pytest.raises(ValueError, match="total voting power"),
+    ):
+        CometBFTGenesisWriter().write(
+            path=tmp_path / "genesis.json",
+            chain_id="discovery-1",
+            genesis_time=datetime.now(UTC),
+            validators=validators,
+        )
+
+    initialize.assert_not_called()
+
+
+def test_writer_rejects_unequal_voting_power_before_invoking_cometbft(
+    tmp_path: Path,
+) -> None:
+    validators = (
+        GenesisValidator(name="a", public_key=bytes(range(32)), voting_power=10),
+        GenesisValidator(name="b", public_key=bytes(range(1, 33)), voting_power=20),
+    )
+
+    with (
+        patch.object(_CometBFTProcess, "initialize", autospec=True) as initialize,
+        pytest.raises(ValueError, match="equal voting power"),
     ):
         CometBFTGenesisWriter().write(
             path=tmp_path / "genesis.json",

@@ -133,6 +133,8 @@ def _validate_inputs(
         raise ValueError("validators exceed the CometBFT commit limit")
     if sum(validator.voting_power for validator in validators) > MAX_TOTAL_VOTING_POWER:
         raise ValueError("total voting power exceeds the CometBFT limit")
+    if len({validator.voting_power for validator in validators}) != 1:
+        raise ValueError("validators must have equal voting power")
     if len({validator.public_key for validator in validators}) != len(validators):
         raise ValueError("validators must not contain duplicate public keys")
     if len({validator.name for validator in validators}) != len(validators):
