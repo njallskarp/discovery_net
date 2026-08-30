@@ -3,6 +3,12 @@ services:
     cpus: "1.50"
     mem_limit: 640m
     restart: unless-stopped
+    healthcheck:
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_interval: 2s
+      start_period: 2m
 
   cometbft:
     cpus: "1.00"

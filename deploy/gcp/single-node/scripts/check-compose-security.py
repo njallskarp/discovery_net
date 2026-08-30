@@ -82,6 +82,10 @@ def main() -> int:
     if all_ports != expected_ports:
         _fail(f"unexpected published ports: {sorted(all_ports)}")
 
+    application_health = services["application"].get("healthcheck", {})
+    if application_health.get("start_period") != "2m0s":
+        _fail("application health check must allow two minutes for cloud startup")
+
     inspector_volumes = services["inspector"].get("volumes", [])
     if len(inspector_volumes) != 1:
         _fail("inspector must have exactly one mount")
