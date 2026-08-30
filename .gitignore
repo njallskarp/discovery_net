@@ -9,3 +9,14 @@ build/
 dist/
 *.egg-info/
 .DS_Store
+
+# Local node identities, ledgers, and signing keys.
+/run/
+
+# Terraform runtime data. Commit only *.tfvars.example templates.
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

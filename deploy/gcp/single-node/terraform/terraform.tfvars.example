@@ -1,0 +1,14 @@
+project_id = "your-gcp-project"
+region     = "us-central1"
+zone       = "us-central1-a"
+name       = "discovery-node-cloud-1"
+
+# Use one /32 for each trusted peer's public egress IP.
+trusted_p2p_cidrs = [
+  "203.0.113.10/32",
+  "198.51.100.20/32",
+]
+
+operator_members = [
+  "user:operator@example.com",
+]

@@ -1,0 +1,34 @@
+{
+	admin off
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2
+		max_header_size 32KB
+		timeouts {
+			read_body 10s
+			read_header 10s
+			write 30s
+			idle 2m
+		}
+	}
+}
+
+{$INSPECTOR_HOSTNAME} {
+	encode zstd gzip
+	@not_get not method GET
+	respond @not_get 405
+	reverse_proxy inspector:8765
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
