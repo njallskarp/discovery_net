@@ -169,6 +169,18 @@ def test_inspector_ui_uses_safe_local_renderers_and_consensus_ordering() -> None
     assert "artifact.artifact_index" in script
 
 
+def test_inspector_ui_pins_the_highlight_contract() -> None:
+    # The notable feed is a title convention on an append-only chain, so the prefix is permanent.
+    root = Path(__file__).resolve().parents[1]
+    static = root / "src" / "discovery_net" / "inspector" / "static"
+    index = (static / "index.html").read_text()
+    script = (static / "inspector.js").read_text()
+
+    assert 'data-view-panel="highlight"' in index
+    assert 'data-view="highlight"' in index
+    assert '"Highlight: "' in script
+
+
 def test_inspector_process_starts_the_seeded_application() -> None:
     # The installed-style entrypoint composes the real service and HTTP server end to end.
     port = _available_loopback_port()

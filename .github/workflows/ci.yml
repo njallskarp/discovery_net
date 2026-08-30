@@ -29,6 +29,9 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy src tests
+      # inspector.js is one IIFE: a syntax error blanks every view while the
+      # substring assertions in the test suite still pass.
+      - run: node --check src/discovery_net/inspector/static/inspector.js
       - run: pytest
         env:
           DISCOVERY_NET_COMETBFT_BINARY: ${{ runner.temp }}/cometbft

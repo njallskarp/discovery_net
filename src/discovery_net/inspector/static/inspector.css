@@ -444,6 +444,16 @@ main {
   color: color-mix(in srgb, var(--text) 88%, var(--muted));
 }
 
+/* Clamped so the notable feed scans as headlines rather than a column of essays. */
+.highlight-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 8px;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
+}
+
 .atomic-relations {
   margin-top: 14px;
   padding: 10px 12px;

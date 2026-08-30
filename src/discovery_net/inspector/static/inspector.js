@@ -12,6 +12,19 @@
     "refines",
   ]);
   const PROBLEM_KINDS = new Set(["problem_statement", "conjecture", "question"]);
+  // A highlight is an ordinary summary marked by its title. The chain is append-only, so this
+  // prefix can never be restated for entries already committed.
+  const HIGHLIGHT_PREFIX = "Highlight: ";
+  const HIGHLIGHT_LIMIT = 50;
+  const RESULT_KINDS = new Set([
+    "finding",
+    "lemma",
+    "proof_attempt",
+    "counterexample",
+    "formalization",
+    "reproduction",
+    "conjecture",
+  ]);
   const WORK_KINDS = new Set([
     "finding",
     "lemma",
@@ -35,6 +48,7 @@
     networkFingerprint: null,
     networkGraph: null,
     nextRefresh: Date.now(),
+    highlightPending: new Set(),
     nodeSnapshot: null,
     refreshing: false,
     selectedPeerRef: "local",
@@ -46,6 +60,7 @@
     chainValue: document.getElementById("chainValue"),
     consensusValue: document.getElementById("consensusValue"),
     errorMessage: document.getElementById("errorMessage"),
+    highlightList: document.getElementById("highlightList"),
     exploreBreadcrumbs: document.getElementById("exploreBreadcrumbs"),
     exploreCatalog: document.getElementById("exploreCatalog"),
     exploreDetail: document.getElementById("exploreDetail"),
@@ -512,12 +527,13 @@
 
   function renderActiveKnowledgeView() {
     if (state.currentView === "feed") renderFeed();
+    if (state.currentView === "highlight") renderHighlights();
     if (state.currentView === "explore") renderExplore();
     if (state.currentView === "graph") renderKnowledgeGraph(false);
   }
 
   function showView(view) {
-    if (!["feed", "explore", "graph", "network"].includes(view)) return;
+    if (!["feed", "highlight", "explore", "graph", "network"].includes(view)) return;
     state.currentView = view;
     document.querySelectorAll("[data-view-panel]").forEach((panel) => {
       panel.hidden = panel.dataset.viewPanel !== view;
@@ -617,6 +633,115 @@
     signer.textContent = `Signed ${shortRef(contribution.signer_public_key)}`;
     article.append(kind, title, body, signer);
     return article;
+  }
+
+  // A highlight is an ordinary summary whose title carries HIGHLIGHT_PREFIX and whose single
+  // result-bearing `about` edge names the work it describes.
+  function highlightEntries(viewModel) {
+    const bySubject = new Map();
+    const unlinked = [];
+    viewModel.contributions
+      .filter(
+        (contribution) =>
+          contribution.kind === "summary" && contribution.title.startsWith(HIGHLIGHT_PREFIX),
+      )
+      .forEach((entry) => {
+        const subjects = (viewModel.outgoingByRef.get(entry.artifact_ref) ?? [])
+          .filter((relation) => relation.kind === "about")
+          .map((relation) => viewModel.contribution(relation.to_contribution))
+          .filter((subject) => subject && RESULT_KINDS.has(subject.kind));
+        // Exactly one result-bearing subject is the contract. Topical `about` edges are the
+        // common habit, so anything else renders unlinked rather than guessing a subject.
+        if (subjects.length !== 1) {
+          unlinked.push({ entry, subject: null });
+          return;
+        }
+        const [subject] = subjects;
+        const previous = bySubject.get(subject.artifact_ref);
+        // A later entry supersedes an earlier one, so a wrong blurb can be corrected on an
+        // append-only chain.
+        if (!previous || compareConsensusAscending(previous.entry, entry) < 0) {
+          bySubject.set(subject.artifact_ref, { entry, subject });
+        }
+      });
+    return [...bySubject.values(), ...unlinked]
+      .sort((left, right) => compareConsensusAscending(right.entry, left.entry))
+      .slice(0, HIGHLIGHT_LIMIT);
+  }
+
+  function renderHighlights() {
+    const viewModel = state.viewModel;
+    if (!viewModel) return;
+    try {
+      const entries = highlightEntries(viewModel);
+      if (entries.length === 0) {
+        elements.highlightList.replaceChildren(
+          emptyState("No notable results have been published yet."),
+        );
+        return;
+      }
+      loadHighlightBodies(entries.map((item) => item.entry.artifact_ref));
+      elements.highlightList.replaceChildren(...entries.map(highlightCard));
+    } catch (error) {
+      // Throwing here would stop the shared refresh loop for every other view.
+      const message = error instanceof Error ? error.message : "Notable results unavailable";
+      elements.highlightList.replaceChildren(emptyState(message));
+    }
+  }
+
+  function highlightCard({ entry, subject }) {
+    const article = document.createElement("article");
+    article.className = "feed-card";
+    const heading = document.createElement("header");
+    const position = document.createElement("span");
+    position.className = "consensus-position";
+    position.textContent = `Block ${entry.height} · transaction ${entry.transaction_index}`;
+    heading.append(position);
+    const content = document.createElement("div");
+    content.className = "feed-card-content";
+    const headline = linkButton(entry.title.slice(HIGHLIGHT_PREFIX.length), () =>
+      selectContributionInExplore(entry.artifact_ref),
+    );
+    headline.className = "title-button";
+    content.append(headline);
+    const detail = state.details.get(entry.artifact_ref);
+    if (detail) {
+      const body = markdownRenderer.render(detail.body);
+      body.classList.add("highlight-body");
+      content.append(body);
+    }
+    if (subject) {
+      const footer = document.createElement("small");
+      footer.className = "signer-line";
+      const link = linkButton(subject.title, () => selectContributionInExplore(subject.artifact_ref));
+      footer.append("Read the full result: ", link);
+      content.append(footer);
+    }
+    article.append(heading, content);
+    return article;
+  }
+
+  function selectContributionInExplore(ref) {
+    selectContribution(ref);
+    showView("explore");
+  }
+
+  function loadHighlightBodies(refs) {
+    const missing = refs.filter((ref) => !state.details.has(ref) && !state.highlightPending.has(ref));
+    if (missing.length === 0) return;
+    missing.forEach((ref) => state.highlightPending.add(ref));
+    Promise.allSettled(missing.map((ref) => api.contribution(ref))).then((results) => {
+      let loaded = false;
+      results.forEach((result, index) => {
+        const ref = missing[index];
+        // Clearing on failure too, so one transient error does not wedge the view forever.
+        state.highlightPending.delete(ref);
+        if (result.status !== "fulfilled") return;
+        state.details.set(ref, result.value);
+        loaded = true;
+      });
+      if (loaded && state.currentView === "highlight") renderHighlights();
+    });
   }
 
   function relationContext(relations, viewModel) {

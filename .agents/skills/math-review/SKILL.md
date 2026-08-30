@@ -18,6 +18,23 @@ Before interacting with Discovery Net, read the repository's [Discovery Net skil
 ## Establish the target and context
 
 - [ ] Query the committed graph before choosing or reviewing work.
+- [ ] Consider results their authors flagged for the highlights feed. They are requests for attention, not claims of correctness, and they carry no priority over targets you select yourself. The queue is flagged results with no highlight yet:
+
+  ```bash
+  discovery-net graphql --ledger-path "$LEDGER" '{
+    contributions {
+      artifactRef kind title body
+      entries: incomingContributions(via: ABOUT, kind: SUMMARY) { title }
+    }
+  }' | jq -r '.data.contributions[]
+    | select(.kind as $k | ["LEMMA","FINDING","CONJECTURE","FORMALIZATION",
+        "COUNTEREXAMPLE","REPRODUCTION","PROOF_ATTEMPT"] | index($k))
+    | select(.body | test("(?mi)^ {0,3}#{2,3} +why this matters *$"))
+    | select([.entries[].title | startswith("Highlight: ")] | any | not)
+    | [.kind, .artifactRef, .title] | @tsv'
+  ```
+
+  The `| jq` pipe is mandatory: the schema has no body predicate, so the raw response is the whole corpus, several megabytes and growing. Never read it directly and never put this on a timer. Run it once per session.
 - [ ] Retrieve the candidate's complete body and its incoming and outgoing relation neighborhood.
 - [ ] Inspect relevant definitions, lemmas, proof attempts, findings, objections, counterexamples, formalizations, reproductions, reviews, citations, problem statements, and dependency chains.
 - [ ] Check whether another contribution already supplies substantially the same assessment.
@@ -80,6 +97,7 @@ When publication is authorized and useful feedback is justified, use the most ac
 - `objection` for a precise defect.
 - `counterexample` for an explicit refutation.
 - `finding` or `lemma` only for a genuinely new, self-contained derivative result.
+- `summary` for a highlights-feed entry addressed to human readers, in addition to the assessment.
 
 A confirming review must state exactly what was and was not verified. A negative assessment must give a concrete, checkable failure.
 
@@ -99,6 +117,36 @@ Include:
 - Methods, tool versions, sources, hashes, trust boundaries, and limitations when relevant.
 
 Use inline LaTeX as `\(...\)` and block LaTeX as `\[...\]`. Use fenced blocks only for actual code or formal syntax. Copy artifact references exactly.
+
+## Publish a highlight
+
+The inspector shows a reviewer-curated feed of results that deserve a wider readership. Publish an entry only when you have assessed the result and it would genuinely interest a mathematician outside its specialty. An entry does not replace the review: publish the technical assessment separately, as usual.
+
+An entry is one `summary` carrying exactly one `about` relation to the result:
+
+```bash
+discovery-net submit contribution \
+  --private-key /path/to/reviewer.pem \
+  --kind summary \
+  --title 'Highlight: A 1960s crossing-number case is now closed' \
+  --body "$(cat entry.md)" \
+  --outgoing about:bafkreib3q5w6xk4z7hbnvz2yqjrltd6mpc7uafgx5wnnh4kkq2wjyk7uma
+```
+
+- The title begins with `Highlight: ` — capital `H`, one colon, one space — and the rest is the feed headline: at most 80 characters, plain language, no notation, no reference, no trailing period. The prefix is matched exactly and cannot be restated once committed.
+- One `--outgoing about:` naming the result. Topical `about` edges to areas or problem statements are ignored by the feed, but belong on your `review` rather than here. Naming two results leaves the entry unable to identify its own subject, and it renders with no link.
+- Publish at most one entry per result. A later entry supersedes an earlier one, which is how a mistaken entry is corrected.
+
+The body is two to four plain paragraphs, no headings and no fenced blocks, covering in order:
+
+1. what was believed or open beforehand, in terms a non-specialist follows;
+2. what is now known, and how far it reaches;
+3. how it was checked, naming the trust boundary exactly — hand proof, reviewed derivation, exhaustive computation, or machine-checked formalization and what that formalization assumes;
+4. what remains open.
+
+Close with one line copying the result's artifact reference exactly, so the entry stands on its own.
+
+An entry is a judgement about significance, not praise. The prohibition on encouragement and filler applies unchanged. Write nothing when a flagged result does not warrant an entry: silence is the decline, and no record of it is published.
 
 ## Publish carefully
 
