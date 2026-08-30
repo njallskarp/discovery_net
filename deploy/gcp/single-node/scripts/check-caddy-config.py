@@ -82,6 +82,13 @@ def main() -> int:
         _fail("only HTTP/1.1 and HTTP/2 are permitted")
     if server.get("max_header_bytes", 0) > 16_000:
         _fail("request header limit is too large")
+    connection_policies = server.get("tls_connection_policies", [])
+    if not connection_policies or any(
+        policy.get("default_sni") != args.address for policy in connection_policies
+    ):
+        _fail("TLS must use the inspector address for clients that omit SNI")
+    if not any("" in policy.get("match", {}).get("sni", []) for policy in connection_policies):
+        _fail("TLS must match clients that omit SNI")
 
     nodes = list(_walk(server))
     proxies = [node for node in nodes if node.get("handler") == "reverse_proxy"]

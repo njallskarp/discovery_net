@@ -1,5 +1,6 @@
 {
 	admin off
+	default_sni {$INSPECTOR_ADDRESS}
 	renew_interval 10m
 	servers {
 		protocols h1 h2
