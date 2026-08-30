@@ -20,6 +20,20 @@ keys, ledger databases, and Terraform state must not be committed or passed to T
 | `26657` | VM loopback only | Read and transaction-broadcast RPC |
 | `26658`, `8765` | Container networks only | ABCI and inspector |
 
+The cloud overlay replaces the local-development CometBFT command. Its production policy
+is explicit:
+
+| Setting | Cloud value | Reason |
+|---|---|---|
+| Peer exchange | enabled | Discover other reachable network peers |
+| Strict address book | enabled | Reject private and unroutable advertised addresses |
+| Duplicate peer IPs | enabled | Permit trusted nodes behind one NAT; the firewall still requires approved `/32` source IPs |
+| Empty blocks | disabled | Avoid blocks without transactions |
+| RPC unsafe methods, CORS, gRPC, pprof | disabled | Enforced by the launcher, not operator input |
+
+Do not add cloud flags to `localnet/compose.yaml`; the cloud overlay owns the complete
+production command so local test settings cannot leak into this deployment.
+
 ## 1. Provision Google Cloud
 
 Prerequisites: a billed Google Cloud project, Terraform, `gcloud`, a DNS hostname, the
@@ -39,7 +53,8 @@ cd deploy/gcp/single-node/terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Set the project, operator IAM identity, and one `/32` CIDR for each peer. Then apply:
+Set the project, operator IAM identity, and one public IPv4 `/32` for each peer or trusted
+NAT egress address. Then apply:
 
 ```bash
 terraform init

@@ -73,10 +73,11 @@ variable "trusted_p2p_cidrs" {
       length(var.trusted_p2p_cidrs) > 0 &&
       alltrue([
         for cidr in var.trusted_p2p_cidrs :
-        can(cidrhost(cidr, 0)) && cidr != "0.0.0.0/0"
+        can(regex("^([0-9]{1,3}\\.){3}[0-9]{1,3}/32$", cidr)) &&
+        try(cidrhost(cidr, 0), "") == split("/", cidr)[0]
       ])
     )
-    error_message = "trusted_p2p_cidrs must contain valid restricted CIDRs; 0.0.0.0/0 is forbidden."
+    error_message = "trusted_p2p_cidrs must contain only individual IPv4 addresses in /32 notation."
   }
 }
 

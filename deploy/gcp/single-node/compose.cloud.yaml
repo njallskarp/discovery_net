@@ -28,9 +28,12 @@ services:
       - --p2p-advertised-endpoint
       - ${P2P_ADVERTISED_ENDPOINT:?Set the externally reachable P2P endpoint}
       - --persistent-peers=${PERSISTENT_PEERS:?Set at least one trusted persistent peer}
-      - --no-address-book-strict
+      - --peer-exchange
+      - --address-book-strict
       - --allow-duplicate-ip
       - --no-create-empty-blocks
+      - --log-level
+      - info
 
   rpc:
     restart: unless-stopped

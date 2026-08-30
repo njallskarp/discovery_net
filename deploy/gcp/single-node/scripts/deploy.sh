@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 SCRIPT_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIRECTORY
@@ -17,6 +18,16 @@ if [[ "$(id -u)" -ne 0 ]]; then
 fi
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "error: environment file not found: $ENV_FILE" >&2
+  exit 1
+fi
+if [[ "$(stat -c '%u' "$ENV_FILE")" -ne 0 ]]; then
+  echo "error: environment file must be owned by root: $ENV_FILE" >&2
+  exit 1
+fi
+ENV_MODE="$(stat -c '%a' "$ENV_FILE")"
+readonly ENV_MODE
+if (( (8#$ENV_MODE & 077) != 0 )); then
+  echo "error: environment file must not be accessible by group or other: $ENV_FILE" >&2
   exit 1
 fi
 if findmnt -rn /srv/discovery-net >/dev/null 2>&1; then
@@ -41,6 +52,10 @@ GENESIS_FILE="$(env_value GENESIS_FILE)"
 readonly GENESIS_FILE
 GENESIS_SHA256="$(env_value GENESIS_SHA256)"
 readonly GENESIS_SHA256
+if [[ ! "$GENESIS_SHA256" =~ ^[[:xdigit:]]{64}$ ]]; then
+  echo "error: GENESIS_SHA256 must be exactly 64 hexadecimal characters" >&2
+  exit 1
+fi
 if [[ ! -f "$GENESIS_FILE" ]]; then
   echo "error: genesis file not found: $GENESIS_FILE" >&2
   exit 1
