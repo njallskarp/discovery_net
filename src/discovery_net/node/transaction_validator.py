@@ -27,6 +27,10 @@ class TransactionCode(IntEnum):
     MISSING_REFERENCE = 5
     TRANSACTION_TOO_LARGE = 6
     TOO_MANY_ARTIFACTS = 7
+    GOVERNANCE_DISABLED = 8
+    UNAUTHORIZED = 9
+    INVALID_SEQUENCE = 10
+    INVALID_VALIDATOR_CHANGE = 11
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

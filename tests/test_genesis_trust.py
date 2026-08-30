@@ -38,7 +38,7 @@ def test_genesis_rejects_nonempty_application_state(
     path = tmp_path / "genesis.json"
     anchor = write_genesis(path, content)
 
-    with pytest.raises(ValueError, match="absent or null"):
+    with pytest.raises(ValueError, match="not supported"):
         _VerifiedGenesis.from_path(path=path, trust_anchor=anchor)
 
 

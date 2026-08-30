@@ -26,6 +26,7 @@ from discovery_net.node.runtime._cometbft_config import _CometBFTConfig
 from discovery_net.node.runtime._cometbft_home import _CometBFTHome
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
 from discovery_net.node.runtime.genesis import _VerifiedGenesis
+from discovery_net.node.validator_governance import ValidatorGovernanceConfig
 from tests.integration._integration_node import IntegrationNode
 
 _CONVERGENCE_TIMEOUT_SECONDS = 20
@@ -157,7 +158,9 @@ class IntegrationNetwork:
         binary: Path,
         root: Path,
         validators: int,
+        non_validators: int = 0,
         chain_id: str = "discovery-formation-test",
+        validator_governance: ValidatorGovernanceConfig | None = None,
     ) -> IntegrationNetwork:
         """Form a validator network exclusively through the production provisioning API."""
         provisioner = CometBFTValidatorProvisioner(binary=binary)
@@ -180,6 +183,7 @@ class IntegrationNetwork:
             chain_id=chain_id,
             genesis_time=datetime.now(UTC),
             validators=genesis_validators,
+            validator_governance=validator_governance,
         )
         for identity in identities:
             provisioner.install_genesis(
@@ -188,7 +192,18 @@ class IntegrationNetwork:
                 genesis_trust_anchor=trust_anchor,
             )
 
-        ports = _available_ports(validators * 3)
+        total_nodes = validators + non_validators
+        ports = _available_ports(total_nodes * 3)
+        if non_validators:
+            _prepare_joining_homes(
+                binary=binary,
+                homes_root=homes_root,
+                genesis_path=genesis_path,
+                chain_id=chain_id,
+                first_index=validators,
+                count=non_validators,
+                ports=ports,
+            )
         nodes = tuple(
             _node(
                 binary=binary,
@@ -199,7 +214,7 @@ class IntegrationNetwork:
                 ports=ports[index * 3 : index * 3 + 3],
                 log_directory=root / "logs",
             )
-            for index in range(validators)
+            for index in range(total_nodes)
         )
         return cls(
             chain_id=chain_id,

@@ -2,12 +2,10 @@
 
 from discovery_net.node.store.artifact_ledger_store import (
     ArtifactLedgerSnapshot,
-    ArtifactLedgerStore,
 )
-from discovery_net.node.store.sqlite_store import SQLiteArtifactLedgerStore
+from discovery_net.node.store.sqlite_store import SQLiteApplicationStateStore
 
 __all__ = [
     "ArtifactLedgerSnapshot",
-    "ArtifactLedgerStore",
-    "SQLiteArtifactLedgerStore",
+    "SQLiteApplicationStateStore",
 ]

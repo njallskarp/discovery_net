@@ -14,7 +14,7 @@ from discovery_net.node import (
     CometBFTABCIAdapter,
     CometBFTCallbackHandler,
     LocalArtifactLedger,
-    SQLiteArtifactLedgerStore,
+    SQLiteApplicationStateStore,
     TransactionCode,
     TransactionValidator,
 )
@@ -38,8 +38,8 @@ def transaction(title: str) -> bytes:
     return encode_transaction(sign_transaction(envelopes=(envelope,), private_key=PRIVATE_KEY))
 
 
-def adapter(path: Path) -> tuple[CometBFTABCIAdapter, SQLiteArtifactLedgerStore]:
-    store = SQLiteArtifactLedgerStore(path=path)
+def adapter(path: Path) -> tuple[CometBFTABCIAdapter, SQLiteApplicationStateStore]:
+    store = SQLiteApplicationStateStore(path=path)
     handler = CometBFTCallbackHandler(
         validator=TransactionValidator(expected_chain_id=CHAIN_ID),
         store=store,
@@ -50,7 +50,7 @@ def adapter(path: Path) -> tuple[CometBFTABCIAdapter, SQLiteArtifactLedgerStore]
 @pytest.fixture
 def abci_client(
     tmp_path: Path,
-) -> Iterator[tuple[abci_grpc.ABCIStub, SQLiteArtifactLedgerStore]]:
+) -> Iterator[tuple[abci_grpc.ABCIStub, SQLiteApplicationStateStore]]:
     application, store = adapter(tmp_path / "artifact-ledger.sqlite")
     server = ABCIGRPCServer(
         adapter=application,
@@ -70,7 +70,7 @@ def test_transport_echoes_and_flushes(abci_client: tuple[abci_grpc.ABCIStub, obj
 
 
 def test_transport_runs_the_supported_consensus_lifecycle(
-    abci_client: tuple[abci_grpc.ABCIStub, SQLiteArtifactLedgerStore],
+    abci_client: tuple[abci_grpc.ABCIStub, SQLiteApplicationStateStore],
 ) -> None:
     client, store = abci_client
     encoded = transaction("First")
@@ -115,9 +115,9 @@ def test_transport_runs_the_supported_consensus_lifecycle(
     )
 
     assert tuple(result.code for result in finalized.tx_results) == (TransactionCode.ACCEPTED,)
-    assert store.load() is None
+    assert store.load_artifact_ledger() is None
     assert client.Commit(abci.RequestCommit()) == abci.ResponseCommit()
-    snapshot = store.load()
+    snapshot = store.load_artifact_ledger()
     assert snapshot is not None
     assert snapshot.height == 1
     assert len(snapshot.entries) == 1

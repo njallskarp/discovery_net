@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import final
 from urllib.error import URLError
 
-from discovery_net.node import ArtifactLedgerSnapshot, SQLiteArtifactLedgerStore
+from discovery_net.node import ArtifactLedgerSnapshot, SQLiteApplicationStateStore
 from tests.integration._background_process import BackgroundProcess
 from tests.integration._cometbft_rpc_client import CometBFTRPCClient
 
@@ -216,7 +216,7 @@ class IntegrationNode:
         """Return the locally persisted ledger snapshot when it exists."""
         if not self._ledger_path.exists():
             return None
-        return SQLiteArtifactLedgerStore(path=self._ledger_path).load()
+        return SQLiteApplicationStateStore(path=self._ledger_path).load_artifact_ledger()
 
     def wait_for_snapshot(
         self,

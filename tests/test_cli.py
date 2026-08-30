@@ -24,7 +24,7 @@ from discovery_net.knowledge_graph import (
 from discovery_net.node import (
     ArtifactLedgerEntry,
     ArtifactLedgerSnapshot,
-    SQLiteArtifactLedgerStore,
+    SQLiteApplicationStateStore,
 )
 from discovery_net.submission import (
     ArtifactSubmitter,
@@ -451,7 +451,7 @@ def _write_ledger(directory: Path) -> tuple[Path, dict[str, ArtifactRef]]:
         transaction_index=3,
     )
     ledger_path = directory / "ledger.sqlite"
-    SQLiteArtifactLedgerStore(path=ledger_path).save(
+    SQLiteApplicationStateStore(path=ledger_path).save_artifact_ledger(
         ArtifactLedgerSnapshot(
             height=1,
             entries=(*entries, finding_entry, relation_entry),

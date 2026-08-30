@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, load_pem_public_key
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from discovery_net.node.runtime.cometbft_genesis_writer import CometBFTGenesisWriter
@@ -19,6 +21,7 @@ from discovery_net.node.runtime.cometbft_validator_provisioner import (
 from discovery_net.node.runtime.genesis import GenesisTrustAnchor
 from discovery_net.node.runtime.genesis_validator import GenesisValidator
 from discovery_net.node.runtime.validator_identity import ValidatorIdentity
+from discovery_net.node.validator_governance import ValidatorGovernanceConfig
 
 
 class _HomeOutput(BaseModel):
@@ -94,11 +97,13 @@ def _export_validator(arguments: argparse.Namespace) -> None:
 
 def _create_genesis(arguments: argparse.Namespace) -> None:
     validators = tuple(_read_validator(path) for path in arguments.validators)
+    validator_governance = _validator_governance(arguments, validators)
     trust_anchor = CometBFTGenesisWriter(binary=arguments.cometbft_binary).write(
         path=arguments.output,
         chain_id=arguments.chain_id,
         genesis_time=arguments.genesis_time,
         validators=validators,
+        validator_governance=validator_governance,
     )
     _emit(
         _GenesisOutput(
@@ -134,6 +139,36 @@ def _read_validator(path: Path) -> GenesisValidator:
         raise ValueError(f"validator descriptor could not be read: {path}") from error
     except ValidationError as error:
         raise ValueError(f"validator descriptor is invalid: {path}") from error
+
+
+def _validator_governance(
+    arguments: argparse.Namespace,
+    validators: tuple[GenesisValidator, ...],
+) -> ValidatorGovernanceConfig | None:
+    member_paths: list[Path] | None = arguments.governance_members
+    threshold: int | None = arguments.governance_threshold
+    if member_paths is None:
+        if threshold is not None:
+            raise ValueError("--governance-threshold requires --governance-member")
+        return None
+    if threshold is None:
+        raise ValueError("--governance-threshold is required with --governance-member")
+    member_public_keys = tuple(sorted(_read_ed25519_public_key(path) for path in member_paths))
+    return ValidatorGovernanceConfig(
+        member_public_keys=member_public_keys,
+        approval_threshold=threshold,
+        validator_power=validators[0].voting_power,
+    )
+
+
+def _read_ed25519_public_key(path: Path) -> bytes:
+    try:
+        public_key = load_pem_public_key(path.read_bytes())
+    except (OSError, ValueError) as error:
+        raise ValueError(f"governance public key could not be read: {path}") from error
+    if not isinstance(public_key, Ed25519PublicKey):
+        raise ValueError(f"governance public key must be Ed25519: {path}")
+    return public_key.public_bytes(Encoding.Raw, PublicFormat.Raw)
 
 
 def _write_new_public_file(path: Path, content: bytes) -> None:
@@ -205,6 +240,18 @@ def _argument_parser() -> argparse.ArgumentParser:
     create.add_argument("--chain-id", required=True)
     create.add_argument("--genesis-time", required=True, type=_datetime)
     create.add_argument("--validator", dest="validators", action="append", required=True, type=Path)
+    create.add_argument(
+        "--governance-member",
+        dest="governance_members",
+        action="append",
+        type=Path,
+        help="PEM Ed25519 public key authorized to approve validator membership",
+    )
+    create.add_argument(
+        "--governance-threshold",
+        type=int,
+        help="number of distinct governance-member approvals required",
+    )
     create.add_argument("--cometbft-binary", default=Path("cometbft"), type=Path)
 
     install = commands.add_parser(

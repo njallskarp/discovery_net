@@ -58,6 +58,21 @@ class CometBFTRPCClient:
             raise ValueError("CometBFT returned block results for the wrong height")
         return base64.b64decode(string_field(result, "app_hash"), validate=True)
 
+    def validator_voting_powers(self) -> dict[bytes, int]:
+        """Return the latest validator public keys and their voting powers."""
+        result = self._call("validators")
+        validators = result.get("validators")
+        if not isinstance(validators, list):
+            raise ValueError("validators must be a list")
+        powers: dict[bytes, int] = {}
+        for validator in validators:
+            value = json_object(validator, "validator")
+            public_key = object_field(value, "pub_key")
+            encoded_key = string_field(public_key, "value")
+            voting_power = int(string_field(value, "voting_power"))
+            powers[base64.b64decode(encoded_key, validate=True)] = voting_power
+        return powers
+
     def _call(
         self,
         method: str,

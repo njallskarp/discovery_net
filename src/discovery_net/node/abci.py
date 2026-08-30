@@ -3,7 +3,9 @@
 from typing import final
 
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2 as _abci
+from discovery_net._cometbft.v0_40.tendermint.crypto import keys_pb2 as _crypto
 from discovery_net.node.cometbft_callback_handler import CometBFTCallbackHandler
+from discovery_net.node.validator_governance import ValidatorPowerUpdate
 
 
 @final
@@ -31,6 +33,9 @@ class CometBFTABCIAdapter:
             chain_id=request.chain_id,
             initial_height=request.initial_height,
             genesis_state=request.app_state_bytes,
+            genesis_validators=tuple(
+                _validator_power_update(value) for value in request.validators
+            ),
         )
         return _abci.ResponseInitChain(app_hash=app_hash)
 
@@ -75,6 +80,13 @@ class CometBFTABCIAdapter:
             tx_results=(
                 _abci.ExecTxResult(code=tx_result.code) for tx_result in result.transaction_results
             ),
+            validator_updates=(
+                _abci.ValidatorUpdate(
+                    pub_key=_crypto.PublicKey(ed25519=update.public_key),
+                    power=update.voting_power,
+                )
+                for update in result.validator_updates
+            ),
             app_hash=result.state_hash,
         )
 
@@ -88,3 +100,12 @@ class CometBFTABCIAdapter:
 def _require_message(message: object, message_type: type[object]) -> None:
     if not isinstance(message, message_type):
         raise TypeError(f"request must be a {message_type.__name__}")
+
+
+def _validator_power_update(value: _abci.ValidatorUpdate) -> ValidatorPowerUpdate:
+    if value.pub_key.WhichOneof("sum") != "ed25519":
+        raise ValueError("genesis validators must use Ed25519 public keys")
+    return ValidatorPowerUpdate(
+        public_key=value.pub_key.ed25519,
+        voting_power=value.power,
+    )

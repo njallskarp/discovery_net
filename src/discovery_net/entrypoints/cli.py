@@ -23,7 +23,7 @@ from discovery_net.knowledge_graph import (
     ContributionRelation,
     RelationKind,
 )
-from discovery_net.node import SQLiteArtifactLedgerStore
+from discovery_net.node import SQLiteApplicationStateStore
 from discovery_net.query import KnowledgeGraphQueries
 from discovery_net.submission import (
     ArtifactSubmitter,
@@ -179,7 +179,7 @@ def _load_queries(ledger_path: Path) -> KnowledgeGraphQueries:
     if not ledger_path.is_file():
         raise FileNotFoundError(f"artifact ledger does not exist: {ledger_path}")
 
-    snapshot = SQLiteArtifactLedgerStore(path=ledger_path).load()
+    snapshot = SQLiteApplicationStateStore(path=ledger_path).load_artifact_ledger()
     index = KnowledgeGraphIndex()
     if snapshot is not None:
         index.refresh(snapshot)

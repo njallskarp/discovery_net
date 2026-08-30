@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2 as abci
 from discovery_net._cometbft.v0_40.tendermint.abci import types_pb2_grpc as abci_grpc
 from discovery_net.knowledge_graph import Contribution, ContributionKind
-from discovery_net.node import LocalArtifactLedger, SQLiteArtifactLedgerStore, TransactionCode
+from discovery_net.node import LocalArtifactLedger, SQLiteApplicationStateStore, TransactionCode
 from discovery_net.wire import encode_transaction, sign_artifact, sign_transaction
 
 CHAIN_ID = "discovery-net-process-test"
@@ -45,7 +45,7 @@ def test_node_process_serves_abci_and_restores_committed_state(tmp_path: Path) -
     finally:
         _stop_node(process)
 
-    snapshot = SQLiteArtifactLedgerStore(path=ledger_path).load()
+    snapshot = SQLiteApplicationStateStore(path=ledger_path).load_artifact_ledger()
     assert snapshot is not None
     assert snapshot.height == 1
 

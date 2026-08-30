@@ -1,7 +1,6 @@
-# Defines the contract for persisting committed artifact-ledger state.
+# Defines the ordered artifact-ledger view within committed application state.
 
 from dataclasses import dataclass
-from typing import Protocol
 
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 
@@ -24,11 +23,3 @@ class ArtifactLedgerSnapshot:
             raise TypeError("entries must contain ArtifactLedgerEntry values")
         if any(entry.height > self.height for entry in self.entries):
             raise ValueError("entry height must not exceed snapshot height")
-
-
-class ArtifactLedgerStore(Protocol):
-    """Loads and atomically persists artifact-ledger snapshots."""
-
-    def load(self) -> ArtifactLedgerSnapshot | None: ...
-
-    def save(self, snapshot: ArtifactLedgerSnapshot) -> None: ...

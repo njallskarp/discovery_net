@@ -6,6 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
 from discovery_net.node.runtime.formation_process import main
@@ -37,6 +39,12 @@ def test_cli_initializes_exports_forms_and_installs(
     home = tmp_path / "validator"
     descriptor = tmp_path / "validator.json"
     genesis = tmp_path / "genesis.json"
+    governance_member = tmp_path / "governance-member.pem"
+    governance_member.write_bytes(
+        Ed25519PrivateKey.from_private_bytes(bytes([31]) * 32)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
 
     with (
         patch.object(
@@ -78,6 +86,10 @@ def test_cli_initializes_exports_forms_and_installs(
                     "2026-08-27T12:00:00Z",
                     "--validator",
                     str(descriptor),
+                    "--governance-member",
+                    str(governance_member),
+                    "--governance-threshold",
+                    "1",
                 )
             )
             == 0
@@ -106,3 +118,5 @@ def test_cli_initializes_exports_forms_and_installs(
     assert outputs[1]["descriptor"] == str(descriptor)
     assert outputs[2]["genesis_sha256"] == digest
     assert (home / "config" / "genesis.json").read_bytes() == genesis.read_bytes()
+    document = json.loads(genesis.read_bytes())
+    assert document["app_state"]["validator_governance"]["approval_threshold"] == 1

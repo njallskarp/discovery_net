@@ -21,6 +21,8 @@ from discovery_net.node.runtime._cometbft_limits import (
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
 from discovery_net.node.runtime.genesis import GenesisTrustAnchor, _GenesisDocument
 from discovery_net.node.runtime.genesis_validator import GenesisValidator
+from discovery_net.node.validator_governance import ValidatorGovernanceConfig
+from discovery_net.node.validator_governance_codec import encode_genesis_application_state
 
 _PUBLIC_KEY_TYPE = "tendermint/PubKeyEd25519"
 
@@ -50,6 +52,7 @@ class _FormedGenesisDocument(BaseModel):
     consensus_params: dict[str, object]
     validators: tuple[_GenesisValidatorDocument, ...]
     app_hash: str
+    app_state: dict[str, object] | None = None
 
 
 @final
@@ -70,6 +73,7 @@ class CometBFTGenesisWriter:
         chain_id: str,
         genesis_time: datetime,
         validators: tuple[GenesisValidator, ...],
+        validator_governance: ValidatorGovernanceConfig | None = None,
     ) -> GenesisTrustAnchor:
         """Write one new genesis and return the trust anchor for its exact bytes."""
         _validate_inputs(
@@ -77,6 +81,7 @@ class CometBFTGenesisWriter:
             chain_id=chain_id,
             genesis_time=genesis_time,
             validators=validators,
+            validator_governance=validator_governance,
         )
         if path.exists():
             raise FileExistsError(f"genesis already exists: {path}")
@@ -92,6 +97,7 @@ class CometBFTGenesisWriter:
                 chain_id=chain_id,
                 genesis_time=genesis_time,
                 validators=validators,
+                validator_governance=validator_governance,
             )
             _GenesisDocument.model_validate_json(content)
             _write_new_file(path, content)
@@ -112,6 +118,7 @@ def _validate_inputs(
     chain_id: str,
     genesis_time: datetime,
     validators: tuple[GenesisValidator, ...],
+    validator_governance: ValidatorGovernanceConfig | None,
 ) -> None:
     if not isinstance(path, Path):
         raise TypeError("path must be a Path")
@@ -137,6 +144,14 @@ def _validate_inputs(
         raise ValueError("validators must not contain duplicate public keys")
     if len({validator.name for validator in validators}) != len(validators):
         raise ValueError("validators must not contain duplicate names")
+    if validator_governance is not None:
+        if not isinstance(validator_governance, ValidatorGovernanceConfig):
+            raise TypeError("validator_governance must be a ValidatorGovernanceConfig or None")
+        if any(
+            validator.voting_power != validator_governance.validator_power
+            for validator in validators
+        ):
+            raise ValueError("governed genesis validators must have equal configured power")
 
 
 def _read_template(path: Path) -> _GenesisTemplate:
@@ -152,7 +167,19 @@ def _render_genesis(
     chain_id: str,
     genesis_time: datetime,
     validators: tuple[GenesisValidator, ...],
+    validator_governance: ValidatorGovernanceConfig | None,
 ) -> bytes:
+    application_state = None
+    if validator_governance is not None:
+        encoded_state = encode_genesis_application_state(
+            validator_governance.initial_state(
+                validator_public_keys=tuple(validator.public_key for validator in validators)
+            )
+        )
+        decoded_state = json.loads(encoded_state)
+        if not isinstance(decoded_state, dict):
+            raise AssertionError("encoded genesis application state must be an object")
+        application_state = decoded_state
     document = _FormedGenesisDocument(
         genesis_time=_rfc3339(genesis_time),
         chain_id=chain_id,
@@ -171,8 +198,11 @@ def _render_genesis(
             for validator in validators
         ),
         app_hash="",
+        app_state=application_state,
     )
-    return (json.dumps(document.model_dump(mode="json"), indent=2) + "\n").encode()
+    return (
+        json.dumps(document.model_dump(mode="json", exclude_none=True), indent=2) + "\n"
+    ).encode()
 
 
 def _rfc3339(value: datetime) -> str:

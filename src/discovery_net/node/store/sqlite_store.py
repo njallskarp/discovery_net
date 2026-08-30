@@ -8,16 +8,21 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import final
 
+from discovery_net.node.application_state import ApplicationStateSnapshot
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 from discovery_net.node.store import queries
 from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.node.store.queries import StoredArtifactLedgerEntry
+from discovery_net.node.validator_governance_codec import (
+    decode_validator_governance_state,
+    encode_validator_governance_state,
+)
 from discovery_net.wire import decode_transaction, encode_transaction
 
 
 @final
-class SQLiteArtifactLedgerStore:
-    """Persists append-only artifact-ledger snapshots transactionally."""
+class SQLiteApplicationStateStore:
+    """Persists all consensus-visible application state transactionally."""
 
     __slots__ = ("_path",)
 
@@ -30,24 +35,44 @@ class SQLiteArtifactLedgerStore:
         with self._open_transaction(immediate=True) as connection:
             queries.create_schema(connection)
 
-    def load(self) -> ArtifactLedgerSnapshot | None:
-        """Load the latest committed snapshot, or return none before the first commit."""
+    def load(self) -> ApplicationStateSnapshot | None:
+        """Load the latest committed application state."""
         with self._open_transaction() as connection:
-            return _read_snapshot(connection)
+            return _read_application_state(connection)
 
-    def save(self, snapshot: ArtifactLedgerSnapshot) -> None:
-        """Atomically persist a snapshot that extends committed history."""
+    def load_artifact_ledger(self) -> ArtifactLedgerSnapshot | None:
+        """Load the artifact-ledger view used by indexers and query applications."""
+        with self._open_transaction() as connection:
+            state = _read_application_state(connection)
+            return None if state is None else state.artifact_ledger
+
+    def save_artifact_ledger(self, snapshot: ArtifactLedgerSnapshot) -> None:
+        """Persist an artifact-ledger view while preserving existing governance."""
         if not isinstance(snapshot, ArtifactLedgerSnapshot):
             raise TypeError("snapshot must be an ArtifactLedgerSnapshot")
-
         with self._open_transaction(immediate=True) as connection:
-            persisted = _read_snapshot(connection)
-            new_entries = _new_entries(persisted, snapshot)
-            queries.insert_entries(
+            persisted = _read_application_state(connection)
+            _save_application_state(
                 connection,
-                tuple(_stored_entry(entry) for entry in new_entries),
+                persisted,
+                ApplicationStateSnapshot(
+                    artifact_ledger=snapshot,
+                    validator_governance=(
+                        None if persisted is None else persisted.validator_governance
+                    ),
+                ),
             )
-            queries.upsert_committed_height(connection, snapshot.height)
+
+    def save(self, snapshot: ApplicationStateSnapshot) -> None:
+        """Atomically persist artifacts, governance, and their shared height."""
+        if not isinstance(snapshot, ApplicationStateSnapshot):
+            raise TypeError("snapshot must be an ApplicationStateSnapshot")
+        with self._open_transaction(immediate=True) as connection:
+            _save_application_state(
+                connection,
+                _read_application_state(connection),
+                snapshot,
+            )
 
     @contextmanager
     def _open_transaction(
@@ -69,18 +94,78 @@ class SQLiteArtifactLedgerStore:
             connection.close()
 
 
-def _read_snapshot(connection: sqlite3.Connection) -> ArtifactLedgerSnapshot | None:
+def _read_application_state(connection: sqlite3.Connection) -> ApplicationStateSnapshot | None:
     committed_height = queries.select_committed_height(connection)
+    governance_bytes = queries.select_validator_governance_state(connection)
     if committed_height is None:
-        if queries.contains_entries(connection):
-            raise ValueError("artifact ledger database contains entries without committed state")
+        if queries.contains_entries(connection) or governance_bytes is not None:
+            raise ValueError("application database contains values without committed state")
         return None
 
     try:
         entries = tuple(_ledger_entry(entry) for entry in queries.select_entries(connection))
-        return ArtifactLedgerSnapshot(height=committed_height, entries=entries)
+        governance = (
+            None
+            if governance_bytes is None
+            else decode_validator_governance_state(governance_bytes)
+        )
+        return ApplicationStateSnapshot(
+            artifact_ledger=ArtifactLedgerSnapshot(height=committed_height, entries=entries),
+            validator_governance=governance,
+        )
     except (TypeError, ValueError) as error:
-        raise ValueError("artifact ledger database contains invalid state") from error
+        raise ValueError("application database contains invalid state") from error
+
+
+def _save_application_state(
+    connection: sqlite3.Connection,
+    persisted: ApplicationStateSnapshot | None,
+    snapshot: ApplicationStateSnapshot,
+) -> None:
+    persisted_ledger = None if persisted is None else persisted.artifact_ledger
+    new_entries = _new_entries(persisted_ledger, snapshot.artifact_ledger)
+    _validate_governance_transition(persisted, snapshot)
+    queries.insert_entries(
+        connection,
+        tuple(_stored_entry(entry) for entry in new_entries),
+    )
+    if snapshot.validator_governance is not None and (
+        persisted is None or snapshot.validator_governance != persisted.validator_governance
+    ):
+        queries.upsert_validator_governance_state(
+            connection,
+            encode_validator_governance_state(snapshot.validator_governance),
+        )
+    queries.upsert_committed_height(connection, snapshot.height)
+
+
+def _validate_governance_transition(
+    persisted: ApplicationStateSnapshot | None,
+    snapshot: ApplicationStateSnapshot,
+) -> None:
+    proposed = snapshot.validator_governance
+    if persisted is None:
+        if proposed is not None and snapshot.height != 0:
+            raise ValueError("validator governance may only be initialized at genesis")
+        return
+
+    current = persisted.validator_governance
+    if current is None:
+        if proposed is not None and snapshot.height != 0:
+            raise ValueError("validator governance may only be initialized at genesis")
+        return
+    if proposed is None:
+        raise ValueError("snapshot must not remove validator governance")
+    if (
+        proposed.member_public_keys != current.member_public_keys
+        or proposed.approval_threshold != current.approval_threshold
+        or proposed.validator_power != current.validator_power
+    ):
+        raise ValueError("snapshot must not replace validator-governance policy")
+    if proposed.sequence < current.sequence:
+        raise ValueError("snapshot must not precede validator-governance state")
+    if snapshot.height == persisted.height and proposed != current:
+        raise ValueError("snapshot must not change an already committed height")
 
 
 def _stored_entry(entry: ArtifactLedgerEntry) -> StoredArtifactLedgerEntry:
