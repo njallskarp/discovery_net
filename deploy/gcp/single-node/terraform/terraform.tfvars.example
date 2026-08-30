@@ -3,6 +3,12 @@ region     = "us-central1"
 zone       = "us-central1-a"
 name       = "discovery-node-cloud-1"
 
+# Inspector is enabled by default. Leave the hostname blank for a Let's Encrypt
+# short-lived certificate issued directly to the static public IPv4 address.
+enable_inspector   = true
+inspector_hostname = ""
+acme_email         = "operator@example.com"
+
 # Use one /32 for each trusted peer's public egress IP.
 trusted_p2p_cidrs = [
   "203.0.113.10/32",

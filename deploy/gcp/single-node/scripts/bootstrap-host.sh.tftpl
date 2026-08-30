@@ -8,13 +8,17 @@ readonly DATA_MOUNT="/srv/discovery-net"
 readonly SERVICE_UID="10001"
 readonly SERVICE_GID="10001"
 readonly BOOTSTRAP_MARKER="/var/lib/discovery-net-bootstrap-v1"
+readonly INSPECTOR_ENABLED="${inspector_enabled}"
+readonly INSPECTOR_ADDRESS="${inspector_address}"
+readonly INSPECTOR_TLS_MODE="${inspector_tls_mode}"
+readonly ACME_EMAIL="${acme_email}"
 
 export DEBIAN_FRONTEND=noninteractive
 
 if [[ ! -f "$BOOTSTRAP_MARKER" ]]; then
   apt-get update
   apt-get install -y --no-install-recommends \
-    ca-certificates curl git gnupg unattended-upgrades
+    ca-certificates curl git gnupg iproute2 jq python3 unattended-upgrades
   install -m 0755 -d /etc/apt/keyrings
   curl -fsSL https://download.docker.com/linux/debian/gpg \
     | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
@@ -73,6 +77,13 @@ install -d -o "$SERVICE_UID" -g "$SERVICE_GID" -m 0750 \
   "$DATA_MOUNT/caddy-data" \
   "$DATA_MOUNT/caddy-config"
 install -d -o root -g root -m 0750 /etc/discovery-net
+install -o root -g root -m 0600 /dev/null /etc/discovery-net/infra.env
+{
+  printf 'INSPECTOR_ENABLED=%s\n' "$INSPECTOR_ENABLED"
+  printf 'INSPECTOR_ADDRESS=%s\n' "$INSPECTOR_ADDRESS"
+  printf 'INSPECTOR_TLS_MODE=%s\n' "$INSPECTOR_TLS_MODE"
+  printf 'ACME_EMAIL=%s\n' "$ACME_EMAIL"
+} > /etc/discovery-net/infra.env
 
 systemctl enable --now docker
 docker network inspect discovery-net-p2p >/dev/null 2>&1 \

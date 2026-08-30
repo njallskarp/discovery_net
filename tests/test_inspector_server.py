@@ -91,13 +91,21 @@ def test_server_exposes_the_browser_and_snapshot_without_write_routes() -> None:
             assert font_headers["Content-Type"] == "font/woff2"
             assert snapshot_headers["Cache-Control"] == "no-store"
 
-            try:
-                urlopen(Request(f"{base_url}/api/snapshot", data=b"{}"), timeout=2)
-            except HTTPError as error:
-                assert error.code == HTTPStatus.METHOD_NOT_ALLOWED
-                assert json.loads(error.read()) == {"error": "read-only endpoint"}
-            else:
-                raise AssertionError("the read-only inspector accepted a POST request")
+            for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"):
+                try:
+                    urlopen(
+                        Request(
+                            f"{base_url}/api/snapshot",
+                            data=b"{}",
+                            method=method,
+                        ),
+                        timeout=2,
+                    )
+                except HTTPError as error:
+                    assert error.code == HTTPStatus.METHOD_NOT_ALLOWED
+                    assert json.loads(error.read()) == {"error": "read-only endpoint"}
+                else:
+                    raise AssertionError(f"the read-only inspector accepted a {method} request")
 
             try:
                 urlopen(f"{base_url}/api/feed?limit=0", timeout=2)

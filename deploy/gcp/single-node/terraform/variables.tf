@@ -64,6 +64,40 @@ variable "data_disk_size_gb" {
   }
 }
 
+variable "enable_inspector" {
+  description = "Expose the read-only inspector on public HTTPS ports 80 and 443."
+  type        = bool
+  default     = true
+}
+
+variable "inspector_hostname" {
+  description = "Optional DNS hostname for normal HTTPS. Leave blank to use the static public IPv4 certificate."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      trimspace(var.inspector_hostname) == "" ||
+      can(regex("^(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\\.(?i:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))+$", trimspace(var.inspector_hostname)))
+    )
+    error_message = "inspector_hostname must be blank or a DNS hostname without a scheme, path, or port."
+  }
+}
+
+variable "acme_email" {
+  description = "Let's Encrypt account contact email. Required when enable_inspector is true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      trimspace(var.acme_email) == "" ||
+      can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", trimspace(var.acme_email)))
+    )
+    error_message = "acme_email must be blank or a valid email address."
+  }
+}
+
 variable "trusted_p2p_cidrs" {
   description = "Public IPv4 CIDRs permitted to connect to CometBFT P2P port 26656. Use /32 per peer."
   type        = set(string)

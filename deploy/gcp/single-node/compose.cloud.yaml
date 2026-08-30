@@ -1,8 +1,12 @@
 services:
   application:
+    cpus: "1.50"
+    mem_limit: 640m
     restart: unless-stopped
 
   cometbft:
+    cpus: "1.00"
+    mem_limit: 384m
     restart: unless-stopped
     healthcheck:
       test:
@@ -48,7 +52,10 @@ services:
       - info
 
   rpc:
+    cpus: "0.25"
+    mem_limit: 64m
     restart: unless-stopped
+    user: "101:101"
     networks: !override
       - private
       - edge
@@ -57,12 +64,14 @@ services:
     image: nginxinc/nginx-unprivileged:1.29.1-alpine@sha256:27985295bdb22a1ef8f712863210bd5877c0f3006494a593e86b3fe0fa55467e
     cap_drop:
       - ALL
+    cpus: "0.25"
     init: true
     logging:
       driver: json-file
       options:
         max-file: "3"
         max-size: 10m
+    mem_limit: 64m
     pids_limit: 64
     read_only: true
     restart: unless-stopped
@@ -70,6 +79,7 @@ services:
       - no-new-privileges:true
     tmpfs:
       - /tmp:size=8m,mode=1777
+    user: "101:101"
     entrypoint:
       - nginx
     command:
@@ -128,6 +138,8 @@ services:
       options:
         max-file: "3"
         max-size: 10m
+    cpus: "0.50"
+    mem_limit: 256m
     pids_limit: 128
     read_only: true
     restart: unless-stopped
@@ -155,14 +167,17 @@ services:
       inspector:
         condition: service_healthy
     environment:
-      ACME_EMAIL: ${ACME_EMAIL:?Set the ACME account email}
-      INSPECTOR_HOSTNAME: ${INSPECTOR_HOSTNAME:?Set the inspector DNS hostname}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      INSPECTOR_ADDRESS: ${INSPECTOR_ADDRESS:?Set the inspector IP address or hostname}
+      INSPECTOR_TLS_MODE: ${INSPECTOR_TLS_MODE:?Set ip or hostname certificate mode}
     init: true
     logging:
       driver: json-file
       options:
         max-file: "3"
         max-size: 10m
+    cpus: "0.25"
+    mem_limit: 128m
     pids_limit: 64
     read_only: true
     restart: unless-stopped
@@ -190,6 +205,65 @@ services:
         published: 443
         host_ip: 0.0.0.0
         protocol: tcp
+    networks:
+      - edge
+
+  inspector-cert-monitor:
+    image: ${DISCOVERY_NET_IMAGE:-discovery-net-node:local}
+    build:
+      context: ..
+      dockerfile: localnet/Dockerfile
+    user: ${DISCOVERY_NET_UID:-10001}:${DISCOVERY_NET_GID:-10001}
+    command:
+      - python
+      - -c
+      - import time; time.sleep(2147483647)
+    cap_drop:
+      - ALL
+    depends_on:
+      caddy:
+        condition: service_started
+    environment:
+      INSPECTOR_ADDRESS: ${INSPECTOR_ADDRESS:?Set the inspector IP address or hostname}
+      INSPECTOR_TLS_MODE: ${INSPECTOR_TLS_MODE:?Set ip or hostname certificate mode}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - /run/discovery-net/check-inspector-certificate.py
+        - --expected-address
+        - ${INSPECTOR_ADDRESS:?Set the inspector IP address or hostname}
+        - --connect-host
+        - caddy
+        - --minimum-valid-seconds
+        - "86400"
+        - --tls-mode
+        - ${INSPECTOR_TLS_MODE:?Set ip or hostname certificate mode}
+      interval: 10m
+      timeout: 15s
+      retries: 3
+      start_interval: 15s
+      start_period: 5m
+    init: true
+    logging:
+      driver: json-file
+      options:
+        max-file: "3"
+        max-size: 10m
+    cpus: "0.10"
+    mem_limit: 64m
+    pids_limit: 32
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=4m,mode=1777
+    volumes:
+      - type: bind
+        source: ../deploy/gcp/single-node/scripts/check-inspector-certificate.py
+        target: /run/discovery-net/check-inspector-certificate.py
+        read_only: true
     networks:
       - edge
 

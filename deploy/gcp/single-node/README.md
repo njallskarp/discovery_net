@@ -5,7 +5,7 @@ This deployment creates one non-validator Discovery Net node with:
 - an `e2-small` VM, static IPv4, and persistent data disk;
 - P2P port `26656` restricted to trusted public `/32` addresses;
 - RPC bound to VM loopback and reached through Google IAP;
-- an optional public, GET-only inspector on HTTPS;
+- a public, GET-only inspector on HTTPS by default, with an explicit disable switch;
 - daily data-disk snapshots retained for seven days;
 - unattended package security updates.
 
@@ -21,9 +21,16 @@ validator. Its generated validator key must have voting power zero.
 | `26657` | VM loopback only | Read and transaction-broadcast RPC |
 | `26658`, `8765` | Container networks only | ABCI and inspector |
 
-The public inspector has no submission endpoint. Caddy rejects non-GET requests, the
-inspector opens SQLite read-only, and neither container mounts P2P, validator, or contributor
-private keys. It does expose public graph data, signer public keys, and node/peer metadata.
+The default inspector URL is `https://STATIC_PUBLIC_IP/`; DNS is not required. Caddy 2.10.2
+uses Let's Encrypt's `shortlived` profile for the public IPv4 certificate and automatically
+renews the roughly six-day certificate. Supplying `inspector_hostname` switches to normal
+hostname certificate issuance. Let's Encrypt is the only configured issuer: failed issuance
+never falls back to HTTP, another CA, or a self-signed certificate.
+
+The proxy permits GET only on the inspector's audited UI/API path allowlist. It rejects RPC,
+broadcast, administration, and unknown paths. The inspector opens SQLite read-only; the
+inspector, proxy, and certificate monitor receive no P2P, validator, or contributor keys or
+node state. The UI exposes public graph data, signer public keys, and node/peer metadata.
 
 ## Runtime policy
 
@@ -72,9 +79,10 @@ cd deploy/gcp/single-node/terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
 
-Set `project_id`, `name`, `operator_members`, and one public IPv4 `/32` for every peer
-or trusted NAT egress address. Do not use private, Tailscale, or changing client addresses
-unless that is intentionally the peer's stable public egress.
+Set `project_id`, `name`, `operator_members`, `acme_email`, and one public IPv4 `/32` for
+every peer or trusted NAT egress address. Leave `inspector_hostname = ""` to use the static
+public IP directly. Do not use private, Tailscale, or changing client addresses unless that
+is intentionally the peer's stable public egress.
 
 ```bash
 terraform init
@@ -82,8 +90,13 @@ terraform fmt -check
 terraform validate
 terraform plan -out=tfplan
 terraform apply tfplan
-terraform output
+terraform output inspector_url
 ```
+
+To disable the public inspector and its firewall rule, set `enable_inspector = false` before
+applying. Terraform writes the chosen address, certificate mode, and enable state to instance
+metadata. The idempotent deploy command refreshes its root-only infrastructure environment
+from that metadata each run.
 
 On a brand-new project, Google APIs can remain unavailable briefly after their enable calls
 complete. If the first apply reports `SERVICE_DISABLED`, `accessNotConfigured`, or an API
@@ -154,7 +167,7 @@ Set these values exactly:
 - set `CHAIN_ID` and `GENESIS_SHA256` from the trusted genesis;
 - set `P2P_ADVERTISED_ENDPOINT` to `PUBLIC_IP:26656`;
 - list reachable public `node-id@ip:26656` values in `PERSISTENT_PEERS`;
-- set the inspector hostname and ACME email before enabling the inspector.
+- do not copy Terraform-managed inspector settings into `node.env`.
 
 `PERSISTENT_PEERS` may be empty for the first node when every existing peer is behind NAT.
 In that case, an allowlisted existing peer must dial this node after it starts.
@@ -213,18 +226,25 @@ nc -vz CLOUD_PUBLIC_IP 26656
 
 ## 5. Start and cut over
 
-Without a ready DNS hostname, start only the node, loopback RPC, and P2P gateway:
+The normal idempotent command refreshes Terraform-managed inspector settings, builds the
+reviewed image, and starts the node, loopback RPC, P2P gateway, inspector, HTTPS proxy, and
+certificate monitor:
 
 ```bash
 cd /opt/discovery-net
-sudo deploy/gcp/single-node/scripts/deploy.sh --node-only
+sudo deploy/gcp/single-node/scripts/deploy.sh
 ```
+
+Initial HTTPS becomes available only after Let's Encrypt issues the trusted certificate.
+Port 80 serves only the ACME challenge and HTTPS redirect. To suppress the inspector for one
+run, use `--no-inspector`; to disable it persistently, set `enable_inspector = false`, apply
+Terraform, then run the normal command again.
 
 For a reused P2P identity, use this order:
 
 1. Prepare the cloud identity offline and record its node ID.
 2. Stop the source node without deleting its bind-mounted data.
-3. Start the cloud node with `--node-only`.
+3. Run the normal deploy command; use `--no-inspector` only when deliberately suppressing UI.
 4. Restart or reconnect an allowlisted peer so it dials the cloud address.
 5. Verify the peer ID, chain ID, and zero voting power.
 
@@ -232,25 +252,21 @@ If cutover fails, leave the source stopped while collecting evidence. Do not aut
 restart it: first stop the cloud CometBFT service or otherwise prove the cloud copy is offline.
 Running both copies of one P2P identity creates duplicate-ID disconnects.
 
-To enable the inspector later, create the DNS `A` record for `INSPECTOR_HOSTNAME`, wait for
-it to resolve to the Terraform `public_ip`, then run:
-
-```bash
-sudo deploy/gcp/single-node/scripts/deploy.sh --full
-```
-
 ## 6. Verify and submit locally
 
-On the VM, the inspector URL is optional:
+On the VM:
 
 ```bash
 cd /opt/discovery-net
 sudo deploy/gcp/single-node/scripts/verify.sh
-sudo INSPECTOR_URL=https://INSPECTOR_HOSTNAME \
-  deploy/gcp/single-node/scripts/verify.sh
 ```
 
-The verifier prints node ID, height, catch-up state, and voting power.
+The verifier prints node ID, height, catch-up state, and voting power; proves RPC is
+loopback-only; proves ports 26658/8765 are closed; checks HTTP-to-HTTPS redirection, the
+public CA/SAN/expiry, required headers, allowed GET behavior, and rejection of writes, RPC,
+broadcast, and administration paths. Use `verify.sh --no-inspector` only after intentionally
+deploying without the inspector.
+
 `catching_up=true` during first replay is expected and is not a deployment failure. On an
 `e2-small`, application replay can make HTTP status requests slow; the production health
 check tests the RPC TCP listener so active replay is not marked unhealthy.
@@ -304,7 +320,9 @@ Only the signed transaction crosses the IAP tunnel.
 | Cloud has no peers | Check the GCP `/32`, the peer's actual public egress IP, both node IDs, the peer's persistent-peer list, and port `26656`. A NAT peer must dial outbound. |
 | RPC binding exists but `curl 127.0.0.1:26657/status` fails | The RPC proxy lacks `edge` or is stale. Check `docker compose config`, recreate `rpc`, and confirm `ss -ltnp` shows loopback only. |
 | CometBFT is marked unhealthy while blocks execute | An older overlay used a 2-second HTTP health probe. Deploy the TCP-listener health check in the current overlay. |
-| Caddy cannot obtain a certificate | DNS must resolve to the static IP and ports 80/443 must reach the VM. Use `--node-only` until then. |
+| Caddy cannot obtain the IP certificate | Confirm `INSPECTOR_TLS_MODE=ip` in `/etc/discovery-net/infra.env`, the address equals `terraform output -raw public_ip`, ports 80/443 are reachable, and the VM clock is correct. Inspect Caddy logs; do not enable HTTP or a self-signed fallback. |
+| Caddy cannot obtain a hostname certificate | Confirm the hostname resolves only to the static IP and ports 80/443 are reachable. Inspect Caddy logs. |
+| `inspector-cert-monitor` is unhealthy | Run `verify.sh`, then inspect Caddy and monitor logs. Fewer than 24 hours remaining is a renewal failure; preserve `/srv/discovery-net/caddy-data` and fix ACME reachability before expiry. |
 | Ledger height trails CometBFT | The application is still replaying committed blocks. Do not copy or edit the SQLite database. |
 
 ## Operations
@@ -312,17 +330,28 @@ Only the signed transaction crosses the IAP tunnel.
 ```bash
 # Service status
 sudo docker compose --env-file /etc/discovery-net/node.env \
+  --env-file /etc/discovery-net/infra.env \
   -f localnet/compose.yaml -f deploy/gcp/single-node/compose.cloud.yaml ps
 
 # Recent logs
 sudo docker compose --env-file /etc/discovery-net/node.env \
+  --env-file /etc/discovery-net/infra.env \
   -f localnet/compose.yaml -f deploy/gcp/single-node/compose.cloud.yaml \
   logs --tail=200
+
+# Re-run all source-only Terraform, Compose, and Caddy policy checks
+deploy/gcp/single-node/scripts/check-config.sh
 
 # Update trusted peer IPs from the operator checkout
 cd deploy/gcp/single-node/terraform
 terraform plan -out=tfplan && terraform apply tfplan
 ```
+
+The pinned Caddy image reports Caddy 2.10.2, CertMagic 0.24.0, and acmez 3.1.2. This exact
+combination supports Let's Encrypt IPv4 identifiers and ACME profiles, so Certbot is not
+needed. References: [Let's Encrypt IP/short-lived GA](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability.html),
+[profile definitions](https://letsencrypt.org/docs/profiles/), and
+[Caddy 2.10 ACME profiles](https://github.com/caddyserver/caddy/releases/tag/v2.10.0).
 
 Never expose ports `26657`, `26658`, or `8765`; run two nodes with one P2P key; copy a
 validator key into this non-validator; or put private keys, ledger files, credentials,

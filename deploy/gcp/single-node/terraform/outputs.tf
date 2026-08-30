@@ -8,6 +8,11 @@ output "public_ip" {
   value       = google_compute_address.node.address
 }
 
+output "inspector_url" {
+  description = "Public read-only inspector URL, or null when the inspector is disabled."
+  value       = var.enable_inspector ? "https://${local.inspector_address}/" : null
+}
+
 output "zone" {
   description = "Compute Engine instance zone."
   value       = var.zone

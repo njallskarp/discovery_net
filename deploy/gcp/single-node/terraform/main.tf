@@ -1,5 +1,7 @@
 locals {
-  data_device_name = "${var.name}-data"
+  data_device_name   = "${var.name}-data"
+  inspector_address  = trimspace(var.inspector_hostname) != "" ? trimspace(var.inspector_hostname) : google_compute_address.node.address
+  inspector_tls_mode = trimspace(var.inspector_hostname) != "" ? "hostname" : "ip"
   labels = {
     application = "discovery-net"
     managed_by  = "terraform"
@@ -42,6 +44,8 @@ resource "google_compute_address" "node" {
 }
 
 resource "google_compute_firewall" "inspector" {
+  count = var.enable_inspector ? 1 : 0
+
   name      = "${var.name}-inspector"
   network   = google_compute_network.node.name
   direction = "INGRESS"
@@ -171,11 +175,19 @@ resource "google_compute_instance" "node" {
   }
 
   metadata = {
-    block-project-ssh-keys = "TRUE"
-    enable-oslogin         = "TRUE"
-    serial-port-enable     = "FALSE"
+    block-project-ssh-keys           = "TRUE"
+    discovery-net-acme-email         = trimspace(var.acme_email)
+    discovery-net-inspector-address  = local.inspector_address
+    discovery-net-inspector-enabled  = tostring(var.enable_inspector)
+    discovery-net-inspector-tls-mode = local.inspector_tls_mode
+    enable-oslogin                   = "TRUE"
+    serial-port-enable               = "FALSE"
     startup-script = templatefile("${path.module}/../scripts/bootstrap-host.sh.tftpl", {
-      data_device_name = local.data_device_name
+      acme_email         = trimspace(var.acme_email)
+      data_device_name   = local.data_device_name
+      inspector_address  = local.inspector_address
+      inspector_enabled  = var.enable_inspector
+      inspector_tls_mode = local.inspector_tls_mode
     })
   }
 
@@ -183,6 +195,16 @@ resource "google_compute_instance" "node" {
     enable_integrity_monitoring = true
     enable_secure_boot          = true
     enable_vtpm                 = true
+  }
+
+  lifecycle {
+    precondition {
+      condition = (
+        !var.enable_inspector ||
+        can(regex("^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$", var.acme_email))
+      )
+      error_message = "acme_email must be a valid contact address when enable_inspector is true."
+    }
   }
 
   depends_on = [google_project_service.compute]

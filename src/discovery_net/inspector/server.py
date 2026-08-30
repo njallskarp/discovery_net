@@ -155,6 +155,13 @@ class _InspectorRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self._json(HTTPStatus.METHOD_NOT_ALLOWED, {"error": "read-only endpoint"})
 
+    do_CONNECT = do_POST
+    do_DELETE = do_POST
+    do_OPTIONS = do_POST
+    do_PATCH = do_POST
+    do_PUT = do_POST
+    do_TRACE = do_POST
+
     def log_message(self, _format: str, *_args: object) -> None:
         return
 

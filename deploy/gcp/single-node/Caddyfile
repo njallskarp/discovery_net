@@ -1,9 +1,9 @@
 {
 	admin off
-	email {$ACME_EMAIL}
+	renew_interval 10m
 	servers {
 		protocols h1 h2
-		max_header_size 32KB
+		max_header_size 16KB
 		timeouts {
 			read_body 10s
 			read_header 10s
@@ -13,16 +13,74 @@
 	}
 }
 
-{$INSPECTOR_HOSTNAME} {
+(tls-ip) {
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			email {$ACME_EMAIL}
+			profile shortlived
+		}
+	}
+}
+
+(tls-hostname) {
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			email {$ACME_EMAIL}
+		}
+	}
+}
+
+https://{$INSPECTOR_ADDRESS} {
+	import tls-{$INSPECTOR_TLS_MODE}
+
 	encode zstd gzip
-	@not_get not method GET
-	respond @not_get 405
-	reverse_proxy inspector:8765
+	@read_only path \
+ / \
+ /index.html \
+ /inspector.css \
+ /inspector.js \
+ /vendor/cytoscape/cytoscape.min.js \
+ /vendor/dompurify/purify.min.js \
+ /vendor/katex/auto-render.min.js \
+ /vendor/katex/katex.min.css \
+ /vendor/katex/katex.min.js \
+ /vendor/katex/fonts/* \
+ /vendor/markdown-it/markdown-it.min.js \
+ /api/snapshot \
+ /api/node \
+ /api/graph \
+ /api/feed \
+ /api/contributions/*
+
+	route {
+		@not_get not method GET
+		respond @not_get 405
+
+		handle @read_only {
+			request_body {
+				max_size 1KB
+			}
+			reverse_proxy inspector:8765 {
+				transport http {
+					dial_timeout 3s
+					response_header_timeout 30s
+				}
+			}
+		}
+		handle {
+			respond 404
+		}
+	}
 
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
+		X-Robots-Tag "noindex, nofollow"
 		Referrer-Policy "no-referrer"
 		-Server
 	}
