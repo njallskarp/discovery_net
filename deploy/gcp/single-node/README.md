@@ -326,6 +326,7 @@ Only the signed transaction crosses the IAP tunnel.
 | Caddy cannot obtain a hostname certificate | Confirm the hostname resolves only to the static IP and ports 80/443 are reachable. Inspect Caddy logs. |
 | `inspector-cert-monitor` is unhealthy | Run `verify.sh`, then inspect Caddy and monitor logs. Fewer than 24 hours remaining is a renewal failure; preserve `/srv/discovery-net/caddy-data` and fix ACME reachability before expiry. |
 | Ledger height trails CometBFT | The application is still replaying committed blocks. Do not copy or edit the SQLite database. |
+| Host unreachable on SSH, HTTPS and RPC at once, while the instance reads `RUNNING` | The boot disk is full. Docker's images and build cache live there and `deploy.sh` builds the image on the host; the node-data disk is unaffected and looks healthy, which is misleading. Confirm with `gcloud compute instances get-serial-port-output`, which reports `No space left on device` even when nothing else answers. Grow the disk with `gcloud compute disks resize`, then reset the instance so the root partition expands. Raise `boot_disk_size_gb` so it does not recur, and reclaim the build cache with `docker builder prune -af`. |
 
 ## Operations
 
