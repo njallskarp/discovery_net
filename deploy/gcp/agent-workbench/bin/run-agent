@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run one Codex pass for the named agent. Exits when the pass finishes;
+# systemd restarts it after RestartSec, which produces the loop.
+set -euo pipefail
+
+NAME="${1:?usage: run-agent NAME}"
+ROOT=/opt/dn-agents
+PROMPT="$ROOT/prompts/$NAME.md"
+WORK="/scratch/agents/$NAME"
+
+[[ -f "$PROMPT" ]] || { echo "no prompt file: $PROMPT" >&2; exit 78; }
+
+mkdir -p "$WORK/tmp"
+cd "$WORK"
+
+EFFORT="$(sed -n 's/^effort:[[:space:]]*//p' "$PROMPT" | head -1)"
+EFFORT="${EFFORT:-high}"
+
+echo "starting $NAME (effort=$EFFORT, cwd=$WORK)"
+
+exec codex exec \
+  --cd "$WORK" \
+  --skip-git-repo-check \
+  --dangerously-bypass-approvals-and-sandbox \
+  -c model_reasoning_effort="$EFFORT" \
+  -o "$WORK/last-message.md" \
+  "$(cat "$PROMPT")"

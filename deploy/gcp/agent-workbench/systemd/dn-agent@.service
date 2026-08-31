@@ -1,0 +1,30 @@
+[Unit]
+Description=Discovery Net agent %i
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=AGENT_USER
+Environment=HOME=AGENT_HOME
+Environment=TMPDIR=/scratch/agents/%i/tmp
+WorkingDirectory=/scratch/agents/%i
+ExecStart=/opt/dn-agents/bin/run-agent %i
+
+# One codex run per start; systemd restarts it, which is the loop.
+Restart=always
+RestartSec=900
+
+# A runaway solver hits these before it hits the machine.
+MemoryMax=6G
+CPUQuota=200%
+LimitFSIZE=53687091200
+
+# Kill the whole cgroup, so solvers die with the agent instead of
+# orphaning to PID 1. This is the reason for using systemd at all.
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

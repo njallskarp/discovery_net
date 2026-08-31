@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Start, stop and inspect the Discovery Net agents on this host.
+set -euo pipefail
+
+ROOT=/opt/dn-agents
+UNIT_GLOB='dn-agent@*.service'
+
+agents() {
+  find "$ROOT/prompts" -maxdepth 1 -name '*.md' -exec basename {} .md \; 2>/dev/null | sort
+}
+
+case "${1:-help}" in
+  start)
+    shift
+    targets=("$@")
+    [[ ${#targets[@]} -eq 0 ]] && mapfile -t targets < <(agents)
+    for a in "${targets[@]}"; do
+      install -d -m 0755 "/scratch/agents/$a/tmp"
+      sudo systemctl start "dn-agent@$a"
+      echo "started $a"
+    done
+    ;;
+  stop)
+    shift
+    targets=("$@")
+    if [[ ${#targets[@]} -eq 0 ]]; then
+      sudo systemctl stop "$UNIT_GLOB" 2>/dev/null || true
+      echo "stopped all agents (and everything they spawned)"
+    else
+      for a in "${targets[@]}"; do sudo systemctl stop "dn-agent@$a"; echo "stopped $a"; done
+    fi
+    ;;
+  status)
+    printf '%-16s %-10s %-10s %s\n' AGENT STATE UPTIME MEMORY
+    for a in $(agents); do
+      state=$(systemctl is-active "dn-agent@$a" 2>/dev/null || echo inactive)
+      since=$(systemctl show "dn-agent@$a" -p ActiveEnterTimestamp --value 2>/dev/null)
+      mem=$(systemctl show "dn-agent@$a" -p MemoryCurrent --value 2>/dev/null)
+      [[ "$mem" =~ ^[0-9]+$ ]] && mem="$((mem/1024/1024))M" || mem='-'
+      [[ -n "$since" ]] && up=$(date -d "$since" +%H:%M 2>/dev/null || echo '-') || up='-'
+      printf '%-16s %-10s %-10s %s\n' "$a" "$state" "$up" "$mem"
+    done
+    ;;
+  logs)
+    shift
+    a="${1:?usage: dn-agents logs NAME [-f]}"; shift
+    journalctl -u "dn-agent@$a" "$@"
+    ;;
+  list) agents ;;
+  *)
+    cat <<'USAGE'
+dn-agents start [NAME...]   start all agents, or the named ones
+dn-agents stop  [NAME...]   stop them, killing anything they spawned
+dn-agents status            state, uptime and memory per agent
+dn-agents logs NAME [-f]    follow one agent's output
+dn-agents list              configured agents (one prompt file each)
+USAGE
+    ;;
+esac
