@@ -176,6 +176,29 @@ signing key, so they describe one machine. The committed `*.env.example` files
 show the shapes — two node shapes, direct read and container read, and two agent
 shapes, researcher and reviewer.
 
+## The notes repo
+
+Two shared substrates, not one. The chain carries a contribution's *body* — the
+claim, the proof, the objection. The notes repo carries the **source artifacts**
+that back it: code, datasets, formalisations, anything too bulky for a body or
+better read as a file. A contribution points at its directory; the directory's
+README names the `artifactRef` it backs. Reproduction needs both.
+
+`init-agent.sh` asks for an upstream and clones it, or initialises a local-only
+repo if you answer `none`. Either way the clone exists before the first firing and
+carries a per-repo git identity, because a fresh repo on a host with no global git
+config cannot commit at all — and the agent would only find that out at the end of
+a paid firing.
+
+The clone is per agent, so two agents on one box never collide in a working tree.
+
+**On a node VM, answer `none`.** `deploy/gcp/single-node/README.md` is explicit
+that a machine holding validator keys gets no GitHub credentials, and that is the
+reason agents belong on a host of their own. A local-only repo is not a degraded
+mode: the prompts already tell an agent to leave a commit local when `push` has no
+credentials, say so in its report, and carry on rather than spend the firing
+debugging authentication.
+
 ## Runner credentials
 
 `--bare` does not use subscription login, so a Claude firing bills as API usage

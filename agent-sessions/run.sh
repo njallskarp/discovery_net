@@ -45,14 +45,23 @@ status() {                       # status <state> [extra json fragment]
     | $DN write-status "$STATE_DIR"
 }
 
+END_H=""                         # set once the runner has finished; null before that
+
 finish() {                       # finish <exit-reason> [cost] [tokens-json] [height] [note]
   reason="$1"; cost="${2:-0}"; toks="${3:-$EMPTY_TOKENS}"
   height="${4:-}"; note="${5:-}"
-  printf '{"agent":"%s","runner":"%s","role":"%s","node":"%s","run_id":"%s","started_at":"%s","started_epoch":%s,"ended_at":"%s","exit":"%s","cost_usd":%s,"tokens":%s,"indexed_height":%s,"note":"%s"}\n' \
+  # indexed_height stays the PREFLIGHT reading: the reviewer's no-new-work gate
+  # compares one firing's preflight to the next, so redefining it would silently
+  # change when a reviewer runs. indexed_height_end is the separate, additive
+  # answer to "what did this firing leave behind" -- a research firing that moved
+  # the chain 1 -> 9 logged 1 and looked like a stalled indexer.
+  printf '{"agent":"%s","runner":"%s","role":"%s","node":"%s","run_id":"%s","started_at":"%s","started_epoch":%s,"ended_at":"%s","exit":"%s","cost_usd":%s,"tokens":%s,"indexed_height":%s,"indexed_height_end":%s,"note":"%s"}\n' \
     "$DN_AGENT" "$DN_RUNNER" "$DN_ROLE" "${DN_NODE:-}" "$RUN_ID" "$STARTED_ISO" "$STARTED_EPOCH" \
-    "$($DN now)" "$reason" "$cost" "$toks" "${height:-null}" "$note" \
+    "$($DN now)" "$reason" "$cost" "$toks" "${height:-null}" "${END_H:-null}" "$note" \
     | $DN append-run "$STATE_DIR"
-  status "idle" ",\"last_exit\":\"$reason\",\"indexed_height\":${height:-null},\"cycle\":$CYCLE"
+  # The table shows where the chain actually is, so it reads the end height when
+  # there is one. status.json is display only; no gate reads it.
+  status "idle" ",\"last_exit\":\"$reason\",\"indexed_height\":${END_H:-${height:-null}},\"cycle\":$CYCLE"
   echo "$DN_AGENT: $reason${note:+ — $note}"
 }
 
@@ -146,11 +155,19 @@ CHILD=$!
 ( sleep "$MAX_SECONDS"; kill -INT "$CHILD" 2>/dev/null || true
   sleep 20;             kill -KILL "$CHILD" 2>/dev/null || true ) &
 WATCHDOG=$!
+# Off the job table. It is killed on every normal firing, and bash announces that
+# with a "Terminated: 15" line that looks like the firing failed when it did not.
+disown "$WATCHDOG" 2>/dev/null || true
 
 status "running" ",\"cycle\":$CYCLE,\"deadline_epoch\":$(( STARTED_EPOCH + MAX_SECONDS )),\"indexed_height\":$IDX_H"
 
 RC=0; wait "$CHILD" || RC=$?
 kill "$WATCHDOG" 2>/dev/null || true
+
+# Where the chain ended up. A local sqlite read, so it costs nothing, and it is
+# read after the runner so it includes whatever this firing submitted.
+END_H="$(eval "$DN_GRAPHQL_CMD '{ indexedHeight }'" 2>/dev/null \
+        | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("data") or d)["indexedHeight"])' 2>/dev/null || echo "")"
 
 USAGE="$($DN parse-usage "$DN_RUNNER" "$RAW" "$CONFIG")"
 COST="$(printf '%s' "$USAGE" | python3 -c 'import json,sys;print(json.load(sys.stdin)["cost_usd"])')"

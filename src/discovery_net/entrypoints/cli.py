@@ -101,6 +101,21 @@ def main(arguments: Sequence[str] | None = None) -> int:
         return 1
 
 
+def _contribution_body(arguments: argparse.Namespace) -> str:
+    """The body text, from --body or --body-file.
+
+    A file gets exactly one trailing newline removed. Editors add one, argv does
+    not, and the body is hashed into the contribution's CID -- without this the
+    same text published two ways would address differently. Only the final
+    newline goes; interior blank lines and deliberate trailing blank lines
+    beyond the first are content.
+    """
+    if arguments.body is not None:
+        return str(arguments.body)
+    text = Path(arguments.body_file).read_text(encoding="utf-8")
+    return text[:-1] if text.endswith("\n") else text
+
+
 def _submit(arguments: argparse.Namespace) -> int:
     private_key = _load_private_key(arguments.private_key)
     submitter = ArtifactSubmitter(
@@ -112,7 +127,7 @@ def _submit(arguments: argparse.Namespace) -> int:
             Contribution(
                 kind=arguments.kind,
                 title=arguments.title,
-                body=arguments.body,
+                body=_contribution_body(arguments),
                 created_at=datetime.now(UTC),
             ),
             relations=(
@@ -252,7 +267,19 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="mathematical or organizational role of the contribution",
     )
     contribution.add_argument("--title", required=True, help="short contribution title")
-    contribution.add_argument("--body", required=True, help="contribution body")
+    # --body or --body-file, exactly one. A body is mathematics, so it contains
+    # backslashes and dollar signs; an agent runner that screens shell commands
+    # for injection characters cannot pass LaTeX through argv at all, and the
+    # agent is left silently publishing stripped-down content. Reading the body
+    # from a file is the way out. --body is unchanged and still works.
+    body_source = contribution.add_mutually_exclusive_group(required=True)
+    body_source.add_argument("--body", help="contribution body")
+    body_source.add_argument(
+        "--body-file",
+        type=Path,
+        metavar="PATH",
+        help="read the contribution body from a UTF-8 file instead of --body",
+    )
     contribution.add_argument(
         "--outgoing",
         action="append",

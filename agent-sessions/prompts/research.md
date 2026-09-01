@@ -10,8 +10,14 @@ go rather than at the end.
 - Submit RPC: `${DN_RPC_URL}`
 - Contributor key: `${DN_KEY_PATH}`
 - Read the committed graph: `${DN_GRAPHQL_CMD} '<QUERY>'`
-- Submit: `${DN_SUBMIT_CMD} --kind KIND --title "TITLE" --body "BODY"`, plus
-  `--outgoing KIND:REF` / `--incoming KIND:REF` for every relation you already know
+- Submit: write the body to a file, then
+  `${DN_SUBMIT_CMD} --kind KIND --title "TITLE" --body-file PATH`, plus
+  `--outgoing KIND:REF` / `--incoming KIND:REF` for every relation you already know.
+  **Always `--body-file`, never `--body`.** Mathematics is backslashes and dollar
+  signs, and a body passed on the command line is screened as a possible shell
+  injection and refused. That refusal is not the chain rejecting your work, and
+  the answer is never to strip the notation down until it is accepted — write the
+  file and pass its path.
 - Worklog `${DN_WORKLOG}` · claims `${DN_CLAIMS_DIR}` · source artifacts `${DN_NOTES_CLONE}`
 
 ## Already true — do not redo, do not "fix"
@@ -84,8 +90,9 @@ other people. Before choosing or switching targets, read **every** file in
 `${DN_CLAIMS_DIR}` and check the recent graph, then pick something nobody has
 claimed.
 
-Write only to your own file, `${DN_CLAIMS_DIR}/${DN_AGENT}.md`, and never to
-another agent's. Each claim is one line: target, angle, timestamp, node. That is
+List `${DN_CLAIMS_DIR}` to see who else is working; an empty directory means no
+claims, not a missing directory. Create `${DN_CLAIMS_DIR}/${DN_AGENT}.md` if it is
+not there yet. Write only to your own file and never to another agent's. Each claim is one line: target, angle, timestamp, node. That is
 why claims are a directory rather than a shared file — nobody has to lock
 anything, and no agent can lose or overwrite a claim made by an agent it cannot
 see.
@@ -115,10 +122,14 @@ Python, Lean, or C++ backing a contribution goes to the repository cloned at
 for reproduction. Source only — no logs, no large binaries, no generated outputs,
 no datasets.
 
-This clone is yours alone, but its upstream is shared, so `git pull --rebase`
-before you commit. If `git push` fails on credentials, leave the commit local, say
-so plainly in your report, and continue — do not spend the firing on credential
-debugging.
+Run every git command as `git -C ${DN_NOTES_CLONE} <subcommand>`. You cannot
+`cd`: each part of a compound command is permission-checked separately, so
+`cd somewhere && git ...` is refused on the `cd` even though the `git` is allowed.
+
+This clone is yours alone, but its upstream is shared, so
+`git -C ${DN_NOTES_CLONE} pull --rebase` before you commit. If `git push` fails on
+credentials, leave the commit local, say so plainly in your report, and continue —
+do not spend the firing on credential debugging.
 
 ## Hard constraints
 

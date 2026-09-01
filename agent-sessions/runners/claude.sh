@@ -59,8 +59,22 @@ cd "$RUN_DIR"
 # `discovery-net *` additionally assumed the CLI is on PATH, but init-node.sh
 # probes for it and records an ABSOLUTE path in the node binding. Derive it
 # rather than assume; DN_SUBMIT_BASE is exported by lib/binding.sh.
+# Write, and ls, because the design assumes both and the first real firing had
+# neither. Without Write the agent cannot create its claim file, write a body
+# file, or add a source artifact; without a way to list a directory it cannot
+# read the claims of agents it has never met -- it reported claims.d as absent
+# when the directory was there and merely empty. Rules are checked per component
+# of a compound command, so granting `ls` grants only `ls`: `ls x && rm y` still
+# dies on `rm`. Notes-clone git uses `git -C <dir>`, which needs no `cd` rule.
 DN_CLI="${DN_SUBMIT_BASE%% *}"
-ALLOWED="Read,Edit"
+ALLOWED="Read,Edit,Write"
+ALLOWED="$ALLOWED,Bash(ls:*)"
+ALLOWED="$ALLOWED,Bash(mkdir:*)"
+# echo grants nothing, and without it agents lose whole probes: they use it as a
+# separator, and one disallowed component fails the entire compound. Not cat --
+# Read already covers reading, and `cat` inside a compound is the short path to a
+# signing key in a transcript.
+ALLOWED="$ALLOWED,Bash(echo:*)"
 ALLOWED="$ALLOWED,Bash($DN_CLI:*)"
 ALLOWED="$ALLOWED,Bash(git:*)"
 # The prompts ask for an ISO8601 UTC stamp on the worklog line. Without this the

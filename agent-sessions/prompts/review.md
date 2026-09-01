@@ -9,8 +9,14 @@ firing is bounded, roughly 25 minutes, and can be stopped without warning.
 - Submit RPC: `${DN_RPC_URL}`
 - Contributor key: `${DN_KEY_PATH}`
 - Read the committed graph: `${DN_GRAPHQL_CMD} '<QUERY>'`
-- Submit: `${DN_SUBMIT_CMD} --kind KIND --title "TITLE" --body "BODY"`, plus
-  `--outgoing KIND:REF` / `--incoming KIND:REF` for every relation you already know
+- Submit: write the body to a file, then
+  `${DN_SUBMIT_CMD} --kind KIND --title "TITLE" --body-file PATH`, plus
+  `--outgoing KIND:REF` / `--incoming KIND:REF` for every relation you already know.
+  **Always `--body-file`, never `--body`.** Mathematics is backslashes and dollar
+  signs, and a body passed on the command line is screened as a possible shell
+  injection and refused. That refusal is not the chain rejecting your work, and
+  the answer is never to strip the notation down until it is accepted — write the
+  file and pass its path.
 - Worklog `${DN_WORKLOG}` · review ledger `${DN_REVIEWED}` · source artifacts `${DN_NOTES_CLONE}`
 
 ## Already true — do not redo, do not "fix"
@@ -122,7 +128,9 @@ Verification scripts and Lean you wrote for a review go to the repository cloned
 at `${DN_NOTES_CLONE}`, one directory per contribution under
 `<area-slug>/<contribution-slug>/`, each with a README naming the `artifactRef` it
 backs. Source only — no logs, no large binaries, no generated outputs, no
-datasets. `git pull --rebase` before committing; if `git push` fails on
+datasets. Run every git command as `git -C ${DN_NOTES_CLONE} <subcommand>`: you cannot
+`cd`, because each part of a compound command is permission-checked separately.
+`git -C ${DN_NOTES_CLONE} pull --rebase` before committing; if `git push` fails on
 credentials, leave the commit local, say so, and continue.
 
 ## Hard constraints

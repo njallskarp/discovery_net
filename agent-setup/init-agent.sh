@@ -81,11 +81,45 @@ NOTES="$STATE/discovery-net-notes"
 note "worklog     $WORKLOG"
 note "claims dir  $CLAIMS   (shared between agents on this box; one file each)"
 note "notes clone $NOTES    (per agent, so concurrent git never collides)"
+
+# The notes repo holds SOURCE ARTIFACTS -- code, datasets, formalisations -- that
+# back an on-chain contribution and are too bulky for a body. It is not the chain
+# and it is not optional scenery: the prompts tell the agent to commit there, and
+# until now nothing ever created it, so every firing reported "nothing committed".
+#
+# The upstream is shared between collaborators, which is what makes reproduction
+# possible. Leave it as 'none' on a node VM: deploy/gcp/single-node/README.md is
+# explicit that a machine holding validator keys gets no GitHub credentials, which
+# is why agents belong on a host of their own. A local-only repo still works --
+# the prompts already say to leave a commit local when push has no credentials.
+say ""
+ask NOTES_UPSTREAM "Notes repo upstream git URL ('none' for a local-only repo)" "none"
 # The worklog is created here, not left to the first firing: the prompts tell the
 # agent to APPEND one line to it, and an append to a file that does not exist is
 # a failed step at the end of a paid run. Never truncate an existing one.
 if confirm "  create these now?"; then
   mkdir -p "$STATE" "$CLAIMS"
+
+  if [ -d "$NOTES/.git" ]; then
+    ok "notes clone already present, left alone"
+  elif [ "$NOTES_UPSTREAM" = "none" ]; then
+    mkdir -p "$NOTES"
+    git init -q "$NOTES" && ok "initialised a local-only notes repo at $NOTES"
+  else
+    if git clone "$NOTES_UPSTREAM" "$NOTES"; then
+      ok "cloned $NOTES_UPSTREAM"
+    else
+      bad "clone failed; leaving a local-only repo so firings are not blocked"
+      mkdir -p "$NOTES"; git init -q "$NOTES"
+    fi
+  fi
+  # A fresh repo on a host with no global git identity cannot commit at all, and
+  # the agent would only discover that at the end of a paid firing. Set it per
+  # repo so it never depends on the operator's own git config.
+  if [ -d "$NOTES/.git" ]; then
+    git -C "$NOTES" config user.name  "$AGENT"
+    git -C "$NOTES" config user.email "$AGENT@discovery-net.invalid"
+  fi
   if [ ! -f "$WORKLOG" ]; then
     printf '# Worklog — %s\n\nOne line per firing. Append only; never rewrite history here.\n\n' \
       "$AGENT" > "$WORKLOG"
