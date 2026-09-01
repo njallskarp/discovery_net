@@ -166,6 +166,37 @@ signing key, so they describe one machine. The committed `*.env.example` files
 show the shapes — two node shapes, direct read and container read, and two agent
 shapes, researcher and reviewer.
 
+## Runner credentials
+
+`--bare` does not use subscription login, so a Claude firing bills as API usage
+and needs `ANTHROPIC_API_KEY`; without it the runner exits before doing any work.
+This is the one input the bindings deliberately do not carry — a binding is
+gitignored but still a file in the checkout, and a credential does not belong
+there.
+
+On a laptop, keep it outside the repo and load it only for the command that needs
+it:
+
+```bash
+mkdir -p ~/.config/discovery-net && chmod 700 ~/.config/discovery-net
+# write ANTHROPIC_API_KEY=... to ~/.config/discovery-net/agent.env, mode 600
+set -a; . ~/.config/discovery-net/agent.env; set +a
+agent-sessions/run.sh <agent>
+```
+
+On an agent host, `dn-agent@.service` reads `/etc/discovery-net/agent.env`. The
+service manager parses `EnvironmentFile=` as root before dropping to `User=`, so
+the agent account needs no read access at all: keep it `0600 root:root`, and keep
+it out of `/srv/agent-sessions`, which is in `ReadWritePaths`. The unit names it
+without a leading `-`, so a missing file fails the unit at start where
+`systemctl status` shows it, rather than deep inside a firing that has already
+burned a tick.
+
+`--dry-run` is the only path that needs no key: it stops before the runner.
+`conformance/run-smoke.sh` hands the prompt to the real runner, so it needs the
+key and it costs a real (small) amount — "read-only" there means it submits no
+contribution, not that it spends nothing.
+
 ## Run record
 
 Every firing appends one JSON object to `runs.jsonl`. Both runners must
