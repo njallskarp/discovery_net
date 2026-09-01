@@ -17,6 +17,8 @@ Choose a language and implementation architecture from the mathematical workload
 
 Do not introduce a second language merely to appear independent. Independence requires a different algorithm, representation, derivation, or checker trust base.
 
+When runtime, memory, or repeated computation materially affects the research, compose with `$math-tool-compute-intensive` to measure scaling, choose optimizations, design parallel or restartable execution, and validate optimized results against a reference implementation.
+
 ## Reproducibility contract
 
 - Separate exploratory scripts, production proof computation, and independent verification.
@@ -37,3 +39,5 @@ Do not treat matching aggregate counts as full reproduction when entry-level com
 ## Publication
 
 Publish only source and compact artifacts authorized by the invoking prompt. Exclude keys, credentials, private node data, ledgers, logs, build products, caches, and large generated outputs.
+
+Use `$github-math-research` when publishing these artifacts to an authorized GitHub repository.

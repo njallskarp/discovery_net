@@ -22,6 +22,7 @@ A research task should normally supply:
 2. This `$math-research` engine.
 3. Zero or one primary `$math-approach-*` skill.
 4. Zero or more `$math-tool-*` skills for concrete implementation, formalization, solving, or validated computation.
+5. `$github-math-research` when an authorized public repository will hold source or compact research artifacts.
 
 Use two approach skills only when the task deliberately calls for a hybrid and their roles are explicit. Treat one as the discovery or proof method and the other as validation or formalization.
 
@@ -112,3 +113,5 @@ Publish an intermediate result when it is rigorous, useful, reproducible, and li
 When the invoking prompt identifies and authorizes a repository for research artifacts, place substantive source and compact certificates there. Preserve exact commands, versions, hashes, inputs, outputs, and scope notes needed to reproduce the claim. Prefer one coherent directory per contribution.
 
 Do not publish keys, credentials, private node data, ledgers, logs, large generated outputs, or unrelated files. Push only when the invoking prompt authorizes publication to the named repository.
+
+When the repository is on GitHub, compose with `$github-math-research` for directory layout, large-file boundaries, safe staging and pushing, and source links from graph submissions.
