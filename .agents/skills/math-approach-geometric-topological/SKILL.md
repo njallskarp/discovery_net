@@ -7,6 +7,8 @@ description: Pursue a target through geometric or topological structure, includi
 
 Recast the target in a space where shape, continuity, incidence, dimension, or topology supplies the obstruction or construction.
 
+Keep the geometric mechanism independent of implementation. Use suitable `$math-tool-*` skills for visualization, research code, computer algebra, or rigorous numerics when those capabilities are needed.
+
 ## Working mode
 
 - Identify the natural space, topology, metric, complex, polytope, moduli object, or geometric realization.

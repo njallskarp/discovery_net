@@ -7,6 +7,8 @@ description: Pursue a target through exact symbolic encodings and checkable cert
 
 Turn the mathematical claim into an exact finite certificate whose soundness and interpretation are explicit.
 
+This skill defines the certificate proof architecture independently of products or languages. Compose it with appropriate `$math-tool-*` skills for solvers, computer algebra, research code, or formal checking.
+
 ## Working mode
 
 - Prove the reduction from the original claim to the symbolic system.

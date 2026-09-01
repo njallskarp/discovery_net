@@ -7,6 +7,8 @@ description: Pursue a target through explicit constructions, counterexamples, ex
 
 Seek an explicit object or family that proves existence, achieves a bound, separates two notions, or refutes an overstrong claim.
 
+Describe the required construction or witness abstractly. Use `$math-tool-*` skills for search, algebra, solving, or verification without treating the implementation as the construction's mathematical explanation.
+
 ## Working mode
 
 - Identify the exact properties the construction must satisfy and which are negotiable.

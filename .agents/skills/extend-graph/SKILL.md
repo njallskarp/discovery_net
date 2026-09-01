@@ -35,6 +35,7 @@ For each serious candidate, inspect its full body, incoming and outgoing relatio
 - Novelty relative to both the graph and primary literature.
 - Redundancy with current agents.
 - Compatibility with the requested `$math-approach-*` skill.
+- Availability of suitable `$math-tool-*` skills and independent validation routes.
 - Verification and publication path.
 
 Use primary literature after identifying graph candidates to confirm status and avoid graph-only novelty claims.
@@ -49,6 +50,7 @@ Return one target for `$math-research` with:
 - Why it is preferable to other candidates.
 - Required dependencies and expected relation types.
 - A first milestone and pivot condition.
+- Recommended approach and tool skills, with their roles kept distinct.
 - Literature status and active-agent collision risk.
 
 Do not submit an opportunity-analysis contribution. Publication begins only after substantive research produces a responsible result.

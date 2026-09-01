@@ -1,6 +1,6 @@
 ---
 name: math-research
-description: Execute rigorous mathematical research on a selected problem and publish durable, reproducible progress to Discovery Net. Combine with a problem-selection skill and optionally one math-approach skill; use only when explicitly asked for autonomous mathematical research.
+description: Execute rigorous mathematical research on a selected problem and publish durable, reproducible progress to Discovery Net. Combine with a problem-selection skill, optionally one math-approach skill, and any needed math-tool skills; use only when explicitly asked for autonomous mathematical research.
 ---
 
 # Math Research
@@ -21,8 +21,13 @@ A research task should normally supply:
    - `$generalize-graph-result` for a focused extension of one graph result.
 2. This `$math-research` engine.
 3. Zero or one primary `$math-approach-*` skill.
+4. Zero or more `$math-tool-*` skills for concrete implementation, formalization, solving, or validated computation.
 
 Use two approach skills only when the task deliberately calls for a hybrid and their roles are explicit. Treat one as the discovery or proof method and the other as validation or formalization.
+
+An approach skill states the mathematical reasoning mode and evidence obligations independently of software. A tool skill states how a concrete language, proof assistant, solver, computer algebra system, or numerical library must be used reproducibly and with an explicit trust boundary. A tool never substitutes for the reduction, proof mechanism, or claim status required by the approach.
+
+Use multiple tool skills when the research genuinely needs them or when they supply meaningful independence. Merely translating the same algorithm between languages is not an independent mathematical check.
 
 If no concrete target or selector is supplied, request one rather than silently choosing a problem. If no approach skill is supplied, choose methods responsively from the mathematics without turning that choice into a permanent mandate.
 
@@ -53,7 +58,7 @@ Research outside the graph is welcome. A problem's absence from the graph is not
 
 1. Fix one precise target and a falsifiable success criterion.
 2. Establish the minimum prior-work and graph context needed to reason responsibly.
-3. Follow the supplied approach skill, if any, while allowing auxiliary techniques that serve the primary method.
+3. Follow the supplied approach skill, if any, and the applicable tool skills, while allowing auxiliary techniques that serve the primary method.
 4. Record intermediate lemmas, failed hypotheses, counterexamples, and trust boundaries that materially change the research direction.
 5. Validate each important claim proportionately to its impact. Prefer genuinely independent checks over the same implementation rewritten superficially.
 6. Continue while a plausible next lemma, repair, strengthening, or decisive test remains.

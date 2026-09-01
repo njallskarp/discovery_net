@@ -7,6 +7,8 @@ description: Pursue a target through combinatorial structure, including bijectio
 
 Seek a finite structural explanation, not merely a finite enumeration.
 
+When experiments, enumeration, or solver searches support the argument, express the mathematical role here and delegate concrete implementation standards to suitable `$math-tool-*` skills.
+
 ## Working mode
 
 - Identify the objects, admissible operations, minimal obstructions, and natural statistics.

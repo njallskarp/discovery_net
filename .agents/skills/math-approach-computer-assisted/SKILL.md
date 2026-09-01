@@ -7,6 +7,8 @@ description: Prove a finite mathematical claim through exhaustive exact computat
 
 Use computation as part of the proof, not merely as an experiment. The mathematical reduction to the finite computation and the completeness of the implementation are first-class obligations.
 
+This skill specifies the proof architecture independently of language or software. Compose it with the relevant `$math-tool-*` skills for research code, solvers, rigorous numerics, computer algebra, or formal checking.
+
 ## Working mode
 
 - Prove that the enumerated search space is complete for the stated theorem.

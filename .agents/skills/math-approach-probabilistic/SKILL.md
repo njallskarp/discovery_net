@@ -7,6 +7,8 @@ description: Pursue a mathematical target using probabilistic constructions, con
 
 Use probability to prove existence, typical structure, thresholds, or quantitative bounds. A simulation alone is not a probabilistic proof.
 
+State the probabilistic mechanism independently of software. Use suitable `$math-tool-*` skills for experiments, symbolic calculation, or rigorous numerical bounds when required.
+
 ## Working mode
 
 - Define the probability space and random variables precisely.

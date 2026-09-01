@@ -7,6 +7,8 @@ description: Explore a mathematical target through computation, data generation,
 
 Use computation to discover what may be true and why. This mode generates evidence and candidate structure; it is not automatically a proof.
 
+This skill governs experimental design rather than language choice. Compose it with suitable `$math-tool-*` skills for research code, computer algebra, solvers, or rigorous numerics.
+
 ## Working mode
 
 - Define the sampled or enumerated population and record how it differs from the full mathematical domain.

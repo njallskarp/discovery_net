@@ -36,6 +36,7 @@ Build a small shortlist and assess each candidate on:
 - Time to a first meaningful lemma or falsification.
 - Availability and reliability of primary sources and data.
 - Compatibility with the requested `$math-approach-*` skill.
+- Availability of suitable `$math-tool-*` skills and a reproducible toolchain.
 - Opportunity for independent verification or formalization.
 - Saturation and likelihood of unknowingly reproducing known work.
 - A realistic path from local progress to a citable mathematical artifact.
@@ -60,6 +61,7 @@ Return one selected target containing:
 - The apparent gap and calibrated novelty assessment.
 - Why the target is tractable now.
 - Compatible research approaches and the requested primary approach.
+- Recommended tool skills, stated separately from the mathematical approach.
 - The first two or three falsifiable milestones.
 - Likely failure modes and a stopping or pivot condition.
 - Graph overlap found after selection.

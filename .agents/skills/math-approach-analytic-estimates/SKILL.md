@@ -7,6 +7,8 @@ description: Pursue a mathematical target primarily through rigorous analytic es
 
 Use analytic reasoning as the primary source of the result. Computation may test constants or boundary cases, but it should not substitute for the uniform estimate.
 
+State needed capabilities abstractly. When implementation is useful, compose with appropriate `$math-tool-*` skills such as research code or rigorous numerics; the analytic estimates and their proof obligations remain primary.
+
 ## Working mode
 
 - Identify the quantity to bound and the scale on which the desired conclusion becomes true.

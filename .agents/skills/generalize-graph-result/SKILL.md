@@ -49,6 +49,7 @@ Choose one exact generalized claim and provide `$math-research` with:
 - The hypothesis or mechanism expected to carry the proof.
 - The first bridge lemma or minimal counterexample test.
 - The primary `$math-approach-*` skill best suited to it.
+- Any supporting `$math-tool-*` skills and the concrete role of each.
 - A stopping condition if the proposed generalization is false or vacuous.
 - Expected graph relations if the work succeeds.
 

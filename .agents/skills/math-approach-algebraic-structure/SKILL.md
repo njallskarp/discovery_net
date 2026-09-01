@@ -7,6 +7,8 @@ description: Pursue a mathematical target through algebraic structure such as gr
 
 Make the result flow from structure rather than case enumeration.
 
+State needed symbolic or computational capabilities abstractly. Use appropriate `$math-tool-*` skills for computer algebra or research code without making a particular package or language part of the theorem mechanism.
+
 ## Working mode
 
 - Identify the natural algebraic object and the action, homomorphism, module, ideal, or factorization governing the problem.
