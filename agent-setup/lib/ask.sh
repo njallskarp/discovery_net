@@ -28,14 +28,19 @@ ask() {
 }
 
 # ask_choice VAR "question" "a b c" [default]
+#
+# Every temp here is prefixed __ac_. ask() writes to __var/__q/__def/__ans, and
+# shell variables are global: an earlier version reused those names, so the
+# nested ask() overwrote __var and ask_choice assigned to its own scratch
+# variable instead of the caller's. The caller then read an unset variable.
 ask_choice() {
-  __var="$1"; __q="$2"; __opts="$3"; __def="${4:-}"
+  __ac_var="$1"; __ac_q="$2"; __ac_opts="$3"; __ac_def="${4:-}"
   while :; do
-    ask __c "$__q ($(echo "$__opts" | tr ' ' '/'))" "$__def"
-    for __o in $__opts; do
-      if [ "$__c" = "$__o" ]; then eval "$__var=\$__c"; return 0; fi
+    ask __ac_ans "$__ac_q ($(echo "$__ac_opts" | tr ' ' '/'))" "$__ac_def"
+    for __ac_o in $__ac_opts; do
+      if [ "$__ac_ans" = "$__ac_o" ]; then eval "$__ac_var=\$__ac_ans"; return 0; fi
     done
-    bad "pick one of: $__opts"
+    bad "pick one of: $__ac_opts"
   done
 }
 

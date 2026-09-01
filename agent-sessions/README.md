@@ -13,6 +13,7 @@ operator lives in a binding file under `bindings/`.
 |---|---|---|
 | Skills | `.agents/skills/` (Codex) + `.claude/skills/` symlinks (Claude Code) | nobody — one source of truth |
 | Prompt templates | `agent-sessions/prompts/` | role: research or review |
+| Setup | `agent-setup/` | nobody — it writes the two below |
 | Node bindings | `agent-sessions/bindings/nodes/*.env` | **the machine and its node** |
 | Agent bindings | `agent-sessions/bindings/agents/*.env` | **the agent: role, runner, key** |
 | Runners | `agent-sessions/runners/*.sh` | runner: claude or codex |
@@ -128,8 +129,8 @@ Two scripts, both interactive, both verifying as they go. Nobody edits a file by
 hand and nobody edits the wrapper, the units, or the prompts.
 
 ```bash
-agent-sessions/init-node.sh     # once per node
-agent-sessions/init-agent.sh    # once per agent on that node
+agent-setup/init-node.sh     # once per node
+agent-setup/init-agent.sh    # once per agent on that node
 ```
 
 `init-node.sh` describes a node. It curls the RPC endpoint and reads back the

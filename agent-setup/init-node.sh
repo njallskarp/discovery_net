@@ -3,7 +3,7 @@
 # Describe one node, once. Every agent bound to it reuses this file, so the node
 # facts live in exactly one place and cannot drift between agents.
 #
-#   agent-sessions/init-node.sh
+#   agent-setup/init-node.sh
 #
 # Each answer is checked against the running node as you give it, so a mistake
 # surfaces here rather than as a preflight-abort three hours into a schedule.
@@ -11,6 +11,7 @@
 set -eu
 HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(cd -- "$HERE/.." && pwd)"
+SESSIONS="$REPO_ROOT/agent-sessions"
 . "$HERE/lib/ask.sh"
 require_tty "init-node.sh"
 
@@ -91,7 +92,7 @@ fi
 # it in one place stops DN_KEY_PATH and the submit command disagreeing.
 SUBMIT_BASE="$CLI submit contribution --rpc-url $RPC"
 
-OUT_DIR="$HERE/bindings/nodes"
+OUT_DIR="$SESSIONS/bindings/nodes"
 ask OUT "Write to" "$OUT_DIR/$NODE.env"
 
 write_env "$OUT" <<EOF
@@ -110,5 +111,5 @@ DN_GRAPHQL_CMD='$GRAPHQL'
 DN_SUBMIT_BASE='$SUBMIT_BASE'
 EOF
 
-say "  Next: agent-sessions/init-agent.sh to bind an agent to this node."
+say "  Next: agent-setup/init-agent.sh to bind an agent to this node."
 say ""

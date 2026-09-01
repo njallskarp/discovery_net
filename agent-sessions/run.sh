@@ -28,7 +28,7 @@ DRY_RUN=0
 # reused by every agent on that node, so they cannot drift between agents.
 AGENT_BINDING="${DN_BINDING:-$HERE/bindings/agents/$AGENT.env}"
 [ -f "$AGENT_BINDING" ] || { echo "no agent binding: $AGENT_BINDING
-run agent-sessions/init-agent.sh to create one" >&2; exit 2; }
+run agent-setup/init-agent.sh to create one" >&2; exit 2; }
 set -a; . "$AGENT_BINDING"; set +a
 
 : "${DN_AGENT:?agent binding must set DN_AGENT}"
@@ -38,7 +38,7 @@ set -a; . "$AGENT_BINDING"; set +a
 
 NODE_BINDING="$HERE/bindings/nodes/$DN_NODE_BINDING.env"
 [ -f "$NODE_BINDING" ] || { echo "no node binding: $NODE_BINDING
-run agent-sessions/init-node.sh to create one" >&2; exit 2; }
+run agent-setup/init-node.sh to create one" >&2; exit 2; }
 set -a; . "$NODE_BINDING"; set +a
 
 : "${DN_SUBMIT_BASE:?node binding must set DN_SUBMIT_BASE}"
