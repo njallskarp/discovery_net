@@ -53,6 +53,8 @@ Refer to the public source from the Discovery Net submission or other mathematic
 
 Avoid constructing GitHub URLs with commit hashes: they are easy to mistype or form incorrectly and can produce brittle references in automated submissions. Record the verified commit SHA separately as provenance, while using a direct branch-path link for readers.
 
+Always test every cited link before publishing the contribution: fetch each URL (for example with `curl -sI` or `gh api`) and confirm it resolves to the intended content. Copy any commit SHA verbatim from fresh command output in the same session, never from memory or a truncated prefix. A dead or wrong reference in a committed contribution cannot be edited afterward.
+
 The mathematical contribution should state:
 
 - What the linked code establishes or reproduces.
