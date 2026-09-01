@@ -13,7 +13,8 @@ operator lives in a binding file under `bindings/`.
 |---|---|---|
 | Skills | `.agents/skills/` (Codex) + `.claude/skills/` symlinks (Claude Code) | nobody — one source of truth |
 | Prompt templates | `agent-sessions/prompts/` | role: research or review |
-| Bindings | `agent-sessions/bindings/*.env` | **operator and node** |
+| Node bindings | `agent-sessions/bindings/nodes/*.env` | **the machine and its node** |
+| Agent bindings | `agent-sessions/bindings/agents/*.env` | **the agent: role, runner, key** |
 | Runners | `agent-sessions/runners/*.sh` | runner: claude or codex |
 | Budget and cadence | `agent-sessions/budget.toml` | operator |
 | Wrapper | `agent-sessions/run.sh` + `lib/dnagent.py` | nobody |
@@ -123,21 +124,42 @@ and machines. The notes clone is per-agent for the same reason, so concurrent
 
 ## Onboarding a new operator
 
-An operator running their own nodes does not edit the wrapper, the units, or
-the prompts. They write one binding per agent and run the conformance check:
+Two scripts, both interactive, both verifying as they go. Nobody edits a file by
+hand and nobody edits the wrapper, the units, or the prompts.
 
-1. Copy `bindings/TEMPLATE.env` to `bindings/<your-node>.env`.
-2. Fill in the RPC URL, key path, worklog path, and — the part that genuinely
-   differs between layouts — `DN_GRAPHQL_CMD` and `DN_SUBMIT_CMD`.
-3. Run the conformance check in `conformance/smoke.md`. It is read-only and
-   submits nothing.
-4. If it passes, enable the timer for that agent.
+```bash
+agent-sessions/init-node.sh     # once per node
+agent-sessions/init-agent.sh    # once per agent on that node
+```
 
-`DN_GRAPHQL_CMD` is the field that catches people out. How you read a ledger
-depends on who owns the bind mount: a root-owned ledger needs a `docker exec`
-into the node's application container, a user-owned one can be read directly
-with the CLI. `bindings/node-abu-1.env` shows the first form and the template
-documents both. The prompt template never names either — it calls the binding.
+`init-node.sh` describes a node. It curls the RPC endpoint and reads back the
+moniker, chain, height and voting power before accepting the URL; then it *probes*
+the ledger read path rather than asking you to know it, trying a direct CLI read
+first and falling back to a container exec, testing each and keeping whichever
+returns an `indexedHeight`. If neither works it refuses to write a binding at all,
+because one that cannot read the ledger would abort every firing at preflight.
+
+That probe is the point of the script. `DN_GRAPHQL_CMD` is the field that differs
+most between operators — a root-owned bind mount needs `docker exec`, a
+user-owned one does not — and it is the field most likely to be wrong.
+
+`init-agent.sh` binds an agent to a node already described: role, runner, key
+location, working directories. It records where the signing key lives and checks
+its permissions; it never reads or copies one. It finishes by running a dry
+firing, so setup either proves itself or tells you which gate stopped it.
+
+The split matters when an operator runs several agents against one node. Node
+facts are written once and reused, so they cannot drift between agents — the same
+failure the prompt templates had before they became templates. And because a
+contributor key belongs to an agent rather than to a node, the node file carries
+`DN_SUBMIT_BASE` with no key in it and `run.sh` appends `--private-key` at run
+time. The key path then exists in exactly one place instead of two that can
+disagree.
+
+Generated bindings are gitignored: they hold absolute paths and the location of a
+signing key, so they describe one machine. The committed `*.env.example` files
+show the shapes — two node shapes, direct read and container read, and two agent
+shapes, researcher and reviewer.
 
 ## Run record
 

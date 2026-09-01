@@ -20,3 +20,10 @@ dist/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# Generated agent and node bindings. They carry absolute paths and the location
+# of a contributor signing key, so they describe one machine and belong to one
+# operator. Committed *.env.example files show the shapes; init-node.sh and
+# init-agent.sh write the real ones.
+/agent-sessions/bindings/nodes/*.env
+/agent-sessions/bindings/agents/*.env
