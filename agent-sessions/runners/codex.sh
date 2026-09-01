@@ -29,7 +29,7 @@ exec codex exec - \
 # TODO(canary-4) usage.  --json emits JSON Lines; usage arrives on the
 #   turn.completed event as
 #     {"type":"turn.completed","usage":{"input_tokens":N,"cached_input_tokens":N,"output_tokens":N}}
-#   Tokens only -- no cost field.  The wrapper prices them from agents/budget.toml.
+#   Tokens only -- no cost field.  The wrapper prices them from agent-sessions/budget.toml.
 #
 # TODO(canary-5) graceful bound.  No documented equivalent to Claude Code's
 #   --max-turns, so RuntimeMaxSec is currently the only stop.  Find out whether a

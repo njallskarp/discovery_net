@@ -67,14 +67,14 @@ reports token counts only:
 {"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122}}
 ```
 
-So Codex runs get priced by the wrapper from the table in `agents/budget.toml`.
+So Codex runs get priced by the wrapper from the table in `agent-sessions/budget.toml`.
 Please confirm the event shape above against the version you are running and
 say if it has changed — a wrong field name means Codex firings silently record
 zero spend, and a shared monthly cap then only governs half the fleet.
 
 ## Done looks like
 
-1. `agents/conformance/smoke.md` passes under Codex with your own binding, and
+1. `agent-sessions/conformance/smoke.md` passes under Codex with your own binding, and
    its output matches what the Claude Code runner produces for the same node —
    same skills listed, same heights, same worklog line shape.
 2. `codex.sh` emits enough for a complete run record, including token counts.

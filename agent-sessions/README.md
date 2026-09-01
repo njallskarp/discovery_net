@@ -12,10 +12,33 @@ operator lives in a binding file under `bindings/`.
 | Piece | Where | Varies by |
 |---|---|---|
 | Skills | `.agents/skills/` (Codex) + `.claude/skills/` symlinks (Claude Code) | nobody — one source of truth |
-| Prompt templates | `agents/prompts/` | role: research or review |
-| Bindings | `agents/bindings/*.env` | **operator and node** |
-| Runners | `agents/runners/*.sh` | runner: claude or codex |
-| Budget | `agents/budget.toml` | operator |
+| Prompt templates | `agent-sessions/prompts/` | role: research or review |
+| Bindings | `agent-sessions/bindings/*.env` | **operator and node** |
+| Runners | `agent-sessions/runners/*.sh` | runner: claude or codex |
+| Budget | `agent-sessions/budget.toml` | operator |
+
+## Skills are one tree, reachable two ways
+
+Codex scans `.agents/skills/`. Claude Code reads `.claude/skills/`, follows
+symlinks, and loads each target once. `.claude/skills/` therefore holds three
+symlinks into `.agents/skills/` and no content of its own:
+
+```
+.claude/skills/discovery-net -> ../../.agents/skills/discovery-net
+.claude/skills/math-research -> ../../.agents/skills/math-research
+.claude/skills/math-review   -> ../../.agents/skills/math-review
+```
+
+Git stores symlinks, so a fresh clone gets them; there is nothing to recreate.
+Link all three, not just the two role skills — `math-research` and `math-review`
+both open by referencing `../discovery-net/SKILL.md`, and that relative path has
+to resolve from whichever tree the runner is reading.
+
+The bodies are 559 lines and not one of them is runner-specific. The only
+runner-specific files are the two `agents/openai.yaml` sidecars, which Claude Code
+ignores because they are files rather than frontmatter. If either runner ever
+needs a metadata key the other rejects, generate both trees from one source
+rather than forking the bodies — see `CODEX-CANARY.md`, canary-6.
 
 ## Rendering a prompt
 
@@ -24,9 +47,9 @@ binding. The wrapper substitutes only the `DN_*` names, so a `$` inside a code
 fence in the prompt survives:
 
 ```bash
-set -a; . "agents/bindings/$BINDING.env"; set +a
-envsubst "$(printf '${%s} ' $(grep -o 'DN_[A-Z_]*' agents/prompts/$DN_ROLE.md | sort -u))" \
-  < "agents/prompts/$DN_ROLE.md" > "$RUN_DIR/prompt.md"
+set -a; . "agent-sessions/bindings/$BINDING.env"; set +a
+envsubst "$(printf '${%s} ' $(grep -o 'DN_[A-Z_]*' agent-sessions/prompts/$DN_ROLE.md | sort -u))" \
+  < "agent-sessions/prompts/$DN_ROLE.md" > "$RUN_DIR/prompt.md"
 ```
 
 Two researchers on the same box differ only by their binding file. Nothing about

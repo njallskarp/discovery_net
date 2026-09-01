@@ -6,7 +6,7 @@ It is read-only: it queries, it writes one worklog line, it submits nothing.
 Run it with the binding under test:
 
 ```bash
-agents/runners/<runner>.sh agents/conformance/smoke-prompt.txt "$REPO_ROOT" "$RUN_DIR"
+agent-sessions/runners/<runner>.sh agent-sessions/conformance/smoke-prompt.txt "$REPO_ROOT" "$RUN_DIR"
 ```
 
 ## The prompt
