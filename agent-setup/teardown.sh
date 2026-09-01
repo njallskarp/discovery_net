@@ -7,12 +7,14 @@
 # Shows an inventory first, then asks per category. Nothing is removed until you
 # have seen exactly what it would remove.
 #
-# Two things it will not do:
-#   - touch a contributor key. Deleting one destroys an on-chain identity that
-#     cannot be recovered, and the artifacts it signed outlive the key.
-#   - touch anything belonging to a node it did not start. It kills only the
-#     inspectors recorded in its own state directory, and removes only localnet
-#     state under this checkout's run/ directory.
+# Contributor keys are asked about last, one at a time, behind a typed
+# confirmation rather than a y/n. Deleting one destroys an on-chain identity
+# that cannot be recovered, and the artifacts it signed outlive the key, so the
+# default at every one of those prompts is to keep it.
+#
+# One thing it will not do: touch anything belonging to a node it did not start.
+# It kills only the inspectors recorded in its own state directory, and removes
+# only localnet state under this checkout's run/ directory.
 
 set -eu
 HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
@@ -76,10 +78,25 @@ else
   note "bindings: none"
 fi
 
-KEYS="$(for f in $AGENT_BINDINGS; do grep -m1 '^DN_KEY_PATH=' "$f" | cut -d= -f2-; done 2>/dev/null || true)"
+# Collected now, while the bindings that name them still exist -- the bindings
+# are removed further down. A key at the repo root is picked up as well: that is
+# where the README's genpkey line puts one, so it is present on a host that has
+# never run init-agent.sh and has no binding to name it.
+KEYS=""
+add_key() {
+  [ -f "$1" ] || return 0
+  for __ak in $KEYS; do [ "$__ak" = "$1" ] && return 0; done
+  KEYS="$KEYS $1"
+  return 0
+}
+for f in $AGENT_BINDINGS; do
+  add_key "$(grep -m1 '^DN_KEY_PATH=' "$f" | cut -d= -f2- || true)"
+done
+for f in "$REPO_ROOT"/*.pem; do add_key "$f"; done
+
 if [ -n "$KEYS" ]; then
   say ""
-  say "  contributor keys (NOT removed by this script):"
+  say "  contributor keys:"
   for k in $KEYS; do note "$k"; done
 fi
 
@@ -150,11 +167,26 @@ if docker image inspect discovery-net-node:local >/dev/null 2>&1; then
   fi
 fi
 
-say ""
+# Last, and one key at a time. Everything above this point can be rebuilt from
+# the repo; a key cannot be rebuilt from anything. The prompt asks for the
+# filename typed back rather than a y/n so that holding down y through the whole
+# script does not end with a destroyed identity.
 if [ -n "$KEYS" ]; then
-  say "  Contributor keys were left in place. Each one is an on-chain identity;"
-  say "  the contributions it signed stay on the chain whether or not you keep it."
-  say "  Remove them yourself if you mean to, one at a time."
+  say ""
+  say "  Contributor keys. Each one is an on-chain identity: what it signed stays"
+  say "  on the chain whether or not you keep the key, but without the key you can"
+  say "  never sign as that identity again. There is no recovery and no backup."
+  for k in $KEYS; do
+    b="$(basename "$k")"
+    say ""
+    note "$k"
+    ask KEY_ANS "    type '$b' to remove it, anything else keeps it" "keep"
+    if [ "$KEY_ANS" != "$b" ]; then note "kept $k"; continue; fi
+    if [ "$DRY" = 1 ]; then say "    would: rm $k"
+    else rm -f "$k" && ok "removed $k"; fi
+  done
 fi
+
+say ""
 say "  Done."
 say ""

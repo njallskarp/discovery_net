@@ -97,8 +97,9 @@ from the host — that is why the cloud deployment runs one in a container.
 
 `teardown.sh` reverses all of it. It prints an inventory first — inspectors it
 started, localnet nodes, bindings with their chain IDs — then asks per category.
-It never removes a contributor key: deleting one destroys an on-chain identity,
-and the artifacts it signed outlive it.
+Contributor keys come last and are asked about one at a time, and that prompt
+wants the key's filename typed back rather than a y/n: deleting one destroys an
+on-chain identity, and the artifacts it signed outlive it.
 
 Scheduling is separate. `agent-sessions/systemd/` fires `run.sh` on a timer; the
 wrapper decides whether a given tick is a firing, so cadence lives in
