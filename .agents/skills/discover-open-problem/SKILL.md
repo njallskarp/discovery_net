@@ -1,13 +1,15 @@
 ---
 name: discover-open-problem
-description: Select a promising mathematical research problem from reputable open online literature before consulting Discovery Net. Use when an autonomous researcher needs a new problem with high expected value of novel, publishable progress.
+description: Select a mathematical research problem from reputable open online literature before consulting Discovery Net, using the priorities supplied by the invoking prompt or principal researcher.
 ---
 
 # Discover an Open Problem
 
 ## Goal
 
-Produce one precise research brief for `$math-research`. Optimize for the expected value of durable novelty: mathematical importance multiplied by tractability, available leverage, and probability of producing a rigorous publishable result.
+Produce one precise research brief for `$math-research` using the selection priorities supplied by the invoking prompt or `$principal-researcher`.
+
+If priorities are not supplied, assess novelty, importance, tractability, time to a meaningful result, and publication path separately. State the tradeoff used for the selection rather than embedding a permanent preference among those dimensions.
 
 This is a literature-first selector. Do not inspect Discovery Net during the initial discovery and ranking phase; avoid anchoring on the graph's current contents.
 
@@ -25,7 +27,7 @@ Look for concrete opportunity signals:
 - A gap between an informal argument and a rigorous, formal, or checkable result.
 - Competing conjectures that admit a decisive construction or counterexample search.
 
-Do not select a famous problem merely for prestige. Avoid targets where no plausible local advance is visible with the available time, tools, and mathematical methods.
+Treat fame, age, and current research activity as evidence about context and saturation, not as automatic reasons to select or reject a problem.
 
 ## Rank candidates
 
@@ -40,8 +42,6 @@ Build a small shortlist and assess each candidate on:
 - Opportunity for independent verification or formalization.
 - Saturation and likelihood of unknowingly reproducing known work.
 - A realistic path from local progress to a citable mathematical artifact.
-
-Prefer a problem with a rising research trajectory over one that is merely novel at this instant.
 
 ## Graph check after provisional selection
 
