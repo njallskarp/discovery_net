@@ -20,8 +20,9 @@ when it is done.
 
 ## What is open, and why
 
-`runners/codex.sh` is a stub with five numbered TODOs. Two of them need
-judgment rather than lookup:
+`runners/codex.sh` is a stub with five numbered TODOs, and there is a sixth
+question about skills that does not live in the script. Three need judgment
+rather than lookup:
 
 **canary-1, the sandbox level.** `read-only` is the Codex default and is too
 tight — the agent has to append to its worklog, run `discovery-net submit`
@@ -36,6 +37,21 @@ normally stops itself before systemd's `RuntimeMaxSec` kills it. No equivalent
 is documented for `codex exec`. If none exists, Codex firings will more often
 be killed mid-turn and lose that turn's work, which changes how aggressively
 the prompt should checkpoint into the worklog.
+
+**canary-6, unknown frontmatter keys.** Claude Code tolerates unknown SKILL.md
+frontmatter keys and puts its behaviour knobs there (`disable-model-invocation`,
+`allowed-tools`, `context: fork`). Codex puts the equivalent in the
+`agents/openai.yaml` sidecar, and OpenAI's skill-creator guide says of
+frontmatter: *"Do not include any other fields."* What is **not** documented is
+whether Codex *rejects* an unknown key or simply ignores it.
+
+Settle it in about a minute: add a junk key to a scratch skill's frontmatter and
+see whether the skill still loads. The answer decides how the three skills are
+maintained long-term. If unknown keys are ignored, one symlinked tree keeps
+working even after Claude Code needs a frontmatter knob. If they are rejected,
+the bodies have to be generated from a common source with per-runner metadata
+before that day arrives, because the alternative is two hand-maintained copies
+of the same mathematical policy drifting apart unnoticed.
 
 The other three are mechanical: confirm the working directory substitute
 (canary-2), confirm the three skills load and their relative cross-references
@@ -62,8 +78,9 @@ zero spend, and a shared monthly cap then only governs half the fleet.
    its output matches what the Claude Code runner produces for the same node —
    same skills listed, same heights, same worklog line shape.
 2. `codex.sh` emits enough for a complete run record, including token counts.
-3. The five TODOs are answered in a PR description or a note back, especially
-   the minimum working sandbox level.
+3. The six open questions are answered in a PR description or a note back,
+   especially the minimum working sandbox level and whether Codex rejects
+   unknown frontmatter keys.
 
 Do not run a research firing until the smoke check passes. A misconfigured
 runner that submits is worse than one that does not run: contributions land on
