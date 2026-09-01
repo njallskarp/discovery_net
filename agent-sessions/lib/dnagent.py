@@ -24,6 +24,7 @@ from pathlib import Path
 # scalar key = value only; that is all budget.toml is allowed to contain.
 # --------------------------------------------------------------------------
 
+
 def load_config(path):
     cfg, section = {}, ""
     for raw in Path(path).read_text().splitlines():
@@ -55,7 +56,7 @@ def load_config(path):
 def interval_seconds(text):
     m = re.fullmatch(r"\s*(\d+)\s*([smh])\s*", str(text))
     if not m:
-        raise SystemExit("bad interval: %r (want 30m, 2h, 900s)" % (text,))
+        raise SystemExit(f"bad interval: {text!r} (want 30m, 2h, 900s)")
     return int(m.group(1)) * {"s": 1, "m": 60, "h": 3600}[m.group(2)]
 
 
@@ -66,6 +67,7 @@ def interval_seconds(text):
 # survive, which is why this is not envsubst with no argument (and not envsubst
 # at all: it is absent on a stock macOS).
 # --------------------------------------------------------------------------
+
 
 def render(template, out):
     src = Path(template).read_text()
@@ -81,13 +83,14 @@ def render(template, out):
 
     body = re.sub(r"\$\{(DN_[A-Z0-9_]+)\}", sub, src)
     if missing:
-        raise SystemExit("binding is missing: %s" % ", ".join(sorted(set(missing))))
+        raise SystemExit("binding is missing: " + ", ".join(sorted(set(missing))))
     Path(out).write_text(body)
 
 
 # --------------------------------------------------------------------------
 # ledger
 # --------------------------------------------------------------------------
+
 
 def read_runs(state_root):
     runs = []
@@ -102,12 +105,14 @@ def read_runs(state_root):
             try:
                 runs.append(json.loads(line))
             except ValueError:
-                continue          # a torn line is not worth failing a firing over
+                continue  # a torn line is not worth failing a firing over
     return runs
 
 
 def month_to_date_usd(state_root):
-    prefix = datetime.now(timezone.utc).strftime("%Y-%m")
+    # timezone.utc, not the datetime.UTC alias ruff prefers: that alias is 3.11+
+    # and this file has to run under whatever python3 is on PATH.
+    prefix = datetime.now(timezone.utc).strftime("%Y-%m")  # noqa: UP017
     return sum(
         float(r.get("cost_usd") or 0.0)
         for r in read_runs(state_root)
@@ -119,7 +124,7 @@ def last_run(state_dir):
     ledger = Path(state_dir) / "runs.jsonl"
     if not ledger.is_file():
         return None
-    lines = [l for l in ledger.read_text().splitlines() if l.strip()]
+    lines = [line for line in ledger.read_text().splitlines() if line.strip()]
     for line in reversed(lines):
         try:
             return json.loads(line)
@@ -136,6 +141,7 @@ def last_run(state_dir):
 # the fleet.
 # --------------------------------------------------------------------------
 
+
 def parse_usage(runner, raw_path, cfg):
     tokens = {"in": 0, "cached_in": 0, "out": 0}
     cost = None
@@ -147,7 +153,7 @@ def parse_usage(runner, raw_path, cfg):
             doc = json.loads(text)
         except ValueError:
             doc = {}
-            for line in text.splitlines():          # tolerate stream-json
+            for line in text.splitlines():  # tolerate stream-json
                 try:
                     ev = json.loads(line)
                 except ValueError:
@@ -177,9 +183,9 @@ def parse_usage(runner, raw_path, cfg):
                 tokens["out"] += int(u.get("output_tokens") or 0)
 
     if cost is None:
-        rate_in = float(cfg.get("pricing.%s.input_per_mtok" % runner, 0.0) or 0.0)
-        rate_cached = float(cfg.get("pricing.%s.cached_input_per_mtok" % runner, 0.0) or 0.0)
-        rate_out = float(cfg.get("pricing.%s.output_per_mtok" % runner, 0.0) or 0.0)
+        rate_in = float(cfg.get(f"pricing.{runner}.input_per_mtok", 0.0) or 0.0)
+        rate_cached = float(cfg.get(f"pricing.{runner}.cached_input_per_mtok", 0.0) or 0.0)
+        rate_out = float(cfg.get(f"pricing.{runner}.output_per_mtok", 0.0) or 0.0)
         cost = (
             tokens["in"] / 1e6 * rate_in
             + tokens["cached_in"] / 1e6 * rate_cached
@@ -196,12 +202,13 @@ def parse_usage(runner, raw_path, cfg):
 # status
 # --------------------------------------------------------------------------
 
+
 def write_status(state_dir, payload):
     d = Path(state_dir)
     d.mkdir(parents=True, exist_ok=True)
     tmp = d / "status.json.tmp"
     tmp.write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n")
-    tmp.replace(d / "status.json")          # atomic; a reader never sees a half file
+    tmp.replace(d / "status.json")  # atomic; a reader never sees a half file
 
 
 def append_run(state_dir, record):
@@ -212,7 +219,7 @@ def append_run(state_dir, record):
 
 
 def now_iso():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: UP017
 
 
 def render_status_table(state_root, cap_usd):
@@ -228,27 +235,34 @@ def render_status_table(state_root, cap_usd):
             continue
         left = ""
         if s.get("state") == "running" and s.get("deadline_epoch"):
-            left = "%ds" % max(0, int(s["deadline_epoch"] - time.time()))
-        rows.append((
-            s.get("agent", d.name), s.get("runner", "-"), s.get("state", "-"),
-            str(s.get("cycle", "-")), s.get("last_exit", "-"), left,
-            str(s.get("indexed_height") if s.get("indexed_height") is not None else "-"),
-        ))
+            left = f"{max(0, int(s['deadline_epoch'] - time.time()))}s"
+        rows.append(
+            (
+                s.get("agent", d.name),
+                s.get("runner", "-"),
+                s.get("state", "-"),
+                str(s.get("cycle", "-")),
+                s.get("last_exit", "-"),
+                left,
+                str(s.get("indexed_height") if s.get("indexed_height") is not None else "-"),
+            )
+        )
     if not rows:
-        return "no agent state under %s yet" % state_root
+        return f"no agent state under {state_root} yet"
     head = ("AGENT", "RUNNER", "STATE", "CYCLE", "LAST EXIT", "LEFT", "HEIGHT")
-    widths = [max(len(r[i]) for r in ([head] + rows)) for i in range(len(head))]
+    widths = [max(len(r[i]) for r in [head, *rows]) for i in range(len(head))]
     fmt = "  ".join("%-" + str(w) + "s" for w in widths)
     out = [fmt % head, fmt % tuple("-" * w for w in widths)]
     out += [fmt % r for r in rows]
     mtd = month_to_date_usd(state_root)
     pct = (mtd / cap_usd * 100.0) if cap_usd else 0.0
     out.append("")
-    out.append("month to date: $%.2f of $%.2f (%.0f%%)" % (mtd, cap_usd, pct))
+    out.append(f"month to date: ${mtd:.2f} of ${cap_usd:.2f} ({pct:.0f}%)")
     return "\n".join(out)
 
 
 # --------------------------------------------------------------------------
+
 
 def main(argv):
     if len(argv) < 2:
@@ -275,14 +289,14 @@ def main(argv):
             sys.exit(0)
         due_in = int(prev["started_epoch"]) + interval - int(time.time())
         if due_in > 0:
-            print("next firing in %ds" % due_in)
+            print(f"next firing in {due_in}s")
             sys.exit(1)
         sys.exit(0)
 
     elif cmd == "gate-budget":
         state_root, cap = argv[2], float(argv[3])
         mtd = month_to_date_usd(state_root)
-        print("%.4f" % mtd)
+        print(f"{mtd:.4f}")
         sys.exit(1 if cap and mtd >= cap else 0)
 
     elif cmd == "last-indexed-height":
@@ -305,7 +319,7 @@ def main(argv):
         print(render_status_table(argv[2], float(argv[3]) if len(argv) > 3 else 0.0))
 
     else:
-        raise SystemExit("unknown command: %s" % cmd)
+        raise SystemExit(f"unknown command: {cmd}")
 
 
 if __name__ == "__main__":

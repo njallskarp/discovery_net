@@ -10,6 +10,10 @@ dist/
 *.egg-info/
 .DS_Store
 
+# uv writes this when running the dev tools locally. CI installs with pip from
+# pyproject.toml, so a committed lock would pin nothing that anything reads.
+uv.lock
+
 # Local node identities, ledgers, and signing keys.
 /run/
 
