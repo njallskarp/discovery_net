@@ -17,6 +17,21 @@ operator lives in a binding file under `bindings/`.
 | Runners | `agents/runners/*.sh` | runner: claude or codex |
 | Budget | `agents/budget.toml` | operator |
 
+## Rendering a prompt
+
+A prompt template is a role (`prompts/research.md`, `prompts/review.md`) plus a
+binding. The wrapper substitutes only the `DN_*` names, so a `$` inside a code
+fence in the prompt survives:
+
+```bash
+set -a; . "agents/bindings/$BINDING.env"; set +a
+envsubst "$(printf '${%s} ' $(grep -o 'DN_[A-Z_]*' agents/prompts/$DN_ROLE.md | sort -u))" \
+  < "agents/prompts/$DN_ROLE.md" > "$RUN_DIR/prompt.md"
+```
+
+Two researchers on the same box differ only by their binding file. Nothing about
+a node, a path, or an operator appears in a template.
+
 ## Onboarding a new operator
 
 An operator running their own nodes does not edit the wrapper, the units, or
