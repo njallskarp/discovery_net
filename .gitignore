@@ -30,3 +30,7 @@ dist/
 
 # Conformance run output — one file per runner per agent, machine-specific.
 /agent-sessions/conformance/smoke-*.out
+
+# Contributor signing keys. Never commit one.
+*.pem
+contributor.pem

@@ -65,9 +65,10 @@ try_graphql() {
 }
 
 CAND="$CLI graphql --ledger-path $LEDGER"
+READ_MODE=""
 say "    trying direct read..."
 if try_graphql "$CAND"; then
-  GRAPHQL="$CAND"
+  GRAPHQL="$CAND"; READ_MODE="direct"
 else
   bad "direct read failed (usually a root-owned bind mount)"
   say "    a container exec can read it instead."
@@ -77,7 +78,7 @@ else
   CAND="docker exec $CTR discovery-net graphql --ledger-path $INNER"
   say "    trying container read..."
   if try_graphql "$CAND"; then
-    GRAPHQL="$CAND"
+    GRAPHQL="$CAND"; READ_MODE="container"
   else
     bad "that failed too"
     say "    Both read paths failed. The binding would abort every firing at"
@@ -85,6 +86,67 @@ else
     say "    and run this again."
     die "stopped."
   fi
+fi
+
+# ------------------------------------------------------------------- inspector
+# The inspector opens the SQLite ledger directly, so it can only run on the host
+# when the DIRECT read path worked. If we fell back to a container exec, the
+# ledger is root-owned and a host-side inspector cannot open it either -- the
+# cloud deployment runs the inspector in a container for exactly this reason.
+say ""
+say "  Inspector"
+INSPECTOR_URL=""
+if [ "$READ_MODE" = "direct" ]; then
+  if confirm "  Start a read-only inspector for this node?"; then
+    PORT="$(python3 - <<'PYPORT'
+import socket
+for p in range(8765, 8800):
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", p)); print(p); break
+    except OSError:
+        continue
+    finally:
+        s.close()
+PYPORT
+)"
+    ask INSPECTOR_PORT "Port" "${PORT:-8765}"
+    STATE_ROOT="${DN_STATE_ROOT:-$HOME/.local/state/discovery-net-agents}"
+    mkdir -p "$STATE_ROOT/inspectors"
+    LOG="$STATE_ROOT/inspectors/$NODE.log"
+
+    INSPECTOR_BIN="$(dirname "$CLI")/discovery-inspector"
+    [ -x "$INSPECTOR_BIN" ] || INSPECTOR_BIN="$(command -v discovery-inspector || true)"
+    if [ -z "$INSPECTOR_BIN" ]; then
+      bad "discovery-inspector not found next to $CLI or on PATH"
+      note "install the package (pip install -e .) and re-run, or start it yourself:"
+      note "discovery-inspector --ledger-path $LEDGER --cometbft-rpc-url $RPC --listen-port $INSPECTOR_PORT"
+    else
+      nohup "$INSPECTOR_BIN" \
+        --ledger-path "$LEDGER" \
+        --cometbft-rpc-url "$RPC" \
+        --listen-port "$INSPECTOR_PORT" >"$LOG" 2>&1 &
+      INSPECTOR_PID=$!
+      sleep 2
+      if kill -0 "$INSPECTOR_PID" 2>/dev/null &&
+         curl -sS -m 5 "http://127.0.0.1:$INSPECTOR_PORT/api/node" >/dev/null 2>&1; then
+        INSPECTOR_URL="http://127.0.0.1:$INSPECTOR_PORT"
+        ok "inspector up at $INSPECTOR_URL (pid $INSPECTOR_PID)"
+        printf '{"node":"%s","pid":%s,"port":%s,"url":"%s","ledger":"%s","rpc":"%s","log":"%s"}\n' \
+          "$NODE" "$INSPECTOR_PID" "$INSPECTOR_PORT" "$INSPECTOR_URL" "$LEDGER" "$RPC" "$LOG" \
+          > "$STATE_ROOT/inspectors/$NODE.json"
+        note "teardown: agent-setup/teardown.sh"
+      else
+        bad "it did not come up; last lines of $LOG:"
+        tail -5 "$LOG" 2>/dev/null | sed 's/^/      /'
+        kill "$INSPECTOR_PID" 2>/dev/null || true
+      fi
+    fi
+  fi
+else
+  note "skipped: this node's ledger is read through a container, so a host-side"
+  note "inspector cannot open the SQLite file. The cloud overlay runs one in a"
+  note "container instead -- see deploy/gcp/single-node/."
 fi
 
 # ---------------------------------------------------------------- submit prefix
@@ -109,6 +171,9 @@ DN_GRAPHQL_CMD='$GRAPHQL'
 
 # The agent's --private-key is appended by run.sh, so it is not duplicated here.
 DN_SUBMIT_BASE='$SUBMIT_BASE'
+
+# Read-only inspector for this node, if one is running.
+DN_INSPECTOR_URL=$INSPECTOR_URL
 EOF
 
 say "  Next: agent-setup/init-agent.sh to bind an agent to this node."

@@ -89,7 +89,16 @@ agent-sessions/agentctl status
 `init-node.sh` verifies as it goes: it reads the node's moniker, chain, height
 and voting power back from the RPC endpoint, then probes the ledger read path —
 direct CLI first, container exec if the bind mount is root-owned — and refuses to
-write a binding if neither works.
+write a binding if neither works. When the direct read works it also offers to
+start a read-only inspector for the node, recording its pid and port so
+`teardown.sh` can stop it. It skips that offer for a container-read node: the
+inspector opens the SQLite file itself, so it cannot read a root-owned ledger
+from the host — that is why the cloud deployment runs one in a container.
+
+`teardown.sh` reverses all of it. It prints an inventory first — inspectors it
+started, localnet nodes, bindings with their chain IDs — then asks per category.
+It never removes a contributor key: deleting one destroys an on-chain identity,
+and the artifacts it signed outlive it.
 
 Scheduling is separate. `agent-sessions/systemd/` fires `run.sh` on a timer; the
 wrapper decides whether a given tick is a firing, so cadence lives in
