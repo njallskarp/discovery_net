@@ -1,0 +1,42 @@
+# Read at every tick. Changing cadence is a commit and a git pull, not a root
+# edit of a systemd unit followed by a daemon-reload.
+
+[budget]
+# A cap on API spend. --bare does not use subscription login, so agent firings
+# bill as API usage.
+monthly_cap_usd = 200
+
+# One firing must not be able to eat the month.
+max_firing_seconds = 1500
+
+# Abort the firing if the indexer trails the node by more than this. NOT a check
+# on block production: create_empty_blocks = false means a static height is the
+# normal idle state of a quiet chain.
+max_indexer_lag = 50
+
+alert_at_pct = 80
+
+[mode]
+# sprint | cruise | paused. Sprinting a week then pausing gives the same budget
+# per firing as running continuously at cruise, but concentrates it.
+active = "cruise"
+
+[mode.sprint]
+research_interval = "30m"
+review_interval = "15m"
+
+[mode.cruise]
+research_interval = "2h"
+review_interval = "30m"
+
+[mode.paused]
+research_interval = "8760h"
+review_interval = "8760h"
+
+# Codex reports tokens, not dollars, so its rows are priced here. Zeros until
+# the canary confirms the rates; a Codex firing then records real spend instead
+# of silently recording none. Claude Code reports total_cost_usd and ignores this.
+[pricing.codex]
+input_per_mtok = 0.0
+cached_input_per_mtok = 0.0
+output_per_mtok = 0.0

@@ -15,7 +15,9 @@ operator lives in a binding file under `bindings/`.
 | Prompt templates | `agent-sessions/prompts/` | role: research or review |
 | Bindings | `agent-sessions/bindings/*.env` | **operator and node** |
 | Runners | `agent-sessions/runners/*.sh` | runner: claude or codex |
-| Budget | `agent-sessions/budget.toml` | operator |
+| Budget and cadence | `agent-sessions/budget.toml` | operator |
+| Wrapper | `agent-sessions/run.sh` + `lib/dnagent.py` | nobody |
+| Scheduling | `agent-sessions/systemd/` (Linux) or any cron/loop | host |
 
 ## Skills are one tree, reachable two ways
 
@@ -54,6 +56,70 @@ envsubst "$(printf '${%s} ' $(grep -o 'DN_[A-Z_]*' agent-sessions/prompts/$DN_RO
 
 Two researchers on the same box differ only by their binding file. Nothing about
 a node, a path, or an operator appears in a template.
+
+## Running one firing
+
+```bash
+agent-sessions/run.sh <agent> [--dry-run]
+```
+
+`run.sh` is the whole thing: it resolves the binding, runs the gates, renders the
+prompt, invokes the runner under a deadline, and writes the run record. systemd
+is only a way to call it on a schedule — the units in `systemd/` fire it at the
+shortest cadence any mode uses and let the wrapper decide whether a given tick is
+a firing. Nothing about it needs systemd, which is what makes it testable on a
+laptop.
+
+`--dry-run` runs every gate and renders the prompt but never invokes a runner or
+spends anything. It is the fastest way to check a new binding.
+
+The gates, in order, each exiting cleanly with a recorded reason:
+
+| Gate | Skips the firing when |
+|---|---|
+| cadence | the current mode's interval has not elapsed since the last run |
+| budget | month-to-date spend has reached `monthly_cap_usd` |
+| preflight | node unreachable, wrong chain, catching up, or indexer lag over `max_indexer_lag` |
+| new work | review role only: `indexedHeight` has not moved since the last firing |
+
+All four are bash and JSON. A skipped tick costs nothing, which is the only
+reason a reviewer can afford to tick every fifteen minutes.
+
+`agentctl status` prints the table; `agentctl watch` refreshes it; `agentctl runs`
+tails the ledger.
+
+## Testing locally before any of this touches a VM
+
+```bash
+./localnet/localnet.sh bootstrap                    # one-validator chain on this machine
+cp agent-sessions/bindings/local-node-a.env agent-sessions/bindings/mine.env
+$EDITOR agent-sessions/bindings/mine.env            # fix the paths for your checkout
+agent-sessions/run.sh mine --dry-run                # gates + render, spends nothing
+agent-sessions/run.sh mine                          # a real firing
+agent-sessions/agentctl status
+```
+
+`local-node-a.env` deliberately uses the *direct* ledger read path rather than
+`docker exec`, because a localnet's bind mount is owned by whoever started the
+stack. Between it and `node-abu-1.env` the two shapes of `DN_GRAPHQL_CMD` are
+both worked examples.
+
+macOS has no `flock`, no GNU `timeout` and no `envsubst`, so none of them are
+used: the deadline is a watchdog subshell that sends SIGINT before SIGKILL, and
+rendering is python. The only hard requirements are bash, curl and python3.
+
+## Why there is no lock
+
+An earlier draft had the wrapper `flock` a shared `claims.md`. Two problems: the
+lock would have to be held for the whole firing, which serialises agents that
+should run concurrently, and `flock` does not exist on macOS where this gets
+tested.
+
+Removing the shared mutable file is better than guarding it. `DN_CLAIMS_DIR` is a
+directory of per-agent files; an agent appends only to its own and reads all of
+them. Nothing to lock, no lost appends, and it works unchanged across operators
+and machines. The notes clone is per-agent for the same reason, so concurrent
+`git pull --rebase` in one working tree never arises.
 
 ## Onboarding a new operator
 

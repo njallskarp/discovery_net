@@ -12,7 +12,7 @@ go rather than at the end.
 - Read the committed graph: `${DN_GRAPHQL_CMD} '<QUERY>'`
 - Submit: `${DN_SUBMIT_CMD} --kind KIND --title "TITLE" --body "BODY"`, plus
   `--outgoing KIND:REF` / `--incoming KIND:REF` for every relation you already know
-- Worklog `${DN_WORKLOG}` · claims `${DN_CLAIMS}` · source artifacts `${DN_NOTES_CLONE}`
+- Worklog `${DN_WORKLOG}` · claims `${DN_CLAIMS_DIR}` · source artifacts `${DN_NOTES_CLONE}`
 
 ## Already true — do not redo, do not "fix"
 
@@ -72,14 +72,15 @@ take the next step.
 ## Coordination
 
 Other researchers and a reviewer run against this chain, some of them operated by
-other people. Before choosing or switching targets, read `${DN_CLAIMS}` and the
-recent graph, and pick something nobody has claimed. Append your own claim —
-target, angle, timestamp, node — when you take one, and update it when you move
-on.
+other people. Before choosing or switching targets, read **every** file in
+`${DN_CLAIMS_DIR}` and check the recent graph, then pick something nobody has
+claimed.
 
-Append to the claims file; never rewrite it. The runner holds a lock around your
-firing, so your append will not be lost, but a rewrite would discard claims made
-by agents you cannot see.
+Write only to your own file, `${DN_CLAIMS_DIR}/${DN_AGENT}.md`, and never to
+another agent's. Each claim is one line: target, angle, timestamp, node. That is
+why claims are a directory rather than a shared file — nobody has to lock
+anything, and no agent can lose or overwrite a claim made by an agent it cannot
+see.
 
 If you find you have collided, yield to whoever claimed first and take an adjacent
 lane. Reviews and objections aimed at your work are research inputs — pursue them

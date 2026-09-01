@@ -1,0 +1,14 @@
+[Unit]
+Description=Fire the Discovery Net agent (%i)
+
+[Timer]
+OnBootSec=3min
+# Every agent ticks at the shortest cadence any mode uses. The wrapper decides
+# whether a given tick is a firing, so cadence stays a repo setting.
+OnUnitInactiveSec=15min
+AccuracySec=15s
+Persistent=true
+Unit=dn-agent@%i.service
+
+[Install]
+WantedBy=timers.target

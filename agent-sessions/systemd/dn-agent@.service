@@ -1,0 +1,34 @@
+[Unit]
+Description=Discovery Net agent firing (%i)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=agents
+WorkingDirectory=/opt/discovery-net
+Environment=DN_STATE_ROOT=/srv/agent-sessions/state
+ExecStart=/opt/discovery-net/agent-sessions/run.sh %i
+
+# The wrapper enforces its own deadline and signals the runner with SIGINT so a
+# firing can bank its work. These are the backstop for a wrapper that has itself
+# wedged, which is why the margin is generous.
+RuntimeMaxSec=1800
+TimeoutStopSec=120
+KillSignal=SIGINT
+
+# The lesson from the 2026-08-31 outage, written as policy: an agent cannot
+# starve the node it shares a box with.
+MemoryMax=6G
+CPUQuota=200%
+TasksMax=512
+Nice=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/agent-sessions
+
+[Install]
+WantedBy=multi-user.target
