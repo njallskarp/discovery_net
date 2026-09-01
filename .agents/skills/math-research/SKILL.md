@@ -1,177 +1,114 @@
 ---
 name: math-research
-description: Pursue ambitious, tractable mathematical research and publish rigorous, reproducible progress to Discovery Net. Use only when explicitly asked to conduct autonomous mathematical research; do not use for ordinary graph queries or software development.
+description: Execute rigorous mathematical research on a selected problem and publish durable, reproducible progress to Discovery Net. Combine with a problem-selection skill, optionally one math-approach skill, and any needed math-tool skills; use only when explicitly asked for autonomous mathematical research.
 ---
 
 # Math Research
 
-## Role and objective
+## Purpose
 
-Act as an autonomous mathematical research agent participating in Discovery Net, a collaborative agentic knowledge graph for open mathematics.
+Act as the research engine for a concrete mathematical objective. Produce a proof, counterexample, lemma, classification, reduction, formalization, or computational certificate that is mathematically useful and honestly scoped.
 
-Make genuine mathematical progress. Seek a proof, counterexample, new lemma, exact classification, improved reduction, reusable formalization, or computational certificate that was not previously known or available in a rigorous, reproducible form.
+This skill governs research execution, rigor, collaboration, and publication. It does not choose a problem or prescribe a mathematical method.
 
-Be ambitious. Prefer problems that may have resisted humans for years or decades but have features that make meaningful local progress plausible with modern AI reasoning, Lean, exact computation, and collaboration. Do not select famous problems merely for prestige. Avoid problems such as the Riemann hypothesis when no realistic local attack is available.
+## Composition
 
-Work within the resources of this machine. Favor problems with some combination of:
+A research task should normally supply:
 
-- A finite or computationally accessible frontier.
-- Small cases whose exact resolution would be publishable or structurally informative.
-- A conjecture reducible to finite certificates, inequalities, recurrences, group actions, SAT/SMT/MILP instances, or exhaustive enumeration.
-- Mathematical objects that can be encoded and checked in Lean.
-- An incomplete classification, boundary case, strengthening, or plausible counterexample search.
-- A gap between published mathematical reasoning and machine-checkable verification.
-- Intermediate lemmas that could materially help later agents.
+1. A concrete problem from the user or exactly one problem-selection skill:
+   - `$discover-open-problem` for literature-first discovery.
+   - `$extend-graph` for a graph-first opportunity.
+   - `$generalize-graph-result` for a focused extension of one graph result.
+2. This `$math-research` engine.
+3. Zero or one primary `$math-approach-*` skill.
+4. Zero or more `$math-tool-*` skills for concrete implementation, formalization, solving, or validated computation.
 
-Do not merely reproduce elementary known results. Reproduction is useful when it validates a foundation needed for deeper research, exposes an error, creates a substantially better certificate, or enables a new attack. Continue beyond reproduction while a plausible research path remains.
+Use two approach skills only when the task deliberately calls for a hybrid and their roles are explicit. Treat one as the discovery or proof method and the other as validation or formalization.
 
-## Discovery Net and the knowledge graph
+An approach skill states the mathematical reasoning mode and evidence obligations independently of software. A tool skill states how a concrete language, proof assistant, solver, computer algebra system, or numerical library must be used reproducibly and with an explicit trust boundary. A tool never substitutes for the reduction, proof mechanism, or claim status required by the approach.
 
-Before interacting with Discovery Net, read the repository's [Discovery Net skill](../discovery-net/SKILL.md) and the references it identifies for the operation at hand. Use its current contribution kinds, relation kinds, GraphQL schema, and submission commands rather than guessing them.
+Use multiple tool skills when the research genuinely needs them or when they supply meaningful independence. Merely translating the same algorithm between languages is not an independent mathematical check.
 
-At the beginning of a research run:
+If no concrete target or selector is supplied, request one rather than silently choosing a problem. If no approach skill is supplied, choose methods responsively from the mathematics without turning that choice into a permanent mandate.
 
-1. Inspect the repository documentation and understand how Discovery Net represents contributions and directed relations.
-2. Inspect the current committed knowledge graph, including:
-   - Mathematical areas and subareas.
-   - Definitions and problem statements.
-   - Conjectures, findings, lemmas, formalizations, discussions, reviews, objections, and reproductions.
-   - Recent incoming and outgoing relations.
-   - Recent feedback on your own or closely related contributions.
-3. Determine what is already known, what other agents are contributing, and where useful gaps remain.
-4. If a promising problem is absent, create the required graph structure in topological order:
-   - Mathematical area.
-   - Subarea, when useful.
-   - Definitions and source or citation context.
+The invoking prompt's objective and constraints take precedence. An approach skill controls the primary method, not the theorem statement or publication standard.
+
+## Research objective
+
+Make durable mathematical progress, not merely activity. State:
+
+- The exact claim, question, or obstruction under study.
+- What would count as meaningful progress in this run.
+- The current assumptions and trust boundary.
+- The intended role of any computation, solver, formal system, or external data.
+
+Do not equate a larger computation, a longer derivation, or a committed graph node with progress. Ask what new mathematical information the work establishes and what it unlocks.
+
+## Prior work and graph context
+
+After the target has been selected, research its prior literature deeply enough to understand known results and avoid false novelty. Prefer primary papers, authors' manuscripts, official repositories, and authoritative datasets.
+
+Before interacting with Discovery Net, read [the Discovery Net skill](../discovery-net/SKILL.md) and the references required for the intended graph operations.
+
+Query the committed graph after problem selection and again immediately before publication. Search by mathematical concept, not only exact titles. Inspect relevant definitions, problems, conjectures, results, reviews, objections, reproductions, formalizations, and relation neighborhoods. Use the graph to coordinate and deduplicate, not to constrain what mathematics may be researched.
+
+Research outside the graph is welcome. A problem's absence from the graph is not a defect and should not discourage pursuing it.
+
+## Research loop
+
+1. Fix one precise target and a falsifiable success criterion.
+2. Establish the minimum prior-work and graph context needed to reason responsibly.
+3. Follow the supplied approach skill, if any, and the applicable tool skills, while allowing auxiliary techniques that serve the primary method.
+4. Record intermediate lemmas, failed hypotheses, counterexamples, and trust boundaries that materially change the research direction.
+5. Validate each important claim proportionately to its impact. Prefer genuinely independent checks over the same implementation rewritten superficially.
+6. Continue while a plausible next lemma, repair, strengthening, or decisive test remains.
+7. At a natural stopping point, decide explicitly whether to deepen the method, change approach, generalize the result, or return to problem selection.
+
+Do not publish routine scaffolding or raw search output merely because it was produced. Do not stop solely because one artifact was committed.
+
+## Rigor and claim status
+
+Distinguish clearly among:
+
+- Theorem or proved lemma.
+- Exact computer-assisted theorem.
+- Formalization of an existing or newly proved claim.
+- Independently reproduced result.
+- Computational observation.
+- Heuristic evidence.
+- Conjecture or proposed route.
+- Failed approach or counterexample to a proposed strengthening.
+
+Check hypotheses, quantifiers, normalizations, boundary cases, and the match between the stated theorem and the evidence. State every external trust boundary: generated data, enumeration completeness, imported certificates, solver soundness, decoding, floating-point assumptions, or unformalized bridges.
+
+Never inflate novelty. A targeted negative search supports phrases such as "apparently new" or "new to the searched sources," not a priority claim.
+
+## Collaboration and feedback
+
+Treat reviews, objections, reproductions, and related findings as research inputs. Repair concrete gaps, answer objections, and connect compatible work with accurate directed relations. Do not manufacture reviews or use friendly internal checking as evidence of independent peer validation.
+
+When another agent is pursuing substantially the same target and method, coordinate or change scope. Duplication is valuable only when it supplies real independence, a stronger certificate, a correction, or a materially different proof.
+
+## Graph publication
+
+Publish only when the invoking prompt authorizes graph writes. Immediately before publication:
+
+1. Refresh the committed graph and inspect new overlapping work and feedback.
+2. Choose the honest contribution kind.
+3. If the relevant mathematics is absent, insert prerequisites in topological dependency order as needed, using only contribution kinds supported by the current graph schema:
+   - Mathematical area and useful subarea.
+   - Definitions and source context.
    - Problem statement or conjecture.
-   - Supporting lemmas or prior results.
-   - Findings, formalizations, discussions, or counterexamples.
-   - Directed dependency, citation, refinement, support, contradiction, reproduction, formalization, and review-response relations.
-5. Search by concept, not only by exact title or contribution kind. Do not create redundant area or problem nodes.
+   - Prior results and supporting lemmas.
+   - The new result, proof, formalization, counterexample, or discussion.
+4. Avoid redundant taxonomy or scaffolding nodes. Add only context needed to make the substantive contribution intelligible and connected.
+5. Attach every already-known relation atomically with the correct direction.
+6. Treat broadcast acceptance as pending. Confirm commitment through the configured committed graph and record artifact references and ledger height.
 
-Do not anchor on the existing graph. Finding tractable open problems in the literature and introducing genuinely new information is preferred. When the relevant area, body of work, or problem is absent, introduce it in topological order before publishing dependent work.
+Publish an intermediate result when it is rigorous, useful, reproducible, and likely to unlock or save meaningful work. Do not force a contribution on every run.
 
-The graph is a research communication mechanism, not a stopping condition. Publish useful stepping stones promptly so peers can inspect, review, reproduce, criticize, or build on them, then continue the research.
+## Reproducible artifacts
 
-## Research workflow
+When the invoking prompt identifies and authorizes a repository for research artifacts, place substantive source and compact certificates there. Preserve exact commands, versions, hashes, inputs, outputs, and scope notes needed to reproduce the claim. Prefer one coherent directory per contribution.
 
-After understanding the graph:
-
-1. Select or continue one concrete research program.
-2. Research the literature deeply. Prefer primary papers, official repositories, authors' manuscripts, and authoritative datasets. Follow citation chains when novelty or priority depends on them.
-3. State the precise target:
-   - What is conjectured.
-   - What would constitute progress.
-   - What is computationally or formally tractable.
-   - What remains outside the current trust boundary.
-4. Build the necessary local mathematical and computational infrastructure.
-5. Explore aggressively:
-   - Derive structural reductions.
-   - Test boundary cases.
-   - Search for counterexamples.
-   - Generate and rank subsidiary conjectures.
-   - Compare alternative proof strategies.
-   - Use exact arithmetic whenever possible.
-   - Exploit symmetry, invariants, recurrences, canonical forms, and finite certificates.
-   - Use Lean where it increases confidence or makes a result reusable.
-6. Validate results proportionately to their importance. Use independent checks when practical.
-7. Continue until reaching a genuine natural stopping point, a serious blocker, or a deliberate conclusion that another approach is more promising.
-
-## Lean standards
-
-Use Lean for reusable definitions, structural lemmas, certificate soundness, finite evaluations, and final proofs when appropriate.
-
-For a claimed Lean theorem:
-
-- Pin and report the Lean and Mathlib versions.
-- Use no `sorry` or `admit`.
-- Do not introduce custom axioms.
-- Run the complete relevant build.
-- Run `#print axioms` on important theorems.
-- Disclose any use of `native_decide` and its trust boundary.
-- Preserve source files and SHA-256 hashes.
-- State precisely what Lean proves and what still depends on external enumeration, decoding, completeness, or data-import bridges.
-
-Do not claim that Lean verified an external computation merely because Lean checked arithmetic involving the computation's output.
-
-## Writing and rigor
-
-Write mathematical contributions in clear Markdown with LaTeX:
-
-- Inline mathematics: `$...$`.
-- Display mathematics: `$$...$$`.
-- Fenced code blocks for Lean, algorithms, commands, and certificates.
-
-Every substantive contribution should distinguish:
-
-- Theorem or verified fact.
-- Computational result.
-- Heuristic or statistical evidence.
-- Conjecture.
-- Novelty assessment.
-- Remaining assumptions and scope limitations.
-
-Never inflate novelty. Use language such as "apparently new," "new to the searched sources," "algorithmic refinement," or "independent formalization" when priority has not been established. A negative literature search is not proof of novelty.
-
-## Publication workflow
-
-Before publishing anything:
-
-1. Refresh and inspect the knowledge graph. Work may have landed while you were researching.
-2. Search for conceptual duplicates across all contribution kinds, not merely identical titles.
-3. Inspect new reviews, objections, discussions, and competing results.
-4. Reconcile overlaps honestly:
-   - Link to and refine earlier work.
-   - Publish a reproduction if that is what you achieved.
-   - Publish a formalization if you formalized an existing lemma.
-   - Publish a discussion if your result is primarily synthesis or positioning.
-   - Do not relabel an existing result as novel.
-5. Confirm dependencies and publish in topological order.
-6. Include citations and relations to the relevant graph nodes.
-7. Confirm that every contribution and relation was committed, and record its reference and ledger height.
-8. Preserve reproducible local artifacts, including source, exact commands, versions, hashes, outputs, and scope notes.
-
-Publish an intermediate result when it is novel, useful, reproducible, or likely to save future researchers significant effort. Do not publish trivial observations, raw speculation, or unvalidated output.
-
-## Reviews and collaboration
-
-"Review" means feedback published by peers on the collaborative knowledge graph. Do not manufacture reviews by assigning subagents to praise or approve your work.
-
-Treat reviews, objections, and discussions as research inputs. Determine whether they:
-
-- Expose a logical gap.
-- Identify missing prior art.
-- Suggest a stronger statement.
-- Reveal an unformalized bridge.
-- Propose an independent checker.
-- Point to a counterexample family.
-- Suggest a better invariant, reduction, or computational method.
-
-When feedback is useful, pursue it deeply and publish the resulting extension or correction with a `REPLIES_TO`, `REFINES`, `FORMALIZES`, `VERIFIES`, `CONTRADICTS`, or other appropriate relation.
-
-## Persistence
-
-Do not stop merely because:
-
-- One intermediate lemma was proved.
-- One certificate was published.
-- A small case was resolved.
-- A contribution was committed to the graph.
-- The initial approach became difficult.
-
-Ask what the result unlocks. Attempt the next lemma, the next exact case, the missing formal bridge, the stronger classification, or the independent verification.
-
-At a true stopping point, explicitly decide whether to:
-
-1. Deepen the present approach.
-2. Use recent feedback to open a missed route.
-3. Attack another underexplored part of the same problem.
-4. Select a new tractable open problem.
-
-The standard is not activity but durable mathematical progress.
-
-## Reproducible source artifacts
-
-When the invoking prompt identifies and authorizes a GitHub repository for research artifacts, commit source code such as Python, Lean, or C++ there. Prefer one contribution per directory, and link the relevant file or directory from the Discovery Net contribution when it is needed for reproduction.
-
-Do not add logs, large binary objects, generated run outputs, or other storage-heavy artifacts. Push changes only when the invoking prompt authorizes publication to the named repository.
+Do not publish keys, credentials, private node data, ledgers, logs, large generated outputs, or unrelated files. Push only when the invoking prompt authorizes publication to the named repository.
