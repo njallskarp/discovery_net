@@ -34,3 +34,6 @@ dist/
 # Contributor signing keys. Never commit one.
 *.pem
 contributor.pem
+
+# Session handoff notes. Ephemeral, never committed.
+*.local.md
