@@ -2,11 +2,23 @@ You are running a conformance check, not a research task. Do exactly these five
 steps, in order, and then stop. Submit nothing. Create nothing. Do not restart or
 reconfigure anything.
 
-1. List the skills you can see. Name the three you should have: `discovery-net`,
-   `math-research`, `math-review`. Say how many you found.
+1. Read each of these three files and confirm each one exists and has a
+   `name:` in its frontmatter. Report how many of the three you could read.
 
-2. Run `curl -s ${DN_RPC_URL}/status` and report three values:
-   `node_info.network`, `sync_info.latest_block_height`, `sync_info.catching_up`.
+   - `${DN_REPO}/.agents/skills/discovery-net/SKILL.md`
+   - `${DN_REPO}/.agents/skills/math-research/SKILL.md`
+   - `${DN_REPO}/.agents/skills/math-review/SKILL.md`
+
+   Read them by path. Do not report what your runner lists as loaded skills:
+   Claude Code under `--bare` auto-loads none and Codex scans `.agents/skills/`
+   directly, so a count of loaded skills says which runner you are, not whether
+   the tree is intact. The prompts name skills by path for exactly this reason.
+
+2. Read the file `${DN_NODE_STATUS}` — a `/status` response captured for you
+   just before this firing — and report three values from it:
+   `result.node_info.network`, `result.sync_info.latest_block_height`,
+   `result.sync_info.catching_up`. Read it with your file-reading tool: you have
+   no network tool and no general shell, so neither `curl` nor `cat` will work.
 
 3. Run `${DN_GRAPHQL_CMD} '{ indexedHeight }'` and report the value.
 

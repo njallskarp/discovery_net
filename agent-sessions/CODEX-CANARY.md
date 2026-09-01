@@ -12,17 +12,18 @@ when it is done.
 - **The prompts are runner-neutral.** They name a skill by *path*, not by
   Codex's `$math-research` token, so the same template renders for both.
 - **Node layout is not baked in.** Everything operator-specific is in a binding
-  file — see `bindings/TEMPLATE.env`. You should not need to edit the wrapper,
-  the units, or the prompts.
+  file — see the `*.env.example` files under `bindings/`. You should not need
+  to edit the wrapper, the units, or the prompts.
 - **The contract is fixed.** `README.md` → "Run record" defines the one JSON
   object per firing that the wrapper writes. Make `codex.sh` produce enough to
   fill it and you are done.
 
 ## What is open, and why
 
-`runners/codex.sh` is a stub with five numbered TODOs, and there is a sixth
-question about skills that does not live in the script. Three need judgment
-rather than lookup:
+`runners/codex.sh` is a stub with five numbered TODOs, a sixth question about
+skills that does not live in the script, and a seventh about model selection
+that came out of the first real Claude firing. Three need judgment rather than
+lookup:
 
 **canary-1, the sandbox level.** `read-only` is the Codex default and is too
 tight — the agent has to append to its worklog, run `discovery-net submit`
@@ -53,6 +54,19 @@ the bodies have to be generated from a common source with per-runner metadata
 before that day arrives, because the alternative is two hand-maintained copies
 of the same mathematical policy drifting apart unnoticed.
 
+**canary-7, model selection.** `runners/claude.sh` now takes an optional
+`DN_MODEL` from the agent binding and passes it as `--model`; unset means the
+runner's own default. Codex needs the same lever, and the equivalent flag on
+`codex exec` should be wired to the same `DN_MODEL` key so one binding field
+means the same thing for both runners. Do not invent a second key name.
+
+This is not a tidiness question. The first real Claude firing cost **$0.13 for
+41 seconds** of a conformance check that did almost nothing, because the runner
+pinned no model and got the strongest one by default. Whatever Codex's default
+is, a fleet on a shared monthly cap cannot have half of it silently running at
+the top of the price list. Report what `codex exec` defaults to and what the
+flag is called.
+
 The other three are mechanical: confirm the working directory substitute
 (canary-2), confirm the three skills load and their relative cross-references
 resolve (canary-3), and map the `turn.completed` usage event into the run
@@ -72,13 +86,19 @@ Please confirm the event shape above against the version you are running and
 say if it has changed — a wrong field name means Codex firings silently record
 zero spend, and a shared monthly cap then only governs half the fleet.
 
+The pricing table is per-runner, not per-model, so it silently assumes every
+Codex firing uses one model. If canary-7 lands a `DN_MODEL` that agents actually
+vary, say so: the table needs a model dimension before that happens, or the
+ledger prices a cheap firing at the expensive rate and the cap misfires in the
+direction that stops work.
+
 ## Done looks like
 
 1. `agent-sessions/conformance/smoke.md` passes under Codex with your own binding, and
    its output matches what the Claude Code runner produces for the same node —
    same skills listed, same heights, same worklog line shape.
 2. `codex.sh` emits enough for a complete run record, including token counts.
-3. The six open questions are answered in a PR description or a note back,
+3. The seven open questions are answered in a PR description or a note back,
    especially the minimum working sandbox level and whether Codex rejects
    unknown frontmatter keys.
 

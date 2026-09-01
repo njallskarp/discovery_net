@@ -81,7 +81,19 @@ NOTES="$STATE/discovery-net-notes"
 note "worklog     $WORKLOG"
 note "claims dir  $CLAIMS   (shared between agents on this box; one file each)"
 note "notes clone $NOTES    (per agent, so concurrent git never collides)"
-confirm "  create these now?" && { mkdir -p "$STATE" "$CLAIMS"; ok "created"; }
+# The worklog is created here, not left to the first firing: the prompts tell the
+# agent to APPEND one line to it, and an append to a file that does not exist is
+# a failed step at the end of a paid run. Never truncate an existing one.
+if confirm "  create these now?"; then
+  mkdir -p "$STATE" "$CLAIMS"
+  if [ ! -f "$WORKLOG" ]; then
+    printf '# Worklog — %s\n\nOne line per firing. Append only; never rewrite history here.\n\n' \
+      "$AGENT" > "$WORKLOG"
+    ok "created, including an empty $WORKLOG"
+  else
+    ok "created (left the existing worklog alone)"
+  fi
+fi
 
 REVIEWED_LINE=""
 if [ "$ROLE" = "review" ]; then

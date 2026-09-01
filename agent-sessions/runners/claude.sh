@@ -21,12 +21,67 @@ PROMPT_FILE="$1"; REPO_ROOT="$2"; RUN_DIR="$3"
 
 cd "$RUN_DIR"
 
+# Skills do NOT auto-load under --bare, and --add-dir is not an exception to
+# that: its own help text says "--add-dir (CLAUDE.md dirs)". Measured three ways
+# against this CLI version, all reporting zero skills -- --add-dir alone, a
+# .claude/skills symlink in the working directory, and --setting-sources project.
+#
+# This is not a defect to work around. The prompts name each skill by PATH
+# (prompts/research.md: "Apply the math-research skill at
+# ${DN_REPO}/.agents/skills/math-research/SKILL.md ... in full"), so the agent
+# reads them as files. That is what makes one skill tree serve both runners, and
+# it is why bare mode costs us nothing here. Do not trade --bare away for skill
+# auto-loading: bare is what stops an unattended agent holding a signing key from
+# running whatever hooks land in the repo's .claude/settings.json.
+
 # --permission-mode dontAsk denies anything outside the allow rules and the
 # read-only command set -- the locked-down posture for unattended runs.
 # --allowedTools uses permission rule syntax; the space before * matters.
+#
+# These rules are prefix matches against the literal command line, so they have
+# to match what the prompts actually tell the agent to type. Both original rules
+# failed on the first real firing and the agent could do nothing but read:
+#
+# The rule form is `Bash(<prefix>:*)`, NOT `Bash(<prefix> *)`. Every rule here
+# used the second form and every one of them silently matched nothing: the first
+# real firing denied `curl` and `discovery-net` alike and the agent could only
+# read. Measured directly against this CLI version:
+#
+#     Bash(curl -s http://127.0.0.1:*)   denied
+#     Bash(curl:*)                       allowed
+#     Bash(curl -s:*)                    allowed
+#     Bash(<abs path to CLI>:*)          allowed
+#
+# The prefix also has to end on a whole argument. `curl -s http://127.0.0.1`
+# cuts into the middle of the URL argument, which is why the loopback-scoped
+# rule never matched and cannot be written this way.
+#
+# `discovery-net *` additionally assumed the CLI is on PATH, but init-node.sh
+# probes for it and records an ABSOLUTE path in the node binding. Derive it
+# rather than assume; DN_SUBMIT_BASE is exported by lib/binding.sh.
+DN_CLI="${DN_SUBMIT_BASE%% *}"
+ALLOWED="Read,Edit"
+ALLOWED="$ALLOWED,Bash($DN_CLI:*)"
+ALLOWED="$ALLOWED,Bash(git:*)"
+# The prompts ask for an ISO8601 UTC stamp on the worklog line. Without this the
+# agent has no clock: the first passing conformance run substituted the block-1
+# timestamp out of node-status.json and said so, which is the honest failure
+# mode but still the wrong value. Reading a clock grants nothing.
+ALLOWED="$ALLOWED,Bash(date:*)"
+
+# Model. Unset means Claude Code's own default, which is what the first cost
+# measurement was taken on -- do not give this a default here, or the number in
+# runs.jsonl stops meaning what the ledger says it means. Set DN_MODEL in an
+# agent binding to run one agent cheaper than another: the research agent is the
+# obvious candidate, since a reviewer refereeing someone else's proof is the
+# firing you least want underpowered.
+MODEL_ARGS=()
+[ -n "${DN_MODEL:-}" ] && MODEL_ARGS=(--model "$DN_MODEL")
+
 exec claude --bare -p "$(cat "$PROMPT_FILE")" \
   --add-dir "$REPO_ROOT" \
   --permission-mode dontAsk \
-  --allowedTools "Read,Edit,Bash(curl http://127.0.0.1:*),Bash(discovery-net *),Bash(git *)" \
+  --allowedTools "$ALLOWED" \
+  ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
   --max-turns "${DN_MAX_TURNS:-60}" \
   --output-format json

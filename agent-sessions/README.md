@@ -38,6 +38,16 @@ Link all three, not just the two role skills — `math-research` and `math-revie
 both open by referencing `../discovery-net/SKILL.md`, and that relative path has
 to resolve from whichever tree the runner is reading.
 
+**Under `--bare`, which is how the Claude runner fires, none of that auto-loading
+happens.** Measured: `--add-dir` does not do it (its help says "CLAUDE.md dirs"),
+nor does a `.claude/skills` symlink in the working directory, nor
+`--setting-sources project` — all three report zero skills loaded. This costs
+nothing, because the prompts name each skill by *path* and tell the agent to read
+it, which is the same thing that makes one tree serve both runners. The symlink
+tree above is what a human gets in an interactive session in this repo; the
+agents never rely on it. Do not "fix" this by dropping `--bare` — see the comment
+in `runners/claude.sh` for what bare is actually buying.
+
 The bodies are 559 lines and not one of them is runner-specific. The only
 runner-specific files are the two `agents/openai.yaml` sidecars, which Claude Code
 ignores because they are files rather than frontmatter. If either runner ever

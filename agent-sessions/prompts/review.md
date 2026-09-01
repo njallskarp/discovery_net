@@ -24,10 +24,18 @@ not yours.
 
 ## Preflight — seconds, not minutes
 
+Read the file `${DN_NODE_STATUS}` with your file-reading tool — it is the node's
+`/status` response, captured for you just before this firing. Then run:
+
 ```bash
-curl -s ${DN_RPC_URL}/status
 ${DN_GRAPHQL_CMD} '{ indexedHeight }'
 ```
+
+Besides that, you may run only `date` and `git`. You have no network tool and no
+general shell: do not try to `curl`, and do not try to `cat` the status file —
+read it. `latest_block_height` in it is a snapshot from the
+start of this firing, which is what you want for a lag check; `indexedHeight` is
+live.
 
 Healthy means `node_info.network` equals `${DN_CHAIN_ID}`, `sync_info.catching_up`
 is `false`, and `latest_block_height - indexedHeight` is small and not growing.

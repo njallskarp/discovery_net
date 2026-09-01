@@ -121,6 +121,13 @@ fi
 
 # ------------------------------------------------------------------- the firing
 PROMPT="$RUN_DIR/prompt.md"
+# The agent reads node status from this file rather than curling for it. The
+# preflight above already fetched it, and a loopback-scoped curl rule turned out
+# to be unwritable -- Bash allow rules match on whole-argument prefixes, so
+# `curl -s http://127.0.0.1` cuts into the URL argument and never matches. The
+# alternative was granting curl to any host to an agent holding a signing key.
+export DN_NODE_STATUS="$STATUS_JSON"
+export DN_NODE_HEIGHT="$NODE_H"
 DN_REPO="${DN_REPO:-$REPO_ROOT}" $DN render "$HERE/prompts/$DN_ROLE.md" "$PROMPT"
 
 if [ "$DRY_RUN" -eq 1 ]; then

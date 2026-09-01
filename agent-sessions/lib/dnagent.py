@@ -199,6 +199,49 @@ def parse_usage(runner, raw_path, cfg):
 
 
 # --------------------------------------------------------------------------
+# final text
+#
+# The conformance check greps the agent's closing summary. It cannot grep the
+# raw file: --output-format json is ONE json object on ONE line, so a
+# line-anchored pattern never matches no matter what the agent wrote. Same
+# asymmetry as parse_usage, so it lives next to it rather than in the shell.
+# --------------------------------------------------------------------------
+
+
+def final_text(runner, raw_path):
+    text = Path(raw_path).read_text() if Path(raw_path).is_file() else ""
+
+    if runner == "claude":
+        try:
+            doc = json.loads(text)
+        except ValueError:
+            return text
+        if isinstance(doc, dict) and isinstance(doc.get("result"), str):
+            return doc["result"]
+        return text
+
+    if runner == "codex":
+        # JSON Lines. The event carrying the closing message is not pinned down
+        # yet -- see CODEX-CANARY.md, canary-4 -- so collect any string payload
+        # that looks like assistant text and fall back to the raw file.
+        parts = []
+        for line in text.splitlines():
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(ev, dict):
+                continue
+            for key in ("text", "message", "content", "delta"):
+                val = ev.get(key)
+                if isinstance(val, str):
+                    parts.append(val)
+        return "\n".join(parts) if parts else text
+
+    return text
+
+
+# --------------------------------------------------------------------------
 # status
 # --------------------------------------------------------------------------
 
@@ -302,6 +345,9 @@ def main(argv):
     elif cmd == "last-indexed-height":
         prev = last_run(argv[2])
         print((prev or {}).get("indexed_height", ""))
+
+    elif cmd == "final-text":
+        print(final_text(argv[2], argv[3]))
 
     elif cmd == "parse-usage":
         print(json.dumps(parse_usage(argv[2], argv[3], load_config(argv[4]))))
