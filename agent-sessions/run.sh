@@ -136,6 +136,9 @@ PROMPT="$RUN_DIR/prompt.md"
 # `curl -s http://127.0.0.1` cuts into the URL argument and never matches. The
 # alternative was granting curl to any host to an agent holding a signing key.
 export DN_NODE_STATUS="$STATUS_JSON"
+# The sandboxed interpreter the prompts tell the agent to use. Same path the
+# runner allow-lists, so the prompt can never name a tool the agent cannot run.
+export DN_COMPUTE="${DN_COMPUTE_BIN:-$REPO_ROOT/agent-sessions/tools/dn-compute}"
 export DN_NODE_HEIGHT="$NODE_H"
 DN_REPO="${DN_REPO:-$REPO_ROOT}" $DN render "$HERE/prompts/$DN_ROLE.md" "$PROMPT"
 

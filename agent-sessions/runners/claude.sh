@@ -75,6 +75,19 @@ ALLOWED="$ALLOWED,Bash(mkdir:*)"
 # Read already covers reading, and `cat` inside a compound is the short path to a
 # signing key in a transcript.
 ALLOWED="$ALLOWED,Bash(echo:*)"
+
+# Computation, sandboxed. Never Bash(python:*) -- an interpreter has sockets,
+# subprocess and open(), so it hands back the network, every denied command, and
+# the signing key in one grant. dn-compute runs a script under --network none as
+# nobody, with no key mounted and a hard timeout; agent-sessions/tools/tests/
+# isolation.sh asserts each of those and must pass before this rule is trusted.
+#
+# The allow-listed path must be somewhere the agent CANNOT write, or it simply
+# rewrites the file and executes whatever it likes. --add-dir puts this checkout
+# in the agent's write scope, so on an agent host set DN_COMPUTE_BIN to a
+# root-owned path outside it. The in-repo default is for a trusted laptop.
+DN_COMPUTE="${DN_COMPUTE_BIN:-$REPO_ROOT/agent-sessions/tools/dn-compute}"
+[ -x "$DN_COMPUTE" ] && ALLOWED="$ALLOWED,Bash($DN_COMPUTE:*)"
 ALLOWED="$ALLOWED,Bash($DN_CLI:*)"
 ALLOWED="$ALLOWED,Bash(git:*)"
 # The prompts ask for an ISO8601 UTC stamp on the worklog line. Without this the

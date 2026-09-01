@@ -1,0 +1,15 @@
+# Sandbox for agent computation. Exact arithmetic and enumeration, nothing else.
+#
+# There is no network in this image at runtime (--network none) and no reason for
+# one: a computation that backs a published claim has to be reproducible from its
+# script, not from whatever a URL returned that day.
+FROM python:3.12-slim
+
+# sympy is the point: exact rationals and symbolic algebra. Both firings so far
+# did this arithmetic by hand in the model's output tokens, which is both the
+# expensive half of a firing and the part most likely to be quietly wrong.
+RUN pip install --no-cache-dir sympy==1.13.3
+
+# Unprivileged, and no shell for the runtime user.
+USER 65534:65534
+ENTRYPOINT []

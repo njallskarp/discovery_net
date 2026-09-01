@@ -18,6 +18,10 @@
 #   node-id NODE                Print NODE's peer address (id@NODE:26656).
 #   status NODE                 Curl NODE's RPC /status.
 #   logs NODE [...]             Follow NODE's container logs.
+#   up NODE                     Restart a node that already exists, at the height
+#                               it stopped at. Use this after a Docker daemon
+#                               restart -- bootstrap refuses on a started home.
+#   restart NODE                down then up.
 #   down NODE [-v]              Stop NODE (-v also removes anon volumes).
 #
 # Options (or environment)
@@ -271,6 +275,34 @@ cmd_logs() {
   compose "$node" logs -f "$@"
 }
 
+# Restart a node that already exists. bootstrap cannot do this: it runs
+# install-genesis, and a home that has produced blocks refuses with
+#   ValueError: validator home has already created runtime state
+# which is correct -- re-installing genesis under a live chain is how you lose it.
+# So a stopped node had no way back other than driving compose by hand, which is
+# exactly the moment someone reaches for --force and destroys the chain.
+#
+# Nothing here touches genesis or the validator home. The state is bind-mounted
+# under $ROOT, so a node comes back at the height it stopped at.
+cmd_up() {
+  local node="${1:-}"; [ -n "$node" ] || die "usage: up NODE"
+  shift
+  [ -f "$ROOT/$node.env" ] || die \
+"no env for '$node' at $ROOT/$node.env.
+       'up' restarts a node that already exists; a new one needs bootstrap or join."
+  # The P2P network is not recreated by compose and disappears with the daemon.
+  local egress; egress="$(resolve_egress "$(grep -m1 '^PERSISTENT_PEERS=' "$ROOT/$node.env" | cut -d= -f2-)")"
+  ensure_p2p_network "$egress"
+  compose "$node" up -d "$@"
+  echo "started $node — RPC: http://127.0.0.1:$(grep -m1 '^RPC_PORT=' "$ROOT/$node.env" | cut -d= -f2-)/status"
+}
+
+cmd_restart() {
+  local node="${1:-}"; [ -n "$node" ] || die "usage: restart NODE"
+  cmd_down "$node"
+  cmd_up "$node"
+}
+
 cmd_down() {
   local node="${1:-}"; [ -n "$node" ] || die "usage: down NODE [-v]"
   shift
@@ -286,6 +318,8 @@ case "$SUBCMD" in
   node-id)   cmd_node_id "$@";;
   status)    cmd_status "$@";;
   logs)      cmd_logs "$@";;
+  up)        cmd_up "$@";;
+  restart)   cmd_restart "$@";;
   down)      cmd_down "$@";;
   ""|-h|--help) usage;;
   *) die "unknown subcommand: $SUBCMD (try --help)";;
