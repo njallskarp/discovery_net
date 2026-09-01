@@ -24,28 +24,8 @@ AGENT="${1:-}"
 DRY_RUN=0
 [ "${2:-}" = "--dry-run" ] && DRY_RUN=1
 
-# Two bindings, on the seam that matters: node facts are described once and
-# reused by every agent on that node, so they cannot drift between agents.
-AGENT_BINDING="${DN_BINDING:-$HERE/bindings/agents/$AGENT.env}"
-[ -f "$AGENT_BINDING" ] || { echo "no agent binding: $AGENT_BINDING
-run agent-setup/init-agent.sh to create one" >&2; exit 2; }
-set -a; . "$AGENT_BINDING"; set +a
-
-: "${DN_AGENT:?agent binding must set DN_AGENT}"
-: "${DN_ROLE:?agent binding must set DN_ROLE}"
-: "${DN_RUNNER:?agent binding must set DN_RUNNER}"
-: "${DN_NODE_BINDING:?agent binding must name its node}"
-
-NODE_BINDING="$HERE/bindings/nodes/$DN_NODE_BINDING.env"
-[ -f "$NODE_BINDING" ] || { echo "no node binding: $NODE_BINDING
-run agent-setup/init-node.sh to create one" >&2; exit 2; }
-set -a; . "$NODE_BINDING"; set +a
-
-: "${DN_SUBMIT_BASE:?node binding must set DN_SUBMIT_BASE}"
-: "${DN_KEY_PATH:?agent binding must set DN_KEY_PATH}"
-# Composed here so the key path exists in exactly one place. Duplicating it into
-# the submit command is how the two silently disagree.
-export DN_SUBMIT_CMD="$DN_SUBMIT_BASE --private-key $DN_KEY_PATH"
+. "$HERE/lib/binding.sh"
+resolve_binding "$HERE" "$AGENT" || exit $?
 
 STATE_ROOT="${DN_STATE_ROOT:-$HOME/.local/state/discovery-net-agents}"
 STATE_DIR="$STATE_ROOT/$DN_AGENT"

@@ -27,3 +27,6 @@ dist/
 # init-agent.sh write the real ones.
 /agent-sessions/bindings/nodes/*.env
 /agent-sessions/bindings/agents/*.env
+
+# Conformance run output — one file per runner per agent, machine-specific.
+/agent-sessions/conformance/smoke-*.out

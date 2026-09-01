@@ -3,31 +3,36 @@
 Both runners must pass this before either is trusted with a research firing.
 It is read-only: it queries, it writes one worklog line, it submits nothing.
 
-Run it with the binding under test:
+Run it once per runner, against the same node:
 
 ```bash
-agent-sessions/runners/<runner>.sh agent-sessions/conformance/smoke-prompt.txt "$REPO_ROOT" "$RUN_DIR"
+agent-sessions/conformance/run-smoke.sh <claude-agent>
+agent-sessions/conformance/run-smoke.sh <codex-agent>
+diff agent-sessions/conformance/smoke-claude-*.out \
+     agent-sessions/conformance/smoke-codex-*.out
 ```
+
+`run-smoke.sh` renders `smoke-prompt.md` against the agent's binding pair and
+invokes that agent's runner. It shares binding resolution with `run.sh`, so the
+check exercises the same assembly a real firing uses.
 
 ## The prompt
 
-> You are running a conformance check, not a research task. Do exactly these
-> five steps and then stop.
->
-> 1. Report which skills you can see. Name the three you expect:
->    `discovery-net`, `math-research`, `math-review`.
-> 2. `curl -s $DN_RPC_URL/status` and report `node_info.network`,
->    `sync_info.latest_block_height`, and `sync_info.catching_up`.
-> 3. Run `$DN_GRAPHQL_CMD '{ indexedHeight }'` and report the value.
-> 4. State whether the indexer is keeping up: report
->    `latest_block_height - indexedHeight`. A static height is NOT a fault --
->    this chain runs `create_empty_blocks = false` and only advances on
->    transactions.
-> 5. Append one line to `$DN_WORKLOG` in the form
->    `conformance <ISO8601> <runner> height=<H> indexed=<I> skills=<N>`.
->
-> Submit nothing. Create nothing in the notes clone. Do not restart or
-> reconfigure anything.
+`smoke-prompt.md`, rendered against the binding. It asks the runner to list its
+skills, read `/status`, read `indexedHeight`, report the lag, append one worklog
+line, and finish with a fixed summary block:
+
+```
+skills=<N>
+chain=<network>
+height=<H>
+indexed=<I>
+lag=<H-I>
+worklog_line_written=<yes|no>
+```
+
+The fixed shape is the point: it makes two runners comparable with `diff`
+instead of by reading.
 
 ## Passing
 

@@ -93,22 +93,26 @@ tails the ledger.
 ## Testing locally before any of this touches a VM
 
 ```bash
-./localnet/localnet.sh bootstrap                    # one-validator chain on this machine
-cp agent-sessions/bindings/local-node-a.env agent-sessions/bindings/mine.env
-$EDITOR agent-sessions/bindings/mine.env            # fix the paths for your checkout
-agent-sessions/run.sh mine --dry-run                # gates + render, spends nothing
-agent-sessions/run.sh mine                          # a real firing
+./localnet/localnet.sh bootstrap                 # a one-validator chain on this machine
+openssl genpkey -algorithm ed25519 -out contributor.pem && chmod 600 contributor.pem
+
+agent-setup/init-node.sh                         # point it at the localnet's RPC
+agent-setup/init-agent.sh                        # bind an agent to it
+
+agent-sessions/run.sh <agent> --dry-run          # gates + render, spends nothing
+agent-sessions/conformance/run-smoke.sh <agent>  # read-only, proves the runner works
+agent-sessions/run.sh <agent>                    # a real firing
 agent-sessions/agentctl status
 ```
 
-`local-node-a.env` deliberately uses the *direct* ledger read path rather than
-`docker exec`, because a localnet's bind mount is owned by whoever started the
-stack. Between it and `node-abu-1.env` the two shapes of `DN_GRAPHQL_CMD` are
-both worked examples.
+A localnet is the *other* ledger read path: the bind mount is owned by whoever
+started the stack, so `init-node.sh` should find the direct CLI read and never
+fall back to a container exec. Getting a `docker exec` binding out of a localnet
+means something is off.
 
-macOS has no `flock`, no GNU `timeout` and no `envsubst`, so none of them are
-used: the deadline is a watchdog subshell that sends SIGINT before SIGKILL, and
-rendering is python. The only hard requirements are bash, curl and python3.
+macOS has no `flock`, no GNU `timeout` and no `envsubst`, so none are used: the
+deadline is a watchdog subshell that sends SIGINT before SIGKILL, and rendering
+is python. The only hard requirements are bash, curl and python3.
 
 ## Why there is no lock
 
