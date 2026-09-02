@@ -45,8 +45,15 @@ ok "chain $DN_CHAIN_ID at $DN_RPC_URL"
 say ""
 ask_choice ROLE   "Role"   "research review" "research"
 ask_choice RUNNER "Runner" "claude codex"    "claude"
+AUTH="subscription"
 case "$RUNNER" in
-  claude) command -v claude >/dev/null 2>&1 || note "'claude' is not on PATH here — fine if agents run elsewhere" ;;
+  claude) command -v claude >/dev/null 2>&1 || note "'claude' is not on PATH here — fine if agents run elsewhere"
+          # subscription: plain -p with a CLAUDE_CODE_OAUTH_TOKEN from `claude
+          # setup-token`, drawing on a Pro/Max/Team plan. api: --bare with an
+          # ANTHROPIC_API_KEY, billed per token. See agent-sessions/README.md.
+          ask_choice AUTH "Claude billing" "subscription api" "subscription"
+          [ "$AUTH" = subscription ] && note "needs CLAUDE_CODE_OAUTH_TOKEN in the environment at firing time (claude setup-token)"
+          [ "$AUTH" = api ]          && note "needs ANTHROPIC_API_KEY in the environment at firing time" ;;
   codex)  command -v codex  >/dev/null 2>&1 || note "'codex' is not on PATH here — fine if agents run elsewhere"
           note "the Codex runner is still a stub; see CODEX-CANARY.md" ;;
 esac
@@ -165,6 +172,7 @@ write_env "$OUT" <<EOF
 DN_AGENT=$(q "$AGENT")
 DN_ROLE=$(q "$ROLE")
 DN_RUNNER=$(q "$RUNNER")
+DN_AUTH=$(q "$AUTH")
 DN_NODE_BINDING=$(q "$NODE_NAME")
 
 DN_KEY_PATH=$(q "$KEY")

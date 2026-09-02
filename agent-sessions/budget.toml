@@ -2,12 +2,18 @@
 # edit of a systemd unit followed by a daemon-reload.
 
 [budget]
-# A cap on API spend. --bare does not use subscription login, so agent firings
-# bill as API usage.
+# A monthly cap on the sum of total_cost_usd across every agent's runs.jsonl.
+# Under DN_AUTH=api that figure is what the Console bills. Under the default
+# DN_AUTH=subscription it is Claude Code's client-side estimate of what the
+# same tokens would have cost: the plan is not billed per token, and the real
+# ceiling is its five-hour and weekly usage windows, which show up in the ledger
+# as plan-limited exits. The cap still stops a runaway fleet either way.
 monthly_cap_usd = 200
 
-# One firing must not be able to eat the month.
+# One firing must not be able to eat the month. Seconds, enforced by the
+# wrapper's watchdog; dollars, passed to the runner as --max-budget-usd.
 max_firing_seconds = 1500
+max_firing_usd = 5
 
 # Abort the firing if the indexer trails the node by more than this. NOT a check
 # on block production: create_empty_blocks = false means a static height is the

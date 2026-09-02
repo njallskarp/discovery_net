@@ -120,7 +120,14 @@ def month_to_date_usd(state_root):
     )
 
 
-FIRING_EXITS = ("completed", "killed", "failed")
+FIRING_EXITS = ("completed", "killed", "failed", "plan-limited")
+
+# The messages Claude Code prints when a subscription window is exhausted
+# (docs: costs -> "When a developer asks about a limit"). Matched against the
+# run's final text; a limit hit mid-firing is a plan-limited exit, not a fault.
+PLAN_LIMIT_RE = re.compile(
+    r"hit your (session|weekly|[a-z]+ ?[a-z]*) (usage )?limit", re.IGNORECASE
+)
 
 
 def last_run(state_dir, exits=None):
@@ -436,6 +443,11 @@ def main(argv):
 
     elif cmd == "final-text":
         print(final_text(argv[2], argv[3]))
+
+    elif cmd == "plan-limited":
+        # plan-limited <runner> <raw>: exit 0 when the run ended on a plan window.
+        text = final_text(argv[2], argv[3])
+        sys.exit(0 if PLAN_LIMIT_RE.search(text or "") else 1)
 
     elif cmd == "parse-usage":
         print(json.dumps(parse_usage(argv[2], argv[3], load_config(argv[4]))))

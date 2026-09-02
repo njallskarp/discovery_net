@@ -10,7 +10,7 @@ reconfigure anything.
    - `${DN_REPO}/.agents/skills/math-review/SKILL.md`
 
    Read them by path. Do not report what your runner lists as loaded skills:
-   Claude Code under `--bare` auto-loads none and Codex scans `.agents/skills/`
+   the Claude runner disables skill invocation and Codex scans `.agents/skills/`
    directly, so a count of loaded skills says which runner you are, not whether
    the tree is intact. The prompts name skills by path for exactly this reason.
 

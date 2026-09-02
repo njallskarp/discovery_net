@@ -4,35 +4,59 @@
 set -euo pipefail
 PROMPT_FILE="$1"; REPO_ROOT="$2"; RUN_DIR="$3"
 
-# --bare skips auto-discovery of hooks, custom commands, subagents, plugins,
-# MCP servers, auto memory, CLAUDE.md -- AND skills.  --add-dir is the
-# documented exception: bare mode still loads skills from <dir>/.claude/skills/.
-# The pair is what makes an unattended run both reproducible and skill-aware.
+# Two ways to pay for a firing, chosen by DN_AUTH in the agent binding.
 #
-# Why bare matters here: without it, a -p session runs the hooks in the repo's
-# .claude/settings.json and connects the servers in its .mcp.json, with no trust
-# dialog and no approval prompt.  This repo has several contributors; an
-# unattended agent holding a signing key should not execute whatever lands in it.
+#   subscription (default)  plain `claude -p`, authenticated by a one-year
+#                           CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`.
+#                           Draws on a Pro/Max/Team/Enterprise plan's five-hour
+#                           and weekly windows. total_cost_usd in the run record
+#                           is a client-side estimate, not a bill.
+#   api                     `claude --bare -p` with ANTHROPIC_API_KEY. Bills per
+#                           token to a Console account.
 #
-# Cost of bare: it never reads OAuth credentials or the keychain, so it does NOT
-# use a Claude subscription.  ANTHROPIC_API_KEY must be set and the run bills as
-# API usage.  See ../README.md and the plan's budget section.
-: "${ANTHROPIC_API_KEY:?--bare does not use subscription login; set ANTHROPIC_API_KEY}"
+# Why the switch exists: --bare "never reads OAuth credentials or the system
+# keychain" and "does not read CLAUDE_CODE_OAUTH_TOKEN" (docs: headless,
+# authentication). So bare, and only bare, is what forced API billing. Dropping
+# it costs the isolation bare provided -- a non-bare -p session "runs the hooks
+# in a project's .claude/settings.json and connects the servers in its
+# .mcp.json, even in a folder you've never trusted" -- which the flags below
+# re-create one at a time. What non-bare still loads that bare did not: the
+# agent ACCOUNT's own ~/.claude settings and CLAUDE.md. Under the unit the
+# agents user has none; on a laptop those are the operator's own.
+DN_AUTH="${DN_AUTH:-subscription}"
+AUTH_ARGS=()
+case "$DN_AUTH" in
+  subscription)
+    : "${CLAUDE_CODE_OAUTH_TOKEN:?DN_AUTH=subscription needs CLAUDE_CODE_OAUTH_TOKEN (from: claude setup-token)}"
+    # Precedence puts an API key ABOVE the token, and in -p mode "the key is
+    # always used when present". A stray key in the environment would bill the
+    # API while the ledger said subscription. Remove the possibility.
+    unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
+    AUTH_ARGS=(
+      --setting-sources user       # no project/local settings: no repo hooks, no repo permission rules
+      --strict-mcp-config          # with no --mcp-config: no MCP servers from any file
+      --disable-slash-commands     # no skills or commands; the prompts read SKILL.md by path
+      --no-session-persistence     # no transcript written under the agent account
+    )
+    ;;
+  api)
+    : "${ANTHROPIC_API_KEY:?DN_AUTH=api needs ANTHROPIC_API_KEY}"
+    unset CLAUDE_CODE_OAUTH_TOKEN
+    AUTH_ARGS=(--bare)
+    ;;
+  *) echo "runners/claude.sh: DN_AUTH must be 'subscription' or 'api', not '$DN_AUTH'" >&2; exit 2 ;;
+esac
 
 cd "$RUN_DIR"
 
-# Skills do NOT auto-load under --bare, and --add-dir is not an exception to
-# that: its own help text says "--add-dir (CLAUDE.md dirs)". Measured three ways
-# against this CLI version, all reporting zero skills -- --add-dir alone, a
-# .claude/skills symlink in the working directory, and --setting-sources project.
-#
-# This is not a defect to work around. The prompts name each skill by PATH
-# (prompts/research.md: "Apply the math-research skill at
-# ${DN_REPO}/.agents/skills/math-research/SKILL.md ... in full"), so the agent
-# reads them as files. That is what makes one skill tree serve both runners, and
-# it is why bare mode costs us nothing here. Do not trade --bare away for skill
-# auto-loading: bare is what stops an unattended agent holding a signing key from
-# running whatever hooks land in the repo's .claude/settings.json.
+# Skills are never relied on as auto-loaded. The prompts name each skill by PATH
+# ("Apply the math-research skill at ${DN_REPO}/.agents/skills/.../SKILL.md ...
+# in full"), so the agent reads them as files, and that is what lets one tree
+# serve both runners. In subscription mode --disable-slash-commands turns skill
+# invocation off outright, which also keeps a skill's allowed-tools frontmatter
+# from widening this allow list. (The docs now say bare mode DOES load skills
+# from an --add-dir directory's .claude/skills/, which contradicts the earlier
+# zero-skills measurement here; it no longer matters either way.)
 
 # --permission-mode dontAsk denies anything outside the allow rules and the
 # read-only command set -- the locked-down posture for unattended runs.
@@ -151,11 +175,19 @@ DISALLOWED="Read($DN_KEY_PATH),Edit($DN_KEY_PATH),Write($DN_KEY_PATH)"
 MODEL_ARGS=()
 [ -n "${DN_MODEL:-}" ] && MODEL_ARGS=(--model "$DN_MODEL")
 
-exec claude --bare -p "$(cat "$PROMPT_FILE")" \
+# A per-firing dollar cap, on top of --max-turns and the wrapper's deadline. An
+# estimate under a subscription, a bill under the API; a runaway firing stops
+# at it either way. run.sh exports it from budget.max_firing_usd.
+BUDGET_ARGS=()
+[ -n "${DN_MAX_FIRING_USD:-}" ] && BUDGET_ARGS=(--max-budget-usd "$DN_MAX_FIRING_USD")
+
+exec claude -p "$(cat "$PROMPT_FILE")" \
+  ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} \
   --add-dir "$REPO_ROOT" \
   --permission-mode dontAsk \
   --allowedTools "$ALLOWED" \
   --disallowedTools "$DISALLOWED" \
   ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
+  ${BUDGET_ARGS[@]+"${BUDGET_ARGS[@]}"} \
   --max-turns "${DN_MAX_TURNS:-60}" \
   --output-format json

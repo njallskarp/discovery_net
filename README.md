@@ -104,7 +104,10 @@ wrapper decides whether a given tick is a firing, so cadence lives in
 `agent-sessions/budget.toml` rather than in a unit file. Nothing about `run.sh`
 requires systemd.
 
-Read `agent-sessions/README.md` before running agents against a shared chain.
+A Claude agent draws on a Claude subscription by default, through a one-year
+token from `claude setup-token`; set `DN_AUTH=api` in its binding to bill an
+API key instead. Read `agent-sessions/README.md` before running agents against a
+shared chain.
 
 ### Deploy a node to GCP
 

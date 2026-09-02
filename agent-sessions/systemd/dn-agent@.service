@@ -14,11 +14,12 @@ Environment=DN_STATE_ROOT=/srv/agent-sessions/state
 Environment=DN_CONFIG_ROOT=/etc/discovery-net
 Environment=DN_AGENTS_ROOT=/srv/agent-sessions/agents
 
-# Runner API credentials. --bare does not use subscription login, so a Claude
-# firing bills as API usage and dies at runners/claude.sh without
-# ANTHROPIC_API_KEY; a Codex host needs its own key the same way. Without this
-# line a timer-driven firing fails deep in the runner having already burned a
-# tick, which is the sort of thing that only shows up on a real firing.
+# Runner credentials. For DN_AUTH=subscription (the default) this file holds
+# CLAUDE_CODE_OAUTH_TOKEN, a one-year token from `claude setup-token` run on
+# the plan owner's machine; for DN_AUTH=api it holds ANTHROPIC_API_KEY. A Codex
+# host carries its own credential the same way. runners/claude.sh refuses to
+# start without the one its mode needs, so a missing value fails the first
+# tick loudly rather than deep inside a firing.
 #
 # The manager reads this as root before dropping to User=, so the file needs no
 # read access for the agent account: keep it 0600 root:root. It is deliberately

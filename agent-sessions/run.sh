@@ -182,6 +182,7 @@ export DN_NODE_HEIGHT="$NODE_H"
 # enforces, rather than a figure typed into the template that drifts.
 MAX_SECONDS="$($DN config "$CONFIG" budget.max_firing_seconds)" || exit 2
 export DN_MAX_MINUTES="$(( MAX_SECONDS / 60 ))"
+export DN_MAX_FIRING_USD="$($DN config "$CONFIG" budget.max_firing_usd "")"
 DN_REPO="${DN_REPO:-$REPO_ROOT}" $DN render "$HERE/prompts/$DN_ROLE.md" "$PROMPT"
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -223,6 +224,11 @@ TOKS="$(printf '%s' "$USAGE" | python3 -c 'import json,sys;print(json.dumps(json
 # deadline".
 if [ -e "$DEADLINE_HIT" ]; then
   finish "killed" "$COST" "$TOKS" "$IDX_H" "stopped at the ${MAX_SECONDS}s deadline (runner exit $RC)"
+elif $DN plan-limited "$DN_RUNNER" "$RAW"; then
+  # A subscription's five-hour or weekly window, not a fault. The cadence gate
+  # counts it as a firing, so the next attempt is an interval away, by which
+  # time the window has usually reset.
+  finish "plan-limited" "$COST" "$TOKS" "$IDX_H" "hit the plan's usage window (runner exit $RC)"
 elif [ "$RC" -eq 0 ]; then
   finish "completed" "$COST" "$TOKS" "$IDX_H" ""
 else

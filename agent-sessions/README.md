@@ -212,20 +212,32 @@ mode: the prompts already tell an agent to leave a commit local when `push` has 
 credentials, say so in its report, and carry on rather than spend the firing
 debugging authentication.
 
-## Runner credentials
+## Runner credentials and billing
 
-`--bare` does not use subscription login, so a Claude firing bills as API usage
-and needs `ANTHROPIC_API_KEY`; without it the runner exits before doing any work.
-This is the one input the bindings deliberately do not carry — a binding is
-gitignored but still a file in the checkout, and a credential does not belong
-there.
+A Claude firing is paid for one of two ways, chosen per agent by `DN_AUTH` in
+its binding:
 
-On a laptop, keep it outside the repo and load it only for the command that needs
-it:
+| `DN_AUTH` | How it runs | Credential | What it costs |
+|---|---|---|---|
+| `subscription` (default) | `claude -p` | `CLAUDE_CODE_OAUTH_TOKEN` | a Pro/Max/Team/Enterprise plan's five-hour and weekly windows |
+| `api` | `claude --bare -p` | `ANTHROPIC_API_KEY` | per token, to a Console account |
+
+The distinction is entirely `--bare`: bare mode "never reads OAuth credentials
+or the system keychain" and "does not read `CLAUDE_CODE_OAUTH_TOKEN`". Plain
+`-p` falls through to the subscription login like an interactive session does.
+Codex has no bare mode, which is why it never needed a key.
+
+**Minting the token.** On the plan owner's own machine, logged in:
+
+```bash
+claude setup-token        # browser approval; prints a one-year token, saves nothing
+```
+
+Put it in the environment the wrapper runs under and nowhere in the repo:
 
 ```bash
 mkdir -p ~/.config/discovery-net && chmod 700 ~/.config/discovery-net
-# write ANTHROPIC_API_KEY=... to ~/.config/discovery-net/agent.env, mode 600
+# write CLAUDE_CODE_OAUTH_TOKEN=... to ~/.config/discovery-net/agent.env, mode 600
 set -a; . ~/.config/discovery-net/agent.env; set +a
 agent-sessions/run.sh <agent>
 ```
@@ -236,12 +248,44 @@ the agent account needs no read access at all: keep it `0600 root:root`, and kee
 it out of `/srv/agent-sessions`, which is in `ReadWritePaths`. The unit names it
 without a leading `-`, so a missing file fails the unit at start where
 `systemctl status` shows it, rather than deep inside a firing that has already
-burned a tick.
+burned a tick. `runners/claude.sh` also refuses to start without the credential
+its mode needs, and in subscription mode it unsets `ANTHROPIC_API_KEY`, because
+precedence puts a key above the token and a stray key would bill the API while
+the ledger said otherwise.
 
-`--dry-run` is the only path that needs no key: it stops before the runner.
-`conformance/run-smoke.sh` hands the prompt to the real runner, so it needs the
-key and it costs a real (small) amount — "read-only" there means it submits no
-contribution, not that it spends nothing.
+**Whose plan.** The token is one person's login for a year. Every agent using it
+draws on that person's windows, alongside their own interactive use, and the
+token "can only make model requests". Three agents on one Max plan share one
+weekly window; Team and Enterprise seats keep the accounting per member. Decide
+this before minting, and record the answer next to the token.
+
+**What the ledger means.** `total_cost_usd` in `runs.jsonl` is Claude Code's
+client-side estimate at list price whatever the credential. Under `api` it is
+what the Console bills; under `subscription` it is what those tokens *would*
+have cost, and the real ceiling is the plan window. A firing that hits the
+window records `plan-limited` rather than `failed`. `monthly_cap_usd` still
+applies to the estimate, so a runaway fleet stops either way, and
+`max_firing_usd` is passed to the runner as `--max-budget-usd` so one firing
+cannot run away on its own.
+
+**What bare gave, and what replaces it.** Without `--bare`, a `-p` session
+"runs the hooks in a project's `.claude/settings.json` and connects the servers
+in its `.mcp.json`, even in a folder you've never trusted". Subscription mode
+therefore passes `--setting-sources user` (no project or local settings, so no
+repo hooks and no repo permission rules), `--strict-mcp-config` with no
+`--mcp-config` (no MCP servers from any file), `--disable-slash-commands` (no
+skills or commands; the prompts read `SKILL.md` by path, and a skill's
+`allowed-tools` frontmatter can no longer widen the allow list), and
+`--no-session-persistence` (no transcript under the agent account). What still
+loads that bare skipped: the agent *account's* own `~/.claude` settings and
+`CLAUDE.md`. Under the unit the `agents` user has none. On a laptop those are
+the operator's own, which is one more reason a laptop is a trusted-developer
+mode and not a deployment.
+
+`--dry-run` is the only path that needs no credential: it stops before the
+runner. `conformance/run-smoke.sh` hands the prompt to the real runner, so it
+needs the credential and draws on the plan or the key — "read-only" there means
+it submits no contribution, not that it spends nothing.
 
 ## Run record
 
