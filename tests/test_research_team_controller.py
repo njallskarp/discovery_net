@@ -7,12 +7,7 @@ from pathlib import Path
 
 
 def _skill_root() -> Path:
-    return (
-        Path(__file__).resolve().parents[1]
-        / ".agents"
-        / "skills"
-        / "orchestrate-research-team"
-    )
+    return Path(__file__).resolve().parents[1] / ".agents" / "skills" / "orchestrate-research-team"
 
 
 def _write_prompt(path: Path, *, effort: str = "xhigh", body: str = "Work autonomously.") -> None:
@@ -53,7 +48,7 @@ def _controller_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path]
     fake_systemctl.write_text(
         "#!/usr/bin/env bash\n"
         f"printf '%s\\n' \"$*\" >> {systemctl_log}\n"
-        "if [[ \"${1:-}\" == is-active ]]; then echo inactive; fi\n"
+        'if [[ "${1:-}" == is-active ]]; then echo inactive; fi\n'
     )
     fake_systemctl.chmod(0o755)
 
@@ -73,9 +68,7 @@ def _controller_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path]
             "DISCOVERY_RESEARCH_TEAM_TESTING": "1",
             "DISCOVERY_RESEARCH_TEAM_ROOT": str(state_root),
             "DISCOVERY_RESEARCH_TEAM_CONFIG": str(config_file),
-            "DISCOVERY_RESEARCH_TEAM_COMMAND": str(
-                _skill_root() / "scripts" / "research-team"
-            ),
+            "DISCOVERY_RESEARCH_TEAM_COMMAND": str(_skill_root() / "scripts" / "research-team"),
             "DISCOVERY_RESEARCH_TEAM_UNIT": str(unit_file),
             "DISCOVERY_RESEARCH_TEAM_OPERATOR": os.environ.get("USER", "nobody"),
         }
@@ -212,7 +205,7 @@ def test_runner_applies_explicit_metadata_and_archives_a_oneshot_report(
         "#!/usr/bin/env bash\n"
         f"printf '%s\\n' \"$*\" > {argument_log}\n"
         "while [[ $# -gt 0 ]]; do\n"
-        "  if [[ \"$1\" == -o ]]; then shift; printf 'completed\\n' > \"$1\"; fi\n"
+        '  if [[ "$1" == -o ]]; then shift; printf \'completed\\n\' > "$1"; fi\n'
         "  shift\n"
         "done\n"
     )
