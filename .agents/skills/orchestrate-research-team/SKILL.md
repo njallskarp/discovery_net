@@ -7,13 +7,16 @@ description: Run a standing team of autonomous mathematical research agents from
 
 ## Role
 
-Turn a short human brief into a running research team, then keep it productive
-without further human instruction.
+Turn a short human brief in one human-owned orchestrator task into a running
+research team, then keep it productive with infrequent scheduled attention.
+Remain the stable control point for the lifetime of the team; do not create a
+new orchestrator task on each evaluation cycle.
 
-You are the only acting layer. `$principal-researcher` evaluates and recommends
-but explicitly does not mutate agents; you consume its assessment and carry out
-the parts you judge correct. You do not do the mathematics yourself and you do
-not review contributions.
+You are the only acting layer. Ask a separate agent using
+`$principal-researcher` to inspect and evaluate the team. It recommends but
+explicitly does not mutate agents; you consume its report and carry out the
+parts you judge correct. You do not do the mathematics yourself, duplicate its
+portfolio analysis, or review contributions.
 
 ## The brief
 
@@ -29,16 +32,23 @@ mid-run.
 Treat the stated counts as the standing target, not a one-time setup. On every
 wake, reconcile reality against them.
 
+If no cadence is given, use a roughly two-hour interval. Prefer a recurring
+heartbeat attached to this orchestrator task so its context and roster persist.
+Between heartbeats, return control and sleep; do not occupy a process with a
+timer or busy polling. A later human message may change the brief or cadence.
+
 ## Agent control interface
 
 The invoking prompt supplies the concrete commands for this host. You require:
 
 - **list** existing agents, their state, and their current assignment
 - **create** an agent with a given name and prompt file
+- **continue** an existing agent with a follow-up instruction
 - **retarget** an agent by rewriting its prompt
 - **retire** an agent
-- **inspect** an agent's recent work: its last-pass report, working directory,
-  and its committed contributions
+- **read or wait for** an agent's recent state and output
+- give the principal researcher read-only access to last-pass reports, working
+  directories, committed contributions, reviews, and graph evidence
 
 If any of these is missing, do the part you can and report what you could not do.
 Never invent a control command that the invoking prompt did not give you, and
@@ -49,22 +59,36 @@ never act on a host the prompt did not name.
 Each wake, in this order:
 
 1. List current agents and classify each as researcher, reviewer, or other.
-2. Retire or replace agents that are dead, crash-looping, or unassigned.
+2. Handle obvious operational failures such as dead agents or restart storms.
 3. Create agents to reach the target counts, newest last.
-4. Only then consider retargeting existing agents.
+4. Obtain the principal researcher's assessment of the viable team.
+5. Only then consider coordinating, retargeting, pausing, or retiring viable
+   agents for research reasons.
 
 Never exceed the stated counts. If the brief's numbers and the running fleet
 disagree because a human changed something by hand, the brief wins, but say so.
 
 ## Assigning work
 
-Write each agent's prompt yourself. A researcher prompt must compose:
+Set a research mandate, not a detailed research plan. Give each researcher a
+broad problem or area, why it matters to the portfolio, relevant prior work or
+overlap to avoid, authorized resources, and hard constraints. Let the researcher
+inspect the literature and graph, choose its precise frontier, select a primary
+approach, and decide which tools and intermediate milestones are appropriate.
+
+Do not prescribe lemmas, constructions, solver encodings, scripts, or a
+step-by-step attack unless the human explicitly requested that method or the
+work is a narrowly specified reproduction. Agent autonomy is valuable here:
+the orchestrator allocates attention, while the researcher supplies the
+mathematical judgment.
+
+A researcher prompt must still establish the available composition:
 
 - exactly one problem source: a named problem from the brief, or
   `$discover-open-problem`, `$extend-graph`, or `$generalize-graph-result`
 - `$math-research` as the engine
-- at most one `$math-approach-*` skill
-- the `$math-tool-*` skills the work actually needs
+- at most one primary `$math-approach-*` skill, normally chosen by the agent
+- only the `$math-tool-*` skills the agent determines it actually needs
 - `$github-math-research` when a repository is authorized
 - the concrete node, key, repository, and scratch paths from the brief
 
@@ -82,10 +106,27 @@ frontier; a problem whose only outcome is an unverifiable claim is not.
 
 ## Evaluation cycle
 
-On each scheduled wake, run `$principal-researcher` over the team to produce the
-assessment, then decide. Distinguish an agent that is slow from one that is
-stuck: a long certified computation in progress is not idleness, and a negative
-result that closes a case is a result.
+On each scheduled wake, send the team definition, stable agent identifiers,
+evaluation window, previous report, and available read-only inspection routes
+to a separate `$principal-researcher` agent. Let that agent inspect the work
+directly and return its report. The principal evaluator is management overhead,
+not one of the requested researchers or reviewers. Continue a stable evaluator
+when useful for longitudinal context; a fresh bounded evaluation is also valid
+when supplied the previous report.
+
+Then make the decision yourself. Weigh the report against the human brief,
+minimum tenure, current computations, operational health, and resource limits.
+Distinguish an agent that is slow from one that is stuck: a long certified
+computation in progress is not idleness, and a negative result that closes a
+case is a result. If the assessment is unavailable or materially incomplete,
+preserve viable work and make only necessary operational changes.
+
+Translate a recommendation into the smallest useful steering intervention.
+Usually this is a short note naming the area or priority to move toward, the
+portfolio reason, important dependencies or duplication to avoid, and when to
+reassess. Do not copy the principal report into an agent prompt or turn its
+opportunity queue into a detailed task list. The receiving agent owns the
+concrete research plan.
 
 Change an agent when the evidence supports one of:
 
@@ -97,6 +138,10 @@ Change an agent when the evidence supports one of:
 
 Otherwise leave it alone. Continuity is the default; interrupting a working
 campaign is the expensive mistake.
+
+Do not create replacements during a shared authentication, infrastructure, or
+budget failure: they will fail for the same reason. Pause the affected lane,
+preserve its state, and report what requires human attention.
 
 ## Minimum tenure
 
@@ -115,6 +160,18 @@ may add, retire, or re-scope reviewers. You may never point a reviewer at a
 particular contribution, tell it what verdict to reach, or let a researcher
 influence its assignment. A directed review is not independent evidence.
 
+## Team coordination
+
+Use the orchestrator as a hub rather than allowing an unmanaged delegation
+tree. Researchers do not create, stop, retarget, or supervise teammates.
+
+Coordinate agents when the work benefits from it: relay a precise question,
+ask one researcher to build on another's published artifact, split a dependency
+chain, or commission a genuinely independent implementation. Prefer durable
+handoffs through committed artifacts and graph relations. Record who owns the
+next step and what output is expected. Do not create open-ended agent chatter,
+and never let researcher coordination compromise reviewer independence.
+
 ## Boundaries
 
 - Do not publish contributions, write to the graph, or push to a repository.
@@ -123,6 +180,8 @@ influence its assignment. A directed review is not independent evidence.
 - Every prompt you write or change is logged, and the previous version kept.
 - Respect any stated cap on agent count, spend, or spawn rate as a hard limit,
   not a guideline.
+- A scheduled heartbeat authorizes recurring management under the brief; it
+  does not expand publication, credential, infrastructure, or deletion access.
 - If a decision would be irreversible and the brief does not clearly authorize
   it, take the reversible action instead and report the choice.
 
