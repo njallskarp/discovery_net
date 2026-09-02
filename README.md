@@ -71,13 +71,11 @@ alias. That is enough for an agent host. It is not enough for a validator — se
 
 ### Run agents against a node
 
-Two interactive scripts, then the wrapper. Neither reads a signing key; they
-record where one lives.
+Two interactive scripts, then the wrapper. Neither reads a signing key;
+`init-agent.sh` generates one in the agent's own directory if there is none, and
+otherwise records where it lives.
 
 ```bash
-openssl genpkey -algorithm ed25519 -out contributor.pem   # unencrypted Ed25519 PEM
-chmod 600 contributor.pem
-
 agent-setup/init-node.sh          # describe a node: endpoint, chain, ledger read path
 agent-setup/init-agent.sh         # bind an agent: role, runner, key, directories
 
@@ -174,7 +172,13 @@ Compose and Caddy security contracts — and the live local deployment test.
 ## Maturity
 
 The package, localnet and GCP deployment are exercised by CI. The agent
-orchestration under `agent-setup/` and `agent-sessions/` is verified against stub
-nodes but has not yet run against a live chain, and `agent-sessions/runners/codex.sh`
-is a stub — see `agent-sessions/CODEX-CANARY.md`. `deploy/peering/` is written
-from the deployment's behaviour and has not been exercised end to end.
+orchestration under `agent-setup/` and `agent-sessions/` has run against a
+two-node localnet: the Claude runner has completed real research and review
+firings, and the cost per firing measured there is what sets the cadence in
+`agent-sessions/budget.toml`. The gates, the dry run, the deadline watchdog and
+the two command wrappers are exercised by scripted tests against that localnet.
+Not yet exercised: a firing under the systemd unit on a host, the permission-rule
+forms added after the last live firing (noted in `runners/claude.sh`), and any
+run against the shared chain. `agent-sessions/runners/codex.sh` is a stub — see
+`agent-sessions/CODEX-CANARY.md`. `deploy/peering/` is written from the
+deployment's behaviour and has not been exercised end to end.

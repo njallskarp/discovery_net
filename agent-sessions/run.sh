@@ -178,6 +178,10 @@ export DN_COMPUTE="${DN_COMPUTE_BIN:-$REPO_ROOT/agent-sessions/tools/dn-compute}
 export DN_SUBMIT="${DN_SUBMIT_BIN:-$REPO_ROOT/agent-sessions/tools/dn-submit}"
 export DN_NOTES="${DN_NOTES_BIN:-$REPO_ROOT/agent-sessions/tools/dn-notes}"
 export DN_NODE_HEIGHT="$NODE_H"
+# The prompt tells the agent how long it has, from the same number the watchdog
+# enforces, rather than a figure typed into the template that drifts.
+MAX_SECONDS="$($DN config "$CONFIG" budget.max_firing_seconds)" || exit 2
+export DN_MAX_MINUTES="$(( MAX_SECONDS / 60 ))"
 DN_REPO="${DN_REPO:-$REPO_ROOT}" $DN render "$HERE/prompts/$DN_ROLE.md" "$PROMPT"
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -185,7 +189,6 @@ if [ "$DRY_RUN" -eq 1 ]; then
   exit 0
 fi
 
-MAX_SECONDS="$($DN config "$CONFIG" budget.max_firing_seconds 1500)"
 RAW="$RUN_DIR/runner.out"
 
 # SIGINT first: Claude Code ends the turn on INT and abandons it on TERM, so the

@@ -18,9 +18,9 @@ check exercises the same assembly a real firing uses.
 
 ## The prompt
 
-`smoke-prompt.md`, rendered against the binding. It asks the runner to list its
-skills, read `/status`, read `indexedHeight`, report the lag, append one worklog
-line, and finish with a fixed summary block:
+`smoke-prompt.md`, rendered against the binding. It asks the runner to read the
+three `SKILL.md` files by path, read the captured `/status`, read `indexedHeight`,
+report the lag, append one worklog line, and finish with a fixed summary block:
 
 ```
 skills=<N>

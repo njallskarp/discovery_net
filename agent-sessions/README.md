@@ -14,8 +14,9 @@ operator lives in a binding file under `bindings/`.
 | Skills | `.agents/skills/` (Codex) + `.claude/skills/` symlinks (Claude Code) | nobody — one source of truth |
 | Prompt templates | `agent-sessions/prompts/` | role: research or review |
 | Setup | `agent-setup/` | nobody — it writes the two below |
-| Node bindings | `agent-sessions/bindings/nodes/*.env` | **the machine and its node** |
-| Agent bindings | `agent-sessions/bindings/agents/*.env` | **the agent: role, runner, key** |
+| Node bindings | `~/.config/discovery-net/bindings/nodes/*.env` | **the machine and its node** |
+| Agent bindings | `~/.config/discovery-net/bindings/agents/*.env` | **the agent: role, runner, key** |
+| Tools | `agent-sessions/tools/` | nobody — `dn-submit`, `dn-notes`, `dn-compute` |
 | Runners | `agent-sessions/runners/*.sh` | runner: claude or codex |
 | Budget and cadence | `agent-sessions/budget.toml` | operator |
 | Wrapper | `agent-sessions/run.sh` + `lib/dnagent.py` | nobody |
@@ -61,10 +62,14 @@ binding. The wrapper substitutes only the `DN_*` names, so a `$` inside a code
 fence in the prompt survives:
 
 ```bash
-set -a; . "agent-sessions/bindings/$BINDING.env"; set +a
-envsubst "$(printf '${%s} ' $(grep -o 'DN_[A-Z_]*' agent-sessions/prompts/$DN_ROLE.md | sort -u))" \
-  < "agent-sessions/prompts/$DN_ROLE.md" > "$RUN_DIR/prompt.md"
+set -a; . ~/.config/discovery-net/bindings/agents/$AGENT.env; . ~/.config/discovery-net/bindings/nodes/$DN_NODE_BINDING.env; set +a
+python3 agent-sessions/lib/dnagent.py render agent-sessions/prompts/$DN_ROLE.md "$RUN_DIR/prompt.md"
 ```
+
+The rendered prompt never contains the key path. The agent submits through
+`tools/dn-submit`, which joins the node's submit command to the agent's key
+itself and refuses `--private-key`, `--rpc-url`, `--body`, and any body file that
+is or contains a key.
 
 Two researchers on the same box differ only by their binding file. Nothing about
 a node, a path, or an operator appears in a template.
@@ -89,13 +94,14 @@ The gates, in order, each exiting cleanly with a recorded reason:
 
 | Gate | Skips the firing when |
 |---|---|
-| cadence | the current mode's interval has not elapsed since the last run |
+| cadence | the current mode's interval has not elapsed since the last **firing** (a skipped tick does not reset it) |
 | budget | month-to-date spend has reached `monthly_cap_usd` |
 | preflight | node unreachable, wrong chain, catching up, or indexer lag over `max_indexer_lag` |
-| new work | review role only: `indexedHeight` has not moved since the last firing |
+| new work | review role only: no contribution above the last completed pass's height is missing from the review ledger, the reviewer's own submissions excluded |
 
-All four are bash and JSON. A skipped tick costs nothing, which is the only
-reason a reviewer can afford to tick every fifteen minutes.
+All four are bash, JSON and a local SQLite read. A skipped tick costs nothing and
+writes a row the cadence gate ignores, so the timer can tick far more often than
+any interval. `--dry-run` writes nothing at all.
 
 `agentctl status` prints the table; `agentctl watch` refreshes it; `agentctl runs`
 tails the ledger.
@@ -104,10 +110,11 @@ tails the ledger.
 
 ```bash
 ./localnet/localnet.sh bootstrap                 # a one-validator chain on this machine
-openssl genpkey -algorithm ed25519 -out contributor.pem && chmod 600 contributor.pem
 
 agent-setup/init-node.sh                         # point it at the localnet's RPC
-agent-setup/init-agent.sh                        # bind an agent to it
+agent-setup/init-agent.sh                        # bind an agent to it; generates its key
+agent-sessions/tools/tests/wrappers.sh           # dn-submit / dn-notes refusals
+agent-sessions/tools/tests/isolation.sh          # the compute sandbox's boundary
 
 agent-sessions/run.sh <agent> --dry-run          # gates + render, spends nothing
 agent-sessions/conformance/run-smoke.sh <agent>  # read-only, proves the runner works
@@ -171,10 +178,16 @@ contributor key belongs to an agent rather than to a node, the node file carries
 time. The key path then exists in exactly one place instead of two that can
 disagree.
 
-Generated bindings are gitignored: they hold absolute paths and the location of a
-signing key, so they describe one machine. The committed `*.env.example` files
-show the shapes — two node shapes, direct read and container read, and two agent
-shapes, researcher and reviewer.
+Generated bindings live outside the checkout, under
+`~/.config/discovery-net/bindings/` (`DN_CONFIG_ROOT/bindings`; `/etc/discovery-net`
+under the unit). They hold absolute paths and the location of a signing key, so
+they describe one machine — and they are sourced and their read command
+`eval`'d by every tick, so they must sit where the agent cannot write, and the
+checkout is in the agent's write scope. `lib/paths.sh` is the one definition of
+the three roots: config (bindings), state (ledgers, per-run dirs) and agents
+(worklogs, keys, notes clones). The committed `*.env.example` files show the
+shapes — two node shapes, direct read and container read, and two agent shapes,
+researcher and reviewer.
 
 ## The notes repo
 
@@ -248,8 +261,28 @@ so the wrapper prices them from `budget.toml`. Whichever runner produced a row,
 the `cost_usd` field must be populated, or the monthly cap only governs half
 the fleet.
 
+## What the allow list is, and is not
+
+The runner's allow list keeps a *cooperative* agent on the rails: it cannot
+`curl`, cannot run bare `python` or bare `git`, cannot submit with a key or to a
+node other than its own, and every one of those refusals is asserted by a test
+under `tools/tests/`. It is not a boundary against an agent that has been
+prompt-injected by something it read off the chain. The boundary against that is
+the operating system: an agent account that owns nothing but its state and agent
+directories, a read-only checkout, tools it cannot rewrite, and — still to do — a
+key it cannot read because a separate signer holds it. The systemd unit is the
+only shape that provides the first three (`ProtectSystem=strict`,
+`ReadWritePaths`, root-owned `*_BIN` overrides). **A writable checkout on a
+laptop is a trusted-developer mode with no boundary at all**, and is fine for
+exactly that.
+
+Two rule forms have been measured against this CLI and two have not; the four
+are listed in `runners/claude.sh`. Until the unmeasured two are, a real firing
+should be watched.
+
 ## Runner status
 
-- `runners/claude.sh` — written against the documented flags; unverified on
-  real hardware until phase 2.
+- `runners/claude.sh` — has completed real research and review firings against a
+  two-node localnet (2026-09-01). The wrappers and rule forms added since have
+  not; see the comments in the file.
 - `runners/codex.sh` — **stub.** See `CODEX-CANARY.md`.

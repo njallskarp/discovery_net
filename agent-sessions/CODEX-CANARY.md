@@ -26,8 +26,10 @@ that came out of the first real Claude firing. Three need judgment rather than
 lookup:
 
 **canary-1, the sandbox level.** `read-only` is the Codex default and is too
-tight — the agent has to append to its worklog, run `discovery-net submit`
-against loopback, and commit in its notes clone. `danger-full-access` is more
+tight — the agent has to append to its worklog, run `tools/dn-submit` (which
+talks to loopback RPC) and `tools/dn-notes` (git in its notes clone), and run
+`tools/dn-compute` (docker). Bare `git` and the bare CLI are not on the Claude
+runner's list any more and should not be on Codex's either. `danger-full-access` is more
 than it needs. Start at `workspace-write`, record exactly what fails, and
 report back the minimum that works. This matters more than it looks: the box
 holds a contributor signing key, and the whole fleet inherits whatever level

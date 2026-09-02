@@ -117,6 +117,22 @@ ALLOWED="$ALLOWED,Bash($DN_NOTES:*)"
 # mode but still the wrong value. Reading a clock grants nothing.
 ALLOWED="$ALLOWED,Bash(date:*)"
 
+# Literature. The skills require candidate-specific literature research before
+# any novelty claim and forbid invented citations, and the research prompt says
+# to find problems in the literature rather than in the graph. Without these
+# the agent can only fabricate that step or discover it cannot do it. WebSearch
+# sends queries to the search provider; WebFetch is scoped to the mathematical
+# sources below and nowhere else, so neither is a channel an attacker can read
+# back from -- and the agent no longer knows the key path in any case.
+# Add a domain here rather than granting WebFetch unscoped.
+ALLOWED="$ALLOWED,WebSearch"
+for domain in arxiv.org mathoverflow.net math.stackexchange.com oeis.org zbmath.org \
+              mathscinet.ams.org ams.org springer.com sciencedirect.com jstor.org \
+              wikipedia.org en.wikipedia.org ncatlab.org mathworld.wolfram.com \
+              leanprover-community.github.io github.com; do
+  ALLOWED="$ALLOWED,WebFetch(domain:$domain)"
+done
+
 # The key is readable by this account -- it has to be, dn-submit runs as it --
 # so the blanket Read grant above would let the agent read it by path. Deny
 # that path explicitly for every file tool. The prompt no longer names the

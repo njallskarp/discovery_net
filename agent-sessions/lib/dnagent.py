@@ -178,10 +178,12 @@ def pending_review(contributions_doc, cursor_height, reviewed_refs, own_signer="
     and the prompt has the reviewer record its own refs in the same ledger for
     the case where the key could not be derived.
     """
-    try:
-        doc = json.loads(contributions_doc) if isinstance(contributions_doc, str) else contributions_doc
-    except ValueError:
-        return None
+    doc = contributions_doc
+    if isinstance(doc, str):
+        try:
+            doc = json.loads(doc)
+        except ValueError:
+            return None
     data = (doc.get("data") or {}) if isinstance(doc, dict) else {}
     items = data.get("contributions")
     if not isinstance(items, list):
