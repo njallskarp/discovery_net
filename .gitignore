@@ -19,7 +19,13 @@ uv.lock
 
 # Terraform runtime data. Commit only *.tfvars.example templates.
 **/.terraform/
+# Both spellings on purpose. `*.tfplan` never matched a file named exactly
+# `tfplan`, and `terraform plan -out=tfplan` is what this repo's own deploy guide
+# tells you to run -- so the plan it produces was untracked and unignored, one
+# `git add` away from being committed. A plan embeds resource values.
 *.tfplan
+tfplan
+tfplan.*
 *.tfstate
 *.tfstate.*
 *.tfvars

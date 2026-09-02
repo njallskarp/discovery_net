@@ -101,16 +101,30 @@ def test_independent_docker_nodes_are_isolated_durable_and_convergent(tmp_path: 
         peer.assert_remote_rpc_is_unreachable(validator.p2p_alias, validator.rpc_port)
         _assert_runtime_boundaries(validator)
 
+        # Restart durability first, while the peer still has a live persistent peer.
+        #
+        # This used to run AFTER bridge.stop(), which made it a race the test did
+        # not control. `stop` is `compose down`, so the peer is recreated on a new
+        # IP; its only configured peer was the bridge, by then dead and no longer
+        # resolvable ("lookup bridge-xxxx on 127.0.0.11:53: server misbehaving");
+        # and the validator address it had learned by PEX lived only in an addrbook
+        # that CometBFT flushes every two minutes. Restart inside that window and
+        # the node came back with an addrbook of size=1 -- itself -- and nothing to
+        # dial. Observed locally: five "Ensure peers" sweeps across 120s with
+        # numOutPeers=0 numInPeers=0. It is not slow, it never reconnects, so no
+        # timeout could have fixed it.
         peer_id = peer.node_id()
+        peer.stop()
+        peer.start()
+        peer.wait_for_peers(frozenset({validator.project, bridge.project}))
+        assert peer.node_id() == peer_id
+        wait_for_matching_entries((validator, peer), minimum_entries=1)
+
+        # Then post-failure consensus: the bridge goes away and the peer keeps
+        # converging over the link it learned by PEX.
         bridge.stop()
         peer.wait_for_peers(frozenset({validator.project}))
         assert validator.rpc.broadcast_commit(signed_transaction(chain_id, "After bridge")) > 0
-        wait_for_matching_entries((validator, peer), minimum_entries=2)
-
-        peer.stop()
-        peer.start()
-        peer.wait_for_peers(frozenset({validator.project}))
-        assert peer.node_id() == peer_id
         wait_for_matching_entries((validator, peer), minimum_entries=2)
 
         invalid = DockerNode(
