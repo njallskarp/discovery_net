@@ -111,9 +111,31 @@ def _contribution_body(arguments: argparse.Namespace) -> str:
     beyond the first are content.
     """
     if arguments.body is not None:
-        return str(arguments.body)
-    text = Path(arguments.body_file).read_text(encoding="utf-8")
-    return text[:-1] if text.endswith("\n") else text
+        body = str(arguments.body)
+    else:
+        text = Path(arguments.body_file).read_text(encoding="utf-8")
+        body = text[:-1] if text.endswith("\n") else text
+    _refuse_private_key_material(body)
+    return body
+
+
+_PRIVATE_KEY_MARKER = "PRIVATE KEY-----"
+
+
+def _refuse_private_key_material(body: str) -> None:
+    """Refuse to publish anything that looks like a PEM private key.
+
+    The chain is append-only and public, so a body that carries a signing key
+    cannot be taken back. --body-file made this a one-flag mistake: an agent
+    holding a key path can be pointed at the key instead of a body, and a human
+    can tab-complete the wrong file. Checking the marker costs nothing and the
+    legitimate use of a PEM private key as a mathematical body is nil.
+    """
+    if _PRIVATE_KEY_MARKER in body:
+        raise ValueError(
+            "refusing to submit: the body contains PEM private key material "
+            f"({_PRIVATE_KEY_MARKER!r}); a private key must never be published"
+        )
 
 
 def _submit(arguments: argparse.Namespace) -> int:

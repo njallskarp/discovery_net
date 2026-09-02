@@ -180,6 +180,46 @@ def test_cli_body_file_keeps_interior_and_extra_trailing_blank_lines(
     assert body == "first\n\nsecond\n"
 
 
+def test_cli_refuses_to_publish_a_private_key_as_the_body(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--body-file pointed at the signing key must fail before anything is signed.
+
+    The chain is append-only, so a published key is unrecoverable. This is the
+    one-flag mistake --body-file made possible, for an agent and a human alike.
+    """
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+
+    with patch("discovery_net.entrypoints.cli.ArtifactSubmitter", return_value=submitter):
+        exit_code = main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.LEMMA,
+                "--title",
+                "Attainment lemma",
+                "--body-file",
+                str(key_path),
+            )
+        )
+
+    assert exit_code == 1
+    assert "private key" in capsys.readouterr().err
+    submitter.submit_contribution.assert_not_called()
+
+
+def test_cli_refuses_private_key_material_passed_inline() -> None:
+    """The same guard covers --body, so the two routes agree on what is publishable."""
+    pem = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIA==\n-----END PRIVATE KEY-----"
+    with pytest.raises(ValueError, match="private key"):
+        _contribution_body(argparse.Namespace(body=pem, body_file=None))
+
+
 def test_cli_rejects_both_body_and_body_file(
     tmp_path: Path,
 ) -> None:
