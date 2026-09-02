@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly AGENT_NAME="${1:?usage: run-agent NAME}"
+readonly STATE_ROOT="${DISCOVERY_RESEARCH_TEAM_ROOT:-/opt/discovery-research-team}"
+readonly CONFIG_FILE="${DISCOVERY_RESEARCH_TEAM_CONFIG:-/etc/discovery-research-team.conf}"
+readonly PROMPT_FILE="$STATE_ROOT/prompts/$AGENT_NAME.md"
+readonly WORK_DIRECTORY="$STATE_ROOT/work/$AGENT_NAME"
+readonly FOLLOWUP_DIRECTORY="$STATE_ROOT/followups/$AGENT_NAME"
+
+prompt_value() {
+  local key="$1"
+  sed -n "s/^$key:[[:space:]]*//p" "$PROMPT_FILE" | head -1
+}
+
+[[ "$AGENT_NAME" =~ ^[a-z][a-z0-9-]{1,30}$ ]]
+[[ -f "$PROMPT_FILE" ]]
+[[ -f "$CONFIG_FILE" ]]
+
+readonly CODEX_BINARY="${DISCOVERY_RESEARCH_TEAM_CODEX:-$(sed -n 's/^CODEX_BINARY=//p' "$CONFIG_FILE")}"
+
+[[ -x "$CODEX_BINARY" ]]
+
+mkdir -p "$WORK_DIRECTORY/tmp" "$WORK_DIRECTORY/reports"
+
+NEXT_MODE=""
+NEXT_RESTART_SECONDS=""
+
+run_pass() {
+  local agent_mode
+  local effort
+  local tier
+  local restart_seconds
+  local permissions
+  local model
+  local followup_file
+  local pass_prompt
+  local timestamp
+  local -a command
+  agent_mode="$(prompt_value mode)"
+  effort="$(prompt_value effort)"
+  tier="$(prompt_value tier)"
+  restart_seconds="$(prompt_value restart-seconds)"
+  permissions="$(prompt_value permissions)"
+  model="$(prompt_value model)"
+  followup_file="$(find "$FOLLOWUP_DIRECTORY" -maxdepth 1 -type f -name 'followup.*' \
+    2>/dev/null | sort | head -1)"
+  pass_prompt="$(cat "$PROMPT_FILE")"
+  if [[ -n "$followup_file" ]]; then
+    pass_prompt+=$'\n\n## Orchestrator follow-up for this pass\n'
+    pass_prompt+="$(cat "$followup_file")"
+  fi
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  command=(
+    "$CODEX_BINARY" exec
+    --cd "$WORK_DIRECTORY"
+    --skip-git-repo-check
+    -c "model_reasoning_effort=$effort"
+    -c "service_tier=$tier"
+    -o "$WORK_DIRECTORY/last-message.md"
+  )
+  if [[ -n "$model" ]]; then
+    command+=(--model "$model")
+  fi
+  if [[ "$permissions" == "unrestricted" ]]; then
+    command+=(--dangerously-bypass-approvals-and-sandbox)
+  else
+    command+=(--full-auto)
+  fi
+
+  echo "starting $AGENT_NAME (effort=$effort, tier=$tier, mode=$agent_mode)"
+  "${command[@]}" "$pass_prompt"
+  if [[ -f "$WORK_DIRECTORY/last-message.md" ]]; then
+    cp "$WORK_DIRECTORY/last-message.md" "$WORK_DIRECTORY/reports/$timestamp.md"
+  fi
+  if [[ -n "$followup_file" ]]; then
+    mv "$followup_file" "$WORK_DIRECTORY/reports/followup-$timestamp.md"
+  fi
+  NEXT_MODE="$agent_mode"
+  NEXT_RESTART_SECONDS="$restart_seconds"
+}
+
+while true; do
+  run_pass
+  [[ "$NEXT_MODE" == "oneshot" ]] && exit 0
+  sleep "$NEXT_RESTART_SECONDS"
+done

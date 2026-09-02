@@ -1,0 +1,348 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 022
+
+readonly SOURCE_DIRECTORY="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+readonly SOURCE_RUNNER="$SOURCE_DIRECTORY/run-agent"
+readonly SOURCE_UNIT="$SOURCE_DIRECTORY/../assets/research-team-agent@.service"
+readonly STATE_ROOT="${DISCOVERY_RESEARCH_TEAM_ROOT:-/opt/discovery-research-team}"
+readonly CONFIG_FILE="${DISCOVERY_RESEARCH_TEAM_CONFIG:-/etc/discovery-research-team.conf}"
+readonly INSTALLED_COMMAND="${DISCOVERY_RESEARCH_TEAM_COMMAND:-/usr/local/sbin/discovery-research-team}"
+readonly UNIT_FILE="${DISCOVERY_RESEARCH_TEAM_UNIT:-/etc/systemd/system/discovery-research-agent@.service}"
+readonly SUDOERS_FILE="${DISCOVERY_RESEARCH_TEAM_SUDOERS:-/etc/sudoers.d/discovery-research-team}"
+readonly CHANGE_LOG="$STATE_ROOT/changes.log"
+readonly TESTING="${DISCOVERY_RESEARCH_TEAM_TESTING:-0}"
+
+fail() {
+  echo "error: $*" >&2
+  exit 1
+}
+
+require_root() {
+  [[ "$TESTING" == "1" || "$(id -u)" -eq 0 ]] || fail "run this command through sudo"
+}
+
+validate_name() {
+  [[ "$1" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || fail "invalid agent name: $1"
+}
+
+prompt_value() {
+  local prompt_file="$1"
+  local key="$2"
+  sed -n "s/^$key:[[:space:]]*//p" "$prompt_file" | head -1
+}
+
+validate_prompt() {
+  local prompt_file="$1"
+  local role
+  local mode
+  local effort
+  local tier
+  local restart_seconds
+  local permissions
+  [[ -f "$prompt_file" ]] || fail "prompt file not found: $prompt_file"
+  role="$(prompt_value "$prompt_file" role)"
+  mode="$(prompt_value "$prompt_file" mode)"
+  effort="$(prompt_value "$prompt_file" effort)"
+  tier="$(prompt_value "$prompt_file" tier)"
+  restart_seconds="$(prompt_value "$prompt_file" restart-seconds)"
+  permissions="$(prompt_value "$prompt_file" permissions)"
+  [[ "$role" =~ ^(researcher|reviewer|principal|orchestrator)$ ]] \
+    || fail "prompt needs role: researcher, reviewer, principal, or orchestrator"
+  [[ "$mode" =~ ^(continuous|oneshot)$ ]] \
+    || fail "prompt needs mode: continuous or oneshot"
+  [[ "$effort" =~ ^(none|minimal|low|medium|high|xhigh|max)$ ]] \
+    || fail "prompt has unsupported effort: $effort"
+  [[ "$tier" =~ ^(default|flex|priority)$ ]] \
+    || fail "prompt needs tier: default, flex, or priority"
+  [[ "$restart_seconds" =~ ^[0-9]+$ ]] || fail "restart-seconds must be an integer"
+  [[ "$permissions" =~ ^(workspace-write|unrestricted)$ ]] \
+    || fail "prompt needs permissions: workspace-write or unrestricted"
+  if [[ "$mode" == "continuous" && "$restart_seconds" -lt 60 ]]; then
+    fail "continuous agents need restart-seconds of at least 60"
+  fi
+  if [[ "$mode" == "oneshot" && "$restart_seconds" -ne 0 ]]; then
+    fail "oneshot agents need restart-seconds: 0"
+  fi
+}
+
+operator_name() {
+  if [[ -n "${DISCOVERY_RESEARCH_TEAM_OPERATOR:-}" ]]; then
+    printf '%s\n' "$DISCOVERY_RESEARCH_TEAM_OPERATOR"
+    return
+  fi
+  [[ -f "$CONFIG_FILE" ]] || fail "controller is not installed"
+  sed -n 's/^OPERATOR=//p' "$CONFIG_FILE"
+}
+
+agent_names() {
+  find "$STATE_ROOT/prompts" -maxdepth 1 -type f -name '*.md' -exec basename {} .md \; \
+    2>/dev/null | sort
+}
+
+service() {
+  printf 'discovery-research-agent@%s.service' "$1"
+}
+
+record_change() {
+  printf '%s %s\n' "$(date -Is)" "$*" >> "$CHANGE_LOG"
+}
+
+install_controller() {
+  local operator="${1:-${SUDO_USER:-}}"
+  local operator_home
+  local codex_binary
+  local temporary_unit
+  local temporary_config
+  local temporary_sudoers
+  require_root
+  [[ -n "$operator" ]] || fail "usage: research-team install OPERATOR"
+  [[ "$operator" =~ ^[a-z_][a-z0-9_-]*$ ]] || fail "invalid operator account: $operator"
+  operator_home="$(getent passwd "$operator" | cut -d: -f6)"
+  [[ -n "$operator_home" ]] || fail "operator account does not exist: $operator"
+  codex_binary="$(sudo -u "$operator" sh -lc 'command -v codex')"
+  [[ -x "$codex_binary" ]] || fail "codex is not available for $operator"
+  [[ -f "$SOURCE_RUNNER" && -f "$SOURCE_UNIT" ]] \
+    || fail "run install from the repository copy of the skill"
+
+  install -d -o root -g root -m 0755 \
+    "$STATE_ROOT/bin" "$STATE_ROOT/prompts" "$STATE_ROOT/prompts.history" \
+    "$STATE_ROOT/prompts.disabled" "$STATE_ROOT/keys" "$STATE_ROOT/followups"
+  install -d -o "$operator" -g "$(id -gn "$operator")" -m 0755 "$STATE_ROOT/work"
+  install -o root -g root -m 0755 "$0" "$INSTALLED_COMMAND"
+  install -o root -g root -m 0755 "$SOURCE_RUNNER" "$STATE_ROOT/bin/run-agent"
+
+  temporary_config="$(mktemp)"
+  printf 'OPERATOR=%s\nCODEX_BINARY=%s\nAGENT_CAP=8\n' \
+    "$operator" "$codex_binary" > "$temporary_config"
+  install -o root -g root -m 0644 "$temporary_config" "$CONFIG_FILE"
+  rm -f "$temporary_config"
+
+  temporary_unit="$(mktemp)"
+  sed \
+    -e "s|__OPERATOR__|$operator|g" \
+    -e "s|__OPERATOR_HOME__|$operator_home|g" \
+    -e "s|__STATE_ROOT__|$STATE_ROOT|g" \
+    "$SOURCE_UNIT" > "$temporary_unit"
+  install -o root -g root -m 0644 "$temporary_unit" "$UNIT_FILE"
+  rm -f "$temporary_unit"
+
+  temporary_sudoers="$(mktemp)"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$operator" "$INSTALLED_COMMAND" \
+    > "$temporary_sudoers"
+  chmod 0440 "$temporary_sudoers"
+  visudo -cf "$temporary_sudoers" >/dev/null
+  install -o root -g root -m 0440 "$temporary_sudoers" "$SUDOERS_FILE"
+  rm -f "$temporary_sudoers"
+  systemctl daemon-reload
+  touch "$CHANGE_LOG"
+  chmod 0644 "$CHANGE_LOG"
+  echo "installed $INSTALLED_COMMAND for operator $operator"
+}
+
+doctor() {
+  local operator
+  operator="$(operator_name)"
+  [[ -x "$INSTALLED_COMMAND" ]] || fail "installed controller is missing"
+  [[ -x "$STATE_ROOT/bin/run-agent" ]] || fail "runner is missing"
+  [[ -f "$UNIT_FILE" ]] || fail "systemd unit is missing"
+  command -v systemctl >/dev/null || fail "systemctl is unavailable"
+  sudo -u "$operator" sh -lc 'command -v codex >/dev/null' \
+    || fail "codex is unavailable for $operator"
+  echo "controller ready for $operator"
+}
+
+new_agent() {
+  local name="$1"
+  local source_prompt="$2"
+  local count
+  local cap=8
+  local operator
+  local role
+  local mode
+  require_root
+  validate_name "$name"
+  validate_prompt "$source_prompt"
+  [[ ! -f "$STATE_ROOT/prompts/$name.md" ]] || fail "agent already exists: $name"
+  if [[ -f "$CONFIG_FILE" ]]; then
+    cap="$(sed -n 's/^AGENT_CAP=//p' "$CONFIG_FILE")"
+    cap="${cap:-8}"
+  fi
+  count="$(agent_names | wc -l)"
+  [[ "$count" -lt "$cap" ]] || fail "agent cap reached: $count/$cap"
+  operator="$(operator_name)"
+  role="$(prompt_value "$source_prompt" role)"
+  mode="$(prompt_value "$source_prompt" mode)"
+  if [[ "$TESTING" == "1" ]]; then
+    install -m 0644 "$source_prompt" "$STATE_ROOT/prompts/$name.md"
+  else
+    install -o root -g root -m 0644 "$source_prompt" "$STATE_ROOT/prompts/$name.md"
+  fi
+  if [[ ! -f "$STATE_ROOT/keys/$name.pem" ]]; then
+    openssl genpkey -algorithm ed25519 -out "$STATE_ROOT/keys/$name.pem" 2>/dev/null
+    if [[ "$TESTING" != "1" ]]; then
+      chown "$operator:$(id -gn "$operator")" "$STATE_ROOT/keys/$name.pem"
+    fi
+    chmod 0600 "$STATE_ROOT/keys/$name.pem"
+  fi
+  if [[ "$TESTING" == "1" ]]; then
+    install -d -m 0755 "$STATE_ROOT/work/$name" "$STATE_ROOT/work/$name/tmp" \
+      "$STATE_ROOT/work/$name/reports" "$STATE_ROOT/followups/$name"
+  else
+    install -d -o "$operator" -g "$(id -gn "$operator")" -m 0755 \
+      "$STATE_ROOT/work/$name" "$STATE_ROOT/work/$name/tmp" \
+      "$STATE_ROOT/work/$name/reports" "$STATE_ROOT/followups/$name"
+  fi
+  systemctl daemon-reload
+  if [[ "$mode" == "continuous" ]]; then
+    systemctl enable --now "$(service "$name")"
+  fi
+  record_change "created $name role=$role mode=$mode from $source_prompt"
+  echo "created $name ($role, $mode)"
+}
+
+start_agent() {
+  local name="$1"
+  require_root
+  validate_name "$name"
+  [[ -f "$STATE_ROOT/prompts/$name.md" ]] || fail "unknown agent: $name"
+  systemctl start "$(service "$name")"
+  record_change "started $name"
+  echo "started $name"
+}
+
+continue_agent() {
+  local name="$1"
+  local source_note="$2"
+  local operator
+  local queued_note
+  require_root
+  validate_name "$name"
+  [[ -f "$STATE_ROOT/prompts/$name.md" ]] || fail "unknown agent: $name"
+  [[ -s "$source_note" ]] || fail "follow-up file is missing or empty: $source_note"
+  [[ "$(wc -c < "$source_note")" -le 65536 ]] || fail "follow-up exceeds 64 KiB"
+  operator="$(operator_name)"
+  queued_note="$(mktemp "$STATE_ROOT/followups/$name/followup.XXXXXX")"
+  install -m 0644 "$source_note" "$queued_note"
+  if [[ "$TESTING" != "1" ]]; then
+    chown "$operator:$(id -gn "$operator")" "$queued_note"
+  fi
+  record_change "queued follow-up for $name from $source_note"
+  echo "queued a one-pass follow-up for $name"
+}
+
+stop_agent() {
+  local name="$1"
+  require_root
+  validate_name "$name"
+  systemctl stop "$(service "$name")"
+  record_change "stopped $name"
+  echo "stopped $name; configuration retained"
+}
+
+retarget_agent() {
+  local name="$1"
+  local source_prompt="$2"
+  local timestamp
+  require_root
+  validate_name "$name"
+  validate_prompt "$source_prompt"
+  [[ -f "$STATE_ROOT/prompts/$name.md" ]] || fail "unknown agent: $name"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  cp "$STATE_ROOT/prompts/$name.md" \
+    "$STATE_ROOT/prompts.history/$name.$timestamp.md"
+  if [[ "$TESTING" == "1" ]]; then
+    install -m 0644 "$source_prompt" "$STATE_ROOT/prompts/$name.md"
+  else
+    install -o root -g root -m 0644 "$source_prompt" "$STATE_ROOT/prompts/$name.md"
+  fi
+  record_change "retargeted $name from $source_prompt; previous=$name.$timestamp.md"
+  echo "retargeted $name; takes effect on its next pass"
+}
+
+retire_agent() {
+  local name="$1"
+  local timestamp
+  require_root
+  validate_name "$name"
+  [[ -f "$STATE_ROOT/prompts/$name.md" ]] || fail "unknown agent: $name"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  systemctl disable --now "$(service "$name")" >/dev/null 2>&1 || true
+  mv "$STATE_ROOT/prompts/$name.md" \
+    "$STATE_ROOT/prompts.disabled/$name.$timestamp.md"
+  record_change "retired $name; prompt=$name.$timestamp.md"
+  echo "retired $name; prompt, key, work, and reports retained"
+}
+
+status_agents() {
+  local name
+  local state
+  local role
+  printf '%-20s %-13s %-12s %s\n' AGENT ROLE STATE PROMPT
+  while IFS= read -r name; do
+    role="$(prompt_value "$STATE_ROOT/prompts/$name.md" role)"
+    state="$(systemctl is-active "$(service "$name")" 2>/dev/null || true)"
+    state="${state:-inactive}"
+    printf '%-20s %-13s %-12s %s\n' \
+      "$name" "$role" "$state" "$STATE_ROOT/prompts/$name.md"
+  done < <(agent_names)
+}
+
+show_prompt() {
+  local name="$1"
+  validate_name "$name"
+  [[ -f "$STATE_ROOT/prompts/$name.md" ]] || fail "unknown agent: $name"
+  cat "$STATE_ROOT/prompts/$name.md"
+}
+
+show_history() {
+  local name="$1"
+  validate_name "$name"
+  find "$STATE_ROOT/prompts.history" "$STATE_ROOT/prompts.disabled" \
+    -maxdepth 1 -type f -name "$name.*.md" -print 2>/dev/null | sort
+}
+
+show_logs() {
+  local name="$1"
+  local since="${2:-3 hours ago}"
+  validate_name "$name"
+  journalctl -u "$(service "$name")" --since "$since" --no-pager
+}
+
+usage() {
+  cat <<'EOF'
+usage: discovery-research-team COMMAND [ARGUMENTS]
+
+install OPERATOR              install the controller on a Linux systemd host
+doctor                        verify the installed controller
+list                          list configured agent names
+status                        show agent roles, states, and prompt paths
+new NAME PROMPT_FILE          create an agent; continuous agents start now
+start NAME                    start a configured or one-shot agent
+continue NAME NOTE_FILE       append a one-pass follow-up on the next pass
+stop NAME                     stop an agent and its complete process group
+retarget NAME PROMPT_FILE     archive and replace the operative prompt
+retire NAME                   stop and disable an agent while preserving state
+prompt NAME                   print the complete operative prompt
+history NAME                  list archived prompt files
+logs NAME [SINCE]             show logs, defaulting to the last three hours
+EOF
+}
+
+case "${1:-help}" in
+  install) install_controller "${2:-}" ;;
+  doctor) doctor ;;
+  list) agent_names ;;
+  status) status_agents ;;
+  new) new_agent "${2:?missing NAME}" "${3:?missing PROMPT_FILE}" ;;
+  start) start_agent "${2:?missing NAME}" ;;
+  continue) continue_agent "${2:?missing NAME}" "${3:?missing NOTE_FILE}" ;;
+  stop) stop_agent "${2:?missing NAME}" ;;
+  retarget) retarget_agent "${2:?missing NAME}" "${3:?missing PROMPT_FILE}" ;;
+  retire) retire_agent "${2:?missing NAME}" ;;
+  prompt) show_prompt "${2:?missing NAME}" ;;
+  history) show_history "${2:?missing NAME}" ;;
+  logs) show_logs "${2:?missing NAME}" "${3:-}" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

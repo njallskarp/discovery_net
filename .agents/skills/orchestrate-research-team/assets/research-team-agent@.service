@@ -1,0 +1,22 @@
+[Unit]
+Description=Discovery research agent %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__OPERATOR__
+Environment=HOME=__OPERATOR_HOME__
+WorkingDirectory=__STATE_ROOT__/work/%i
+ExecStart=__STATE_ROOT__/bin/run-agent %i
+Restart=on-failure
+RestartSec=30
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+MemoryMax=9G
+CPUQuota=200%
+LimitFSIZE=53687091200
+
+[Install]
+WantedBy=multi-user.target

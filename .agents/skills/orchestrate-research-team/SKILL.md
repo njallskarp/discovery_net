@@ -1,6 +1,6 @@
 ---
 name: orchestrate-research-team
-description: Run a standing team of autonomous mathematical research agents from a one-line brief such as "three researchers and one reviewer". Size the fleet, assign each agent a problem and skill composition, re-evaluate on a cadence with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
+description: Run a standing team of autonomous mathematical research agents from a one-line brief such as "three researchers and one reviewer". Bootstrap the bundled Linux controller when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
 ---
 
 # Research Team Orchestrator
@@ -32,6 +32,11 @@ mid-run.
 Treat the stated counts as the standing target, not a one-time setup. On every
 wake, reconcile reality against them.
 
+Record each runtime choice as part of the standing contract, including model,
+reasoning effort, service tier, permissions, and cadence. Apply those choices to
+new and replacement agents as well as the initial roster. Do not rely on a
+runner's implicit defaults for a user-specified setting.
+
 If no cadence is given, use a roughly two-hour interval. Prefer a recurring
 heartbeat attached to this orchestrator task so its context and roster persist.
 Between heartbeats, return control and sleep; do not occupy a process with a
@@ -39,7 +44,14 @@ timer or busy polling. A later human message may change the brief or cadence.
 
 ## Agent control interface
 
-The invoking prompt supplies the concrete commands for this host. You require:
+Prefer an existing control interface supplied by the invoking prompt. Otherwise,
+on a Linux host with systemd and an authenticated Codex CLI, read
+[the bundled controller guide](references/bundled-controller.md) and use the
+controller shipped with this skill. Its privileged installation requires human
+authorization, but after installation the orchestrator handles the roster from
+the short brief without requiring the human to write prompts or commands.
+
+Whichever adapter is selected must provide:
 
 - **list** existing agents, their state, and their current assignment
 - **create** an agent with a given name and prompt file
@@ -51,8 +63,12 @@ The invoking prompt supplies the concrete commands for this host. You require:
   directories, committed contributions, reviews, and graph evidence
 
 If any of these is missing, do the part you can and report what you could not do.
-Never invent a control command that the invoking prompt did not give you, and
-never act on a host the prompt did not name.
+Never invent a control command outside the supplied or bundled adapter, and
+never act on a host the human did not place in scope.
+
+Keep every complete runtime prompt inspectable. With the bundled controller,
+use its `prompt` and `history` commands; never hide the operative prompt only in
+a process argument, journal, or private orchestration summary.
 
 ## Reconcile the fleet
 
