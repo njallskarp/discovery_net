@@ -120,17 +120,84 @@ def month_to_date_usd(state_root):
     )
 
 
-def last_run(state_dir):
+FIRING_EXITS = ("completed", "killed", "failed")
+
+
+def last_run(state_dir, exits=None):
+    """The newest row, or the newest row whose exit is in `exits`.
+
+    Skipped ticks (preflight-abort, no-new-work, budget-paused) are rows too,
+    so callers that mean "the last time a runner ran" pass FIRING_EXITS. The
+    cadence gate used to read the last row of any kind, so a transient node
+    blip silenced a researcher for the whole interval.
+    """
     ledger = Path(state_dir) / "runs.jsonl"
     if not ledger.is_file():
         return None
     lines = [line for line in ledger.read_text().splitlines() if line.strip()]
     for line in reversed(lines):
         try:
-            return json.loads(line)
+            row = json.loads(line)
         except ValueError:
             continue
+        if exits is None or row.get("exit") in exits:
+            return row
     return None
+
+
+def read_reviewed(path):
+    """Every artifactRef the reviewer has recorded, whatever the action."""
+    refs = set()
+    p = Path(path) if path else None
+    if not p or not p.is_file():
+        return refs
+    for line in p.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict) and row.get("ref"):
+            refs.add(str(row["ref"]))
+    return refs
+
+
+def pending_review(contributions_doc, cursor_height, reviewed_refs, own_signer=""):
+    """Contributions above the cursor that the reviewer has not recorded.
+
+    The cursor is the preflight height of the last COMPLETED review firing:
+    everything at or below it was visible during a pass that finished, so an
+    unrecorded ref there was seen and left. Above it, an unrecorded ref is
+    work -- including work a failed or killed firing never got to.
+
+    The reviewer's own submissions land above the cursor too. Two layers keep
+    them from triggering a paid firing to re-read them: anything signed by
+    own_signer (the reviewer's public key, derived by run.sh) is excluded here,
+    and the prompt has the reviewer record its own refs in the same ledger for
+    the case where the key could not be derived.
+    """
+    try:
+        doc = json.loads(contributions_doc) if isinstance(contributions_doc, str) else contributions_doc
+    except ValueError:
+        return None
+    data = (doc.get("data") or {}) if isinstance(doc, dict) else {}
+    items = data.get("contributions")
+    if not isinstance(items, list):
+        return None
+    pending = []
+    for c in items:
+        try:
+            h = int(c.get("height"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        ref = str(c.get("artifactRef", ""))
+        if own_signer and str(c.get("signerPublicKey", "")).lower() == own_signer.lower():
+            continue
+        if h > cursor_height and ref and ref not in reviewed_refs:
+            pending.append(ref)
+    return pending
 
 
 # --------------------------------------------------------------------------
@@ -313,8 +380,16 @@ def main(argv):
     cmd = argv[1]
 
     if cmd == "config":
+        # No default means required: a missing key is a misconfiguration, not a
+        # value. The cadence lookup once fell through to a silent 30m default
+        # and would have run every agent at sprint cadence regardless of mode.
         cfg = load_config(argv[2])
-        print(cfg.get(argv[3], argv[4] if len(argv) > 4 else ""))
+        if argv[3] in cfg:
+            print(cfg[argv[3]])
+        elif len(argv) > 4:
+            print(argv[4])
+        else:
+            raise SystemExit(f"{argv[2]}: missing required key {argv[3]!r}")
 
     elif cmd == "interval-seconds":
         print(interval_seconds(argv[2]))
@@ -327,7 +402,7 @@ def main(argv):
         # this decides whether the tick is a firing, so cadence is a repo setting
         # rather than a systemd unit needing root and a daemon-reload.
         state_dir, interval = argv[2], interval_seconds(argv[3])
-        prev = last_run(state_dir)
+        prev = last_run(state_dir, FIRING_EXITS)
         if not prev or not prev.get("started_epoch"):
             sys.exit(0)
         due_in = int(prev["started_epoch"]) + interval - int(time.time())
@@ -342,9 +417,20 @@ def main(argv):
         print(f"{mtd:.4f}")
         sys.exit(1 if cap and mtd >= cap else 0)
 
-    elif cmd == "last-indexed-height":
-        prev = last_run(argv[2])
-        print((prev or {}).get("indexed_height", ""))
+    elif cmd == "gate-review":
+        # gate-review <state_dir> <reviewed.jsonl> [own-signer-hex]
+        # contributions JSON on stdin. Prints "<pending> <cursor>"; exit 0 =
+        # work to do, 1 = nothing pending, 2 = the graph read was unusable
+        # (caller should abort, not skip).
+        prev = last_run(argv[2], ("completed",))
+        cursor = int((prev or {}).get("indexed_height") or 0)
+        own = argv[4] if len(argv) > 4 else ""
+        pending = pending_review(sys.stdin.read(), cursor, read_reviewed(argv[3]), own)
+        if pending is None:
+            print(f"unreadable {cursor}")
+            sys.exit(2)
+        print(f"{len(pending)} {cursor}")
+        sys.exit(0 if pending else 1)
 
     elif cmd == "final-text":
         print(final_text(argv[2], argv[3]))

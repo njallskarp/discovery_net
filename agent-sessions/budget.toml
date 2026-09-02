@@ -19,15 +19,24 @@ alert_at_pct = 80
 [mode]
 # sprint | cruise | paused. Sprinting a week then pausing gives the same budget
 # per firing as running continuously at cruise, but concentrates it.
+#
+# The intervals are set from the first measured firings on the runner's default
+# model: research $1.46, review $1.92 (2026-09-01, runs.jsonl). Cruise is sized
+# so a month fits the cap: research every 12h is ~60 firings, ~$88; review every
+# 8h is at most ~90 firings, ~$173, but the reviewer only fires when the graph
+# holds unreviewed work, so its real spend tracks research output. Worst case
+# is ~$261 and the budget gate stops it at the cap. The earlier 2h/30m cruise
+# was ~$2,600/month -- the fleet would have halted in three days. Re-derive
+# these when DN_MODEL changes; the cost figure is the input, not the interval.
 active = "cruise"
 
 [mode.sprint]
-research_interval = "30m"
-review_interval = "15m"
+research_interval = "2h"
+review_interval = "1h"
 
 [mode.cruise]
-research_interval = "2h"
-review_interval = "30m"
+research_interval = "12h"
+review_interval = "8h"
 
 [mode.paused]
 research_interval = "8760h"

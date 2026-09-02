@@ -68,10 +68,13 @@ sets direction.
 ## Choosing a target
 
 `${DN_REVIEWED}` is your dedupe ledger: one JSON object per line,
-`{"ref": "...", "height": N, "action": "reviewed|skipped", "why": "..."}`. Read it
-first and never re-review a ref it already carries. Record every ref you take up
-**and** every ref you deliberately skip, with a one-line reason — a skip you do
-not record is a skip you will pay to rediscover every fifteen minutes.
+`{"ref": "...", "height": N, "action": "reviewed|skipped|submitted", "why": "..."}`.
+Read it first and never re-review a ref it already carries. Record every ref you
+take up **and** every ref you deliberately skip, with a one-line reason — a skip
+you do not record is a skip you will pay to rediscover next firing. Record every
+ref **you** publish too, as `submitted`: the wrapper decides whether to fire you
+by looking for contributions this ledger does not mention, and your own review is
+not work for you.
 
 Diff the graph against that ledger and look at what landed since. Review
 selectively and deeply. Take up claims of a new theorem, proof, counterexample,

@@ -51,14 +51,21 @@ END_H=""                         # set once the runner has finished; null before
 finish() {                       # finish <exit-reason> [cost] [tokens-json] [height] [note]
   reason="$1"; cost="${2:-0}"; toks="${3:-$EMPTY_TOKENS}"
   height="${4:-}"; note="${5:-}"
+  # A dry run proves the gates; it must not leave rows behind, or the ledger it
+  # is proving fills with rehearsals and the cadence and review gates read them.
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "$DN_AGENT: dry run — would record '$reason'${note:+ — $note} (nothing written)"
+    return 0
+  fi
+  note_json="$(printf '%s' "$note" | python3 -c 'import json,sys;print(json.dumps(sys.stdin.read()))')"
   # indexed_height stays the PREFLIGHT reading: the reviewer's no-new-work gate
   # compares one firing's preflight to the next, so redefining it would silently
   # change when a reviewer runs. indexed_height_end is the separate, additive
   # answer to "what did this firing leave behind" -- a research firing that moved
   # the chain 1 -> 9 logged 1 and looked like a stalled indexer.
-  printf '{"agent":"%s","runner":"%s","role":"%s","node":"%s","run_id":"%s","started_at":"%s","started_epoch":%s,"ended_at":"%s","exit":"%s","cost_usd":%s,"tokens":%s,"indexed_height":%s,"indexed_height_end":%s,"note":"%s"}\n' \
+  printf '{"agent":"%s","runner":"%s","role":"%s","node":"%s","run_id":"%s","started_at":"%s","started_epoch":%s,"ended_at":"%s","exit":"%s","cost_usd":%s,"tokens":%s,"indexed_height":%s,"indexed_height_end":%s,"note":%s}\n' \
     "$DN_AGENT" "$DN_RUNNER" "$DN_ROLE" "${DN_NODE:-}" "$RUN_ID" "$STARTED_ISO" "$STARTED_EPOCH" \
-    "$($DN now)" "$reason" "$cost" "$toks" "${height:-null}" "${END_H:-null}" "$note" \
+    "$($DN now)" "$reason" "$cost" "$toks" "${height:-null}" "${END_H:-null}" "$note_json" \
     | $DN append-run "$STATE_DIR"
   # The table shows where the chain actually is, so it reads the end height when
   # there is one. status.json is display only; no gate reads it.
@@ -69,7 +76,10 @@ finish() {                       # finish <exit-reason> [cost] [tokens-json] [he
 CYCLE="$(( $(grep -c '' "$STATE_DIR/runs.jsonl" 2>/dev/null || echo 0) + 1 ))"
 
 # ---------------------------------------------------------------- gate: cadence
-INTERVAL="$($DN config "$CONFIG" "mode.$($DN config "$CONFIG" mode.active cruise).${DN_ROLE}_interval" 30m)"
+# No defaults here: a missing mode or interval is a broken budget.toml, and the
+# one time this fell through to a default it put every agent on sprint cadence.
+MODE="$($DN config "$CONFIG" mode.active)" || exit 2
+INTERVAL="$($DN config "$CONFIG" "mode.$MODE.${DN_ROLE}_interval")" || exit 2
 if [ "$DRY_RUN" -eq 0 ]; then
   if ! due="$($DN gate-cadence "$STATE_DIR" "$INTERVAL")"; then
     echo "$DN_AGENT: not due ($due)"; exit 0
@@ -119,14 +129,34 @@ if [ "$LAG" -gt "$MAX_LAG" ]; then
 fi
 
 # ------------------------------------------------------- gate: is there new work
-# Reviewers only. A quiet chain means nothing landed, and that costs zero tokens
-# to discover here instead of paying a model to find out.
+# Reviewers only. Not "has the height moved" -- that skipped work forever after
+# a failed firing and re-fired on the reviewer's own review. This is a local
+# sqlite read: contributions above the last COMPLETED pass's preflight height
+# that the review ledger does not record. Zero tokens to find out.
+PENDING=""
 if [ "$DN_ROLE" = "review" ]; then
-  PREV_H="$($DN last-indexed-height "$STATE_DIR")"
-  if [ -n "$PREV_H" ] && [ "$PREV_H" = "$IDX_H" ]; then
-    finish "no-new-work" 0 '{"in":0,"cached_in":0,"out":0}' "$IDX_H" "indexedHeight unchanged at $IDX_H"
-    exit 0
-  fi
+  # The reviewer's own public key, so its own submissions never count as work.
+  # Derived with the venv python next to the CLI (it has cryptography; the
+  # system python3 may not). This is the wrapper reading the key, which is its
+  # job; the agent never does. Empty if it cannot be derived, and then the
+  # prompt's own-ref ledger entries are the only guard.
+  OWN_SIGNER="$("$(dirname "${DN_SUBMIT_BASE%% *}")/python" - "$DN_KEY_PATH" 2>/dev/null <<'PYK' || true
+import sys
+from cryptography.hazmat.primitives.serialization import load_pem_private_key, Encoding, PublicFormat
+key = load_pem_private_key(open(sys.argv[1], "rb").read(), password=None)
+print(key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw).hex())
+PYK
+)"
+  REVIEW_GATE="$(eval "$DN_GRAPHQL_CMD '{ contributions { artifactRef height signerPublicKey } }'" 2>/dev/null \
+                | $DN gate-review "$STATE_DIR" "${DN_REVIEWED:-}" "$OWN_SIGNER")" && REVIEW_RC=0 || REVIEW_RC=$?
+  PENDING="${REVIEW_GATE%% *}"; CURSOR="${REVIEW_GATE#* }"
+  case "$REVIEW_RC" in
+    0) ;;
+    1) finish "no-new-work" 0 '{"in":0,"cached_in":0,"out":0}' "$IDX_H" "nothing unreviewed above height $CURSOR"
+       exit 0 ;;
+    *) finish "preflight-abort" 0 '{"in":0,"cached_in":0,"out":0}' "$IDX_H" "could not list contributions for the review gate"
+       exit 0 ;;
+  esac
 fi
 
 # ------------------------------------------------------------------- the firing
@@ -151,7 +181,7 @@ export DN_NODE_HEIGHT="$NODE_H"
 DN_REPO="${DN_REPO:-$REPO_ROOT}" $DN render "$HERE/prompts/$DN_ROLE.md" "$PROMPT"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo "$DN_AGENT: dry run — gates passed, prompt at $PROMPT (height $NODE_H, indexed $IDX_H)"
+  echo "$DN_AGENT: dry run — gates passed, prompt at $PROMPT (height $NODE_H, indexed $IDX_H${PENDING:+, $PENDING unreviewed})"
   exit 0
 fi
 
@@ -163,7 +193,8 @@ RAW="$RUN_DIR/runner.out"
 # backstop, never the plan.
 "$HERE/runners/$DN_RUNNER.sh" "$PROMPT" "$REPO_ROOT" "$RUN_DIR" >"$RAW" 2>"$RUN_DIR/runner.err" &
 CHILD=$!
-( sleep "$MAX_SECONDS"; kill -INT "$CHILD" 2>/dev/null || true
+DEADLINE_HIT="$RUN_DIR/deadline-hit"
+( sleep "$MAX_SECONDS"; : > "$DEADLINE_HIT"; kill -INT "$CHILD" 2>/dev/null || true
   sleep 20;             kill -KILL "$CHILD" 2>/dev/null || true ) &
 WATCHDOG=$!
 # Off the job table. It is killed on every normal firing, and bash announces that
@@ -184,8 +215,13 @@ USAGE="$($DN parse-usage "$DN_RUNNER" "$RAW" "$CONFIG")"
 COST="$(printf '%s' "$USAGE" | python3 -c 'import json,sys;print(json.load(sys.stdin)["cost_usd"])')"
 TOKS="$(printf '%s' "$USAGE" | python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin)["tokens"]))')"
 
-case "$RC" in
-  0)         finish "completed"  "$COST" "$TOKS" "$IDX_H" "" ;;
-  130|143|2) finish "killed"     "$COST" "$TOKS" "$IDX_H" "stopped at the deadline" ;;
-  *)         finish "failed"     "$COST" "$TOKS" "$IDX_H" "runner exit $RC" ;;
-esac
+# Killed means the watchdog fired, not that the exit code looked like a signal:
+# 2 is also a usage error, and a bad flag used to read as "stopped at the
+# deadline".
+if [ -e "$DEADLINE_HIT" ]; then
+  finish "killed" "$COST" "$TOKS" "$IDX_H" "stopped at the ${MAX_SECONDS}s deadline (runner exit $RC)"
+elif [ "$RC" -eq 0 ]; then
+  finish "completed" "$COST" "$TOKS" "$IDX_H" ""
+else
+  finish "failed" "$COST" "$TOKS" "$IDX_H" "runner exit $RC"
+fi
