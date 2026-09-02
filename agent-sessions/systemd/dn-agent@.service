@@ -8,6 +8,11 @@ Type=oneshot
 User=agents
 WorkingDirectory=/opt/discovery-net
 Environment=DN_STATE_ROOT=/srv/agent-sessions/state
+# Bindings are read from here: root-owned, agent-readable, never agent-writable.
+# Run init-node.sh / init-agent.sh with the same DN_CONFIG_ROOT and
+# DN_AGENTS_ROOT so setup writes where the unit reads.
+Environment=DN_CONFIG_ROOT=/etc/discovery-net
+Environment=DN_AGENTS_ROOT=/srv/agent-sessions/agents
 
 # Runner API credentials. --bare does not use subscription login, so a Claude
 # firing bills as API usage and dies at runners/claude.sh without

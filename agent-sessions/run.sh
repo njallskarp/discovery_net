@@ -24,10 +24,11 @@ AGENT="${1:-}"
 DRY_RUN=0
 [ "${2:-}" = "--dry-run" ] && DRY_RUN=1
 
+. "$HERE/lib/paths.sh"
 . "$HERE/lib/binding.sh"
-resolve_binding "$HERE" "$AGENT" || exit $?
+resolve_binding "$DN_BINDINGS_DIR" "$AGENT" || exit $?
 
-STATE_ROOT="${DN_STATE_ROOT:-$HOME/.local/state/discovery-net-agents}"
+STATE_ROOT="$DN_STATE_ROOT"
 STATE_DIR="$STATE_ROOT/$DN_AGENT"
 mkdir -p "$STATE_DIR"
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"

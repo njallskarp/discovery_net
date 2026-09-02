@@ -16,8 +16,9 @@ SESSIONS="$(cd -- "$HERE/.." && pwd)"
 REPO_ROOT="$(cd -- "$SESSIONS/.." && pwd)"
 AGENT="${1:?usage: run-smoke.sh <agent> [output-file]}"
 
+. "$SESSIONS/lib/paths.sh"
 . "$SESSIONS/lib/binding.sh"
-resolve_binding "$SESSIONS" "$AGENT" || exit $?
+resolve_binding "$DN_BINDINGS_DIR" "$AGENT" || exit $?
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -27,6 +28,9 @@ trap 'rm -rf "$WORK"' EXIT
 # does not exist. The agent is given no network tool of its own -- see the
 # allow-rule comment in runners/claude.sh.
 export DN_NODE_STATUS="$WORK/node-status.json"
+export DN_COMPUTE="${DN_COMPUTE_BIN:-$SESSIONS/tools/dn-compute}"
+export DN_SUBMIT="${DN_SUBMIT_BIN:-$SESSIONS/tools/dn-submit}"
+export DN_NOTES="${DN_NOTES_BIN:-$SESSIONS/tools/dn-notes}"
 curl -sS -m 10 "${DN_RPC_URL}/status" -o "$DN_NODE_STATUS" \
   || { echo "node unreachable at $DN_RPC_URL" >&2; exit 2; }
 

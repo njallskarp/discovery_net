@@ -20,11 +20,12 @@ set -eu
 HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(cd -- "$HERE/.." && pwd)"
 SESSIONS="$REPO_ROOT/agent-sessions"
+. "$SESSIONS/lib/paths.sh"
 . "$HERE/lib/ask.sh"
 require_tty "teardown.sh"
 
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
-STATE_ROOT="${DN_STATE_ROOT:-$HOME/.local/state/discovery-net-agents}"
+STATE_ROOT="$DN_STATE_ROOT"
 LOCALNET_ROOT="${DN_ROOT:-$REPO_ROOT/run/discovery-demo}"
 
 say ""
@@ -34,8 +35,8 @@ say "  ------------------------"
 
 # ------------------------------------------------------------------ inventory
 INSPECTORS="$(ls "$STATE_ROOT/inspectors"/*.json 2>/dev/null || true)"
-NODE_BINDINGS="$(ls "$SESSIONS/bindings/nodes"/*.env 2>/dev/null || true)"
-AGENT_BINDINGS="$(ls "$SESSIONS/bindings/agents"/*.env 2>/dev/null || true)"
+NODE_BINDINGS="$(ls "$DN_BINDINGS_DIR/nodes"/*.env 2>/dev/null || true)"
+AGENT_BINDINGS="$(ls "$DN_BINDINGS_DIR/agents"/*.env 2>/dev/null || true)"
 LOCALNET_ENVS="$(ls "$LOCALNET_ROOT"/*.env 2>/dev/null || true)"
 
 say "  What is here"

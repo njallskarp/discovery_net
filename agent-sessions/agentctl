@@ -4,7 +4,8 @@
 set -eu
 HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
 CONFIG="${DN_CONFIG:-$HERE/budget.toml}"
-STATE_ROOT="${DN_STATE_ROOT:-$HOME/.local/state/discovery-net-agents}"
+. "$HERE/lib/paths.sh"
+STATE_ROOT="$DN_STATE_ROOT"
 CAP="$(python3 "$HERE/lib/dnagent.py" config "$CONFIG" budget.monthly_cap_usd 0)"
 
 case "${1:-status}" in

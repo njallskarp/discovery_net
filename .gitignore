@@ -31,10 +31,10 @@ tfplan.*
 *.tfvars
 !*.tfvars.example
 
-# Generated agent and node bindings. They carry absolute paths and the location
-# of a contributor signing key, so they describe one machine and belong to one
-# operator. Committed *.env.example files show the shapes; init-node.sh and
-# init-agent.sh write the real ones.
+# Agent and node bindings are generated OUTSIDE the checkout (see
+# agent-sessions/lib/paths.sh). These entries are a safety net for anyone who
+# copies one in by hand: a binding carries absolute paths and the location of a
+# contributor signing key. Committed *.env.example files show the shapes.
 /agent-sessions/bindings/nodes/*.env
 /agent-sessions/bindings/agents/*.env
 
