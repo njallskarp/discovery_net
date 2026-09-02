@@ -21,6 +21,25 @@ _COMPOSE_FILE = _ROOT / "localnet" / "compose.yaml"
 _STARTUP_TIMEOUT_SECONDS = 30
 _PEER_DISCOVERY_TIMEOUT_SECONDS = 45
 
+# Container lifecycle calls -- run, rm, exec, network create. These should fail
+# fast: if `docker rm` has not returned in three minutes, something is wedged and
+# waiting longer tells us nothing.
+_COMMAND_TIMEOUT_SECONDS = int(os.environ.get("DISCOVERY_NET_DOCKER_TIMEOUT", "180"))
+
+# The image build is a different kind of operation and was sharing the number
+# above, which is what made this job flake: localnet/Dockerfile pulls
+# golang:1.25-bookworm, compiles CometBFT from source with `go install`, then
+# pulls python:3.12-slim and pip-installs grpcio, cryptography and pydantic-core.
+# On a cold CI runner with no layer cache that legitimately exceeds three minutes,
+# and the build was killed mid-layer-download:
+#
+#   subprocess.TimeoutExpired: Command ('docker', 'build', ...) timed out after 180 seconds
+#
+# The same commit passed on an earlier run and failed on a later one, which is the
+# signature of a marginal limit rather than a defect. The enclosing job already
+# allows 20 minutes, so this bound was the binding constraint, not the budget.
+_BUILD_TIMEOUT_SECONDS = int(os.environ.get("DISCOVERY_NET_DOCKER_BUILD_TIMEOUT", "900"))
+
 type JSONObject = dict[str, object]
 
 
@@ -195,7 +214,8 @@ def build_image(image: str) -> None:
             "--file",
             str(_ROOT / "localnet" / "Dockerfile"),
             str(_ROOT),
-        )
+        ),
+        timeout=_BUILD_TIMEOUT_SECONDS,
     )
 
 
@@ -303,6 +323,7 @@ def _run(
     *,
     environment: dict[str, str] | None = None,
     check: bool = True,
+    timeout: int = _COMMAND_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -310,5 +331,5 @@ def _run(
         check=check,
         env=environment,
         text=True,
-        timeout=180,
+        timeout=timeout,
     )
