@@ -27,7 +27,7 @@ NODES="$(ls "$DN_BINDINGS_DIR/nodes"/*.env 2>/dev/null || true)"
 say "  Nodes described so far:"
 for f in $NODES; do
   n="$(basename "$f" .env)"
-  c="$(grep -m1 '^DN_CHAIN_ID=' "$f" | cut -d= -f2-)"
+  c="$(env_get "$f" DN_CHAIN_ID)"
   note "$n  (chain $c)"
 done
 say ""
@@ -60,6 +60,16 @@ while :; do
   ask KEY "Contributor key (PEM) path" "$DN_AGENTS_ROOT/$AGENT/contributor.pem"
   if [ ! -f "$KEY" ]; then
     bad "not found: $KEY"
+    # The one step that had no script. Generating here means the key is born
+    # mode 600 in the agent's own directory, rather than at the repo root where
+    # a README line used to put it and a git add -A once swept it up.
+    if confirm "  generate a new Ed25519 key there now?"; then
+      mkdir -p "$(dirname "$KEY")"
+      ( umask 077; openssl genpkey -algorithm ed25519 -out "$KEY" ) \
+        && ok "generated $KEY (mode 600). This is a new on-chain identity; back it up." \
+        || { bad "openssl failed"; continue; }
+      break
+    fi
     confirm "  record it anyway (you will create it before the first firing)?" && break
     continue
   fi
@@ -141,7 +151,7 @@ fi
 
 REVIEWED_LINE=""
 if [ "$ROLE" = "review" ]; then
-  REVIEWED_LINE="DN_REVIEWED=$STATE/reviewed.jsonl"
+  REVIEWED_LINE="DN_REVIEWED=$(q "$STATE/reviewed.jsonl")"
   note "review ledger $STATE/reviewed.jsonl"
 fi
 
@@ -152,15 +162,15 @@ write_env "$OUT" <<EOF
 # Outside the checkout: this names a key location on one machine, and it is
 # sourced by every firing, so it must not be where the agent can write.
 
-DN_AGENT=$AGENT
-DN_ROLE=$ROLE
-DN_RUNNER=$RUNNER
-DN_NODE_BINDING=$NODE_NAME
+DN_AGENT=$(q "$AGENT")
+DN_ROLE=$(q "$ROLE")
+DN_RUNNER=$(q "$RUNNER")
+DN_NODE_BINDING=$(q "$NODE_NAME")
 
-DN_KEY_PATH=$KEY
-DN_WORKLOG=$WORKLOG
-DN_CLAIMS_DIR=$CLAIMS
-DN_NOTES_CLONE=$NOTES
+DN_KEY_PATH=$(q "$KEY")
+DN_WORKLOG=$(q "$WORKLOG")
+DN_CLAIMS_DIR=$(q "$CLAIMS")
+DN_NOTES_CLONE=$(q "$NOTES")
 $REVIEWED_LINE
 EOF
 

@@ -166,18 +166,18 @@ write_env "$OUT" <<EOF
 # Outside the checkout: absolute paths here describe one machine, and the file
 # is sourced by every firing, so it must not be where the agent can write.
 
-DN_NODE=$NODE
-DN_CHAIN_ID=$CHAIN_ID
-DN_RPC_URL=$RPC
+DN_NODE=$(q "$NODE")
+DN_CHAIN_ID=$(q "$CHAIN_ID")
+DN_RPC_URL=$(q "$RPC")
 
 # Verified against the running node at generation time.
-DN_GRAPHQL_CMD='$GRAPHQL'
+DN_GRAPHQL_CMD=$(q "$GRAPHQL")
 
-# The agent's --private-key is appended by run.sh, so it is not duplicated here.
-DN_SUBMIT_BASE='$SUBMIT_BASE'
+# The agent's key is joined to this by tools/dn-submit, never written here.
+DN_SUBMIT_BASE=$(q "$SUBMIT_BASE")
 
 # Read-only inspector for this node, if one is running.
-DN_INSPECTOR_URL=$INSPECTOR_URL
+DN_INSPECTOR_URL=$(q "$INSPECTOR_URL")
 EOF
 
 say "  Next: agent-setup/init-agent.sh to bind an agent to this node."

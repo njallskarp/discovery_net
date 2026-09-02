@@ -52,6 +52,15 @@ confirm() {   # confirm "question" -> 0 yes / 1 no
   done
 }
 
+# q VALUE -> a single-quoted shell literal. Bindings are sourced, so every value
+# written into one is shell; a path with a space or a quote would otherwise be
+# a syntax error at the next tick, or worse, a command.
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# env_get FILE KEY -> the value KEY has after sourcing FILE, in a subshell.
+# The bindings are quoted by q(), so grep|cut would return the quotes.
+env_get() { ( set +u; . "$1" >/dev/null 2>&1; eval "printf '%s' \"\${$2:-}\"" ); }
+
 write_env() {  # write_env <path> <<'EOF' ... EOF
   __path="$1"
   if [ -e "$__path" ]; then

@@ -37,14 +37,26 @@ echo "  chain          $CHAIN"
 echo "  height         $HEIGHT   catching_up=$CATCH   voting power=$POWER"
 echo "  advertised as  $LISTEN"
 
-case "$LISTEN" in
-  *[0-9].[0-9]*|*"$PUBLIC_IP"*) ADVERTISED_ROUTABLE=1 ;;
-  *) ADVERTISED_ROUTABLE=0 ;;
-esac
+# Routable means a public IP or a dotted hostname. 0.0.0.0, loopback and the
+# private ranges are what a misconfigured node advertises most often, and the
+# old digit.digit test called every one of them routable.
+ADVERTISED_ROUTABLE="$(python3 -c '
+import ipaddress, re, sys
+listen, public = sys.argv[1], sys.argv[2]
+host = re.sub(r"^[a-z]+://", "", listen).rsplit(":", 1)[0].strip("[]")
+if public and host == public:
+    print(1); sys.exit()
+try:
+    ip = ipaddress.ip_address(host)
+    print(0 if (ip.is_unspecified or ip.is_loopback or ip.is_private or ip.is_link_local) else 1)
+except ValueError:
+    print(1 if "." in host else 0)   # a dotted name may resolve; a bare alias cannot
+' "$LISTEN" "$PUBLIC_IP")"
 if [ "$ADVERTISED_ROUTABLE" = 0 ]; then
-  echo "  NOTE: that is a Docker alias, not an address anyone outside this host can dial."
-  echo "        A node started by localnet/localnet.sh advertises its alias, so other"
-  echo "        operators cannot learn a usable address for it however hard they try."
+  echo "  NOTE: that is not an address anyone outside this host can dial -- a Docker"
+  echo "        alias, 0.0.0.0, loopback or a private range. A node started by"
+  echo "        localnet/localnet.sh advertises its alias, so other operators cannot"
+  echo "        learn a usable address for it however hard they try."
 fi
 
 NET="$(curl -sS -m 10 "$RPC/net_info" 2>/dev/null)" || NET=""

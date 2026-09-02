@@ -25,13 +25,46 @@ SESSIONS="$REPO_ROOT/agent-sessions"
 require_tty "teardown.sh"
 
 DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
-STATE_ROOT="$DN_STATE_ROOT"
-LOCALNET_ROOT="${DN_ROOT:-$REPO_ROOT/run/discovery-demo}"
+
+# Both of these end up under rm -rf, so they are canonicalised and fenced
+# before anything else: the localnet root must be inside this checkout's run/,
+# and the state root must look like an agent state directory and not be a
+# home, a root, or a parent of the checkout. DN_ROOT=/ with a y held down
+# would otherwise be the end of the machine.
+canon() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
+STATE_ROOT="$(canon "$DN_STATE_ROOT")"
+LOCALNET_ROOT="$(canon "${DN_ROOT:-$REPO_ROOT/run/discovery-demo}")"
+case "$LOCALNET_ROOT" in
+  "$(canon "$REPO_ROOT")/run/"?*) ;;
+  *) die "refusing: localnet root $LOCALNET_ROOT is not under $REPO_ROOT/run/" ;;
+esac
+case "$STATE_ROOT" in
+  /|"$HOME"|"$(canon "$HOME")"|"$(canon "$REPO_ROOT")"|"$(canon "$REPO_ROOT")"/*) die "refusing: state root $STATE_ROOT is not an agent state directory" ;;
+  */discovery-net-agents|*/discovery-net-agents/*|*/agent-sessions/state|*/agent-sessions/state/*) ;;
+  *) die "refusing: state root $STATE_ROOT does not look like an agent state directory (…/discovery-net-agents or …/agent-sessions/state)" ;;
+esac
+
+# Never pull state out from under a firing. On a host the timers have to be
+# stopped first; on a laptop a run.sh in another terminal shows as running.
+if command -v systemctl >/dev/null 2>&1 && systemctl list-units --type=timer --state=active 2>/dev/null | grep -q 'dn-agent@'; then
+  die "refusing: dn-agent timers are active. Stop them first:
+    sudo systemctl stop 'dn-agent@*.timer' 'dn-agent@*.service'"
+fi
+for sf in "$STATE_ROOT"/*/status.json; do
+  [ -f "$sf" ] || continue
+  if python3 -c 'import json,sys;sys.exit(0 if json.load(open(sys.argv[1])).get("state")=="running" else 1)' "$sf" 2>/dev/null; then
+    die "refusing: $(basename "$(dirname "$sf")") is mid-firing ($sf says running). Wait for it or kill it, then re-run."
+  fi
+done
 
 say ""
 say "  Discovery Net — teardown"
 say "  ------------------------"
 [ "$DRY" = 1 ] && say "  DRY RUN. Nothing will be removed." && say ""
+
+# A recorded pid is only ours while the process behind it is still an
+# inspector; pids are reused, and a stale record must not kill a stranger.
+is_inspector() { ps -o command= -p "$1" 2>/dev/null | grep -q 'discovery-inspector'; }
 
 # ------------------------------------------------------------------ inventory
 INSPECTORS="$(ls "$STATE_ROOT/inspectors"/*.json 2>/dev/null || true)"
@@ -47,7 +80,7 @@ if [ -n "$INSPECTORS" ]; then
     n=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["node"])' "$f")
     pid=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pid"])' "$f")
     url=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["url"])' "$f")
-    alive="not running"; kill -0 "$pid" 2>/dev/null && alive="pid $pid"
+    alive="not running"; is_inspector "$pid" && alive="pid $pid"
     note "$n  $url  ($alive)"
   done
 else
@@ -68,11 +101,11 @@ say ""
 if [ -n "$NODE_BINDINGS$AGENT_BINDINGS" ]; then
   say "  bindings:"
   for f in $NODE_BINDINGS; do
-    c=$(grep -m1 '^DN_CHAIN_ID=' "$f" | cut -d= -f2-)
+    c=$(env_get "$f" DN_CHAIN_ID)
     note "node   $(basename "$f" .env)   chain $c"
   done
   for f in $AGENT_BINDINGS; do
-    nb=$(grep -m1 '^DN_NODE_BINDING=' "$f" | cut -d= -f2-)
+    nb=$(env_get "$f" DN_NODE_BINDING)
     note "agent  $(basename "$f" .env)   -> node $nb"
   done
 else
@@ -83,22 +116,24 @@ fi
 # are removed further down. A key at the repo root is picked up as well: that is
 # where the README's genpkey line puts one, so it is present on a host that has
 # never run init-agent.sh and has no binding to name it.
-KEYS=""
+KEYS=()
 add_key() {
-  [ -f "$1" ] || return 0
-  for __ak in $KEYS; do [ "$__ak" = "$1" ] && return 0; done
-  KEYS="$KEYS $1"
+  [ -n "$1" ] && [ -f "$1" ] || return 0
+  for __ak in ${KEYS[@]+"${KEYS[@]}"}; do [ "$__ak" = "$1" ] && return 0; done
+  KEYS+=("$1")
   return 0
 }
 for f in $AGENT_BINDINGS; do
-  add_key "$(grep -m1 '^DN_KEY_PATH=' "$f" | cut -d= -f2- || true)"
+  add_key "$(env_get "$f" DN_KEY_PATH)"
 done
+# The repo root is swept for keys left by the old README flow, which generated
+# one there before init-agent.sh could. Nothing puts a key there any more.
 for f in "$REPO_ROOT"/*.pem; do add_key "$f"; done
 
-if [ -n "$KEYS" ]; then
+if [ "${#KEYS[@]}" -gt 0 ]; then
   say ""
   say "  contributor keys:"
-  for k in $KEYS; do note "$k"; done
+  for k in "${KEYS[@]}"; do note "$k"; done
 fi
 
 say ""
@@ -109,9 +144,10 @@ if [ -n "$INSPECTORS" ] && confirm "  Stop the inspectors listed above?"; then
   for f in $INSPECTORS; do
     pid=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["pid"])' "$f")
     n=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["node"])' "$f")
-    if [ "$DRY" = 1 ]; then say "    would: kill $pid ($n) and remove $f"; continue
+    if [ "$DRY" = 1 ]; then say "    would: kill $pid ($n) if it is still an inspector, and remove $f"; continue
     fi
-    kill "$pid" 2>/dev/null && ok "stopped inspector for $n" || note "inspector for $n was not running"
+    if is_inspector "$pid"; then kill "$pid" && ok "stopped inspector for $n"
+    else note "inspector for $n is not running (pid $pid is not an inspector); record removed"; fi
     rm -f "$f"
   done
 fi
@@ -172,12 +208,12 @@ fi
 # the repo; a key cannot be rebuilt from anything. The prompt asks for the
 # filename typed back rather than a y/n so that holding down y through the whole
 # script does not end with a destroyed identity.
-if [ -n "$KEYS" ]; then
+if [ "${#KEYS[@]}" -gt 0 ]; then
   say ""
   say "  Contributor keys. Each one is an on-chain identity: what it signed stays"
   say "  on the chain whether or not you keep the key, but without the key you can"
   say "  never sign as that identity again. There is no recovery and no backup."
-  for k in $KEYS; do
+  for k in "${KEYS[@]}"; do
     b="$(basename "$k")"
     say ""
     note "$k"
