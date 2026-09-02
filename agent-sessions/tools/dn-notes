@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+#   dn-notes <subcommand> [args...]
+#
+# git, restricted to the agent's own notes clone and to subcommands that move
+# source artifacts around. Replaces Bash(git:*) in the runner allow list.
+#
+# Why: `git -c alias.x='!sh' x` is a shell, so an allow rule on git is an allow
+# rule on everything -- the network, docker, the signing key. Every other rule
+# in the runner, and the whole compute sandbox, was defeatable through it.
+#
+# What this does: pins -C to DN_NOTES_CLONE, admits a fixed set of subcommands,
+# refuses every option that names an executable or a config source, and
+# overrides the config keys git will exec through (hooks, pager, editor, ssh,
+# fsmonitor, credential helper, external diff).
+#
+# What this does not do: protect against an agent that can WRITE the clone's
+# .git directory. Repo-local config and hooks live there. The overrides below
+# cover the keys git is known to exec through, but the real answer is that the
+# agent's write scope must not include .git -- see the runner and A8 in the
+# review follow-ups.
+#
+# Only ever allow-list the absolute path of THIS file.
+set -euo pipefail
+
+: "${DN_NOTES_CLONE:?dn-notes: DN_NOTES_CLONE is not set; run through run.sh}"
+[ -d "$DN_NOTES_CLONE/.git" ] || { echo "dn-notes: not a git clone: $DN_NOTES_CLONE" >&2; exit 65; }
+
+refuse() { printf 'dn-notes: refused: %s\n' "$*" >&2; exit 64; }
+
+SUB="${1:-}"; [ -n "$SUB" ] || refuse "usage: dn-notes <status|log|diff|show|ls-files|add|rm|mv|commit|pull|push> [args]"
+shift
+
+case "$SUB" in
+  status|log|diff|show|ls-files|add|rm|mv|commit|pull|push) ;;
+  *) refuse "subcommand not permitted: $SUB" ;;
+esac
+
+# Options that name a program, a script, or a config source. Checked as
+# prefixes so --exec=, --exec-path=, --upload-pack=... are all caught.
+for arg in "$@"; do
+  case "$arg" in
+    -c|-C|-x|-e|--exec|--exec=*|--exec-path*|--git-dir*|--work-tree*|--namespace*|\
+    --config-env*|--upload-pack*|--receive-pack*|--ext-diff|--textconv|--edit|\
+    --template*|--rebase=*|--strategy*|-s|-X|--strategy-option*|--interactive|-i|\
+    --patch|-p|--gpg-sign*|-S|--open-files-in-pager|--pager*)
+      refuse "option not permitted: $arg" ;;
+  esac
+done
+
+case "$SUB" in
+  pull) for arg in "$@"; do case "$arg" in --rebase|--ff-only|--no-edit|origin|main|master) ;; *) refuse "pull accepts only --rebase, --ff-only, --no-edit, and a remote/branch name" ;; esac; done ;;
+  push) for arg in "$@"; do case "$arg" in --set-upstream|-u|origin|HEAD|main|master) ;; *) refuse "push accepts only -u/--set-upstream, origin, HEAD, and a branch name" ;; esac; done ;;
+esac
+
+exec git --no-pager \
+  -c core.hooksPath=/dev/null \
+  -c core.pager=cat \
+  -c core.editor=false \
+  -c core.sshCommand=ssh \
+  -c core.fsmonitor=false \
+  -c credential.helper= \
+  -c diff.external= \
+  -c gpg.program=false \
+  -C "$DN_NOTES_CLONE" "$SUB" "$@"

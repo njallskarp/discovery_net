@@ -139,6 +139,13 @@ export DN_NODE_STATUS="$STATUS_JSON"
 # The sandboxed interpreter the prompts tell the agent to use. Same path the
 # runner allow-lists, so the prompt can never name a tool the agent cannot run.
 export DN_COMPUTE="${DN_COMPUTE_BIN:-$REPO_ROOT/agent-sessions/tools/dn-compute}"
+# The only submit and the only git the agent gets. dn-submit joins
+# DN_SUBMIT_BASE to DN_KEY_PATH itself, so the key path is in no prompt and on
+# no command line; dn-notes pins git to DN_NOTES_CLONE and refuses the options
+# git would exec through. Same rule as dn-compute: on an agent host point the
+# *_BIN overrides at root-owned copies outside the checkout.
+export DN_SUBMIT="${DN_SUBMIT_BIN:-$REPO_ROOT/agent-sessions/tools/dn-submit}"
+export DN_NOTES="${DN_NOTES_BIN:-$REPO_ROOT/agent-sessions/tools/dn-notes}"
 export DN_NODE_HEIGHT="$NODE_H"
 DN_REPO="${DN_REPO:-$REPO_ROOT}" $DN render "$HERE/prompts/$DN_ROLE.md" "$PROMPT"
 

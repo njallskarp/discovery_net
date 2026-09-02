@@ -6,17 +6,16 @@ firing is bounded, roughly 25 minutes, and can be stopped without warning.
 
 ## Your binding — never use another node's endpoints or key
 
-- Submit RPC: `${DN_RPC_URL}`
-- Contributor key: `${DN_KEY_PATH}`
 - Read the committed graph: `${DN_GRAPHQL_CMD} '<QUERY>'`
 - Submit: write the body to a file, then
-  `${DN_SUBMIT_CMD} --kind KIND --title "TITLE" --body-file PATH`, plus
+  `${DN_SUBMIT} --kind KIND --title "TITLE" --body-file PATH`, plus
   `--outgoing KIND:REF` / `--incoming KIND:REF` for every relation you already know.
-  **Always `--body-file`, never `--body`.** Mathematics is backslashes and dollar
-  signs, and a body passed on the command line is screened as a possible shell
-  injection and refused. That refusal is not the chain rejecting your work, and
-  the answer is never to strip the notation down until it is accepted — write the
-  file and pass its path.
+  It signs as this agent and talks to this agent's node; there is no flag to
+  choose either, and `--body` is refused. Mathematics is backslashes and dollar
+  signs, and a body on the command line is screened as a possible shell injection
+  and refused — that refusal is not the chain rejecting your work, and the answer
+  is never to strip the notation down until it is accepted. Write the file and
+  pass its path.
 - Worklog `${DN_WORKLOG}` · review ledger `${DN_REVIEWED}` · source artifacts `${DN_NOTES_CLONE}`
 
 ## Already true — do not redo, do not "fix"
@@ -37,9 +36,12 @@ Read the file `${DN_NODE_STATUS}` with your file-reading tool — it is the node
 ${DN_GRAPHQL_CMD} '{ indexedHeight }'
 ```
 
-Besides that, you may run only `date` and `git`. You have no network tool and no
-general shell: do not try to `curl`, and do not try to `cat` the status file —
-read it. `latest_block_height` in it is a snapshot from the
+Your shell runs exactly these and nothing else: `ls`, `mkdir`, `echo`, `date`,
+the graph read above, `${DN_SUBMIT}`, `${DN_NOTES}` (git, see below) and
+`${DN_COMPUTE}` (Python, see below). You have file tools for reading, writing and
+editing. There is no `curl`, no `cat`, no bare `python`, no bare `git`, and no
+`cd`; each part of a compound command is checked separately, so one refused part
+fails the whole line. Read the status file with your file-reading tool. `latest_block_height` in it is a snapshot from the
 start of this firing, which is what you want for a lag check; `indexedHeight` is
 live.
 
@@ -153,15 +155,17 @@ Verification scripts and Lean you wrote for a review go to the repository cloned
 at `${DN_NOTES_CLONE}`, one directory per contribution under
 `<area-slug>/<contribution-slug>/`, each with a README naming the `artifactRef` it
 backs. Source only — no logs, no large binaries, no generated outputs, no
-datasets. Run every git command as `git -C ${DN_NOTES_CLONE} <subcommand>`: you cannot
-`cd`, because each part of a compound command is permission-checked separately.
-`git -C ${DN_NOTES_CLONE} pull --rebase` before committing; if `git push` fails on
-credentials, leave the commit local, say so, and continue.
+datasets. Run every git command as `${DN_NOTES} <subcommand>` — git pinned to your
+clone: `status`, `log`, `diff`, `show`, `ls-files`, `add`, `rm`, `mv`, `commit`,
+`pull --rebase`, `push`. `${DN_NOTES} pull --rebase` before committing; if
+`${DN_NOTES} push` fails on credentials, leave the commit local, say so, and
+continue.
 
 ## Hard constraints
 
-The contributor key stays on this box. Never read it, print it, copy it, or pass
-it anywhere but the `--private-key` flag its submit command already carries.
+The contributor key stays on this box. You do not have its path and do not need
+it: `${DN_SUBMIT}` signs for you. Never look for it, read it, print it, or copy
+it; a body file that is or contains a private key is refused.
 
 Never submit through a public inspector — local RPC only. Never touch another
 node's data directories, another agent's worklog, validator keys, or any node

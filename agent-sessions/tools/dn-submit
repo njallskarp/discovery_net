@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+#
+#   dn-submit --kind KIND --title TITLE --body-file PATH [--outgoing K:REF]... [--incoming K:REF]...
+#
+# The only way an agent submits. It owns the signing key so the agent never
+# has to know where the key is, let alone name it on a command line.
+#
+# Why a wrapper and not Bash(<cli>:*): the raw CLI takes --private-key and
+# --body-file from argv, so an agent holding the key path could publish the
+# key with one flag, on an append-only chain. Nothing in a permission rule can
+# tell a body file from a key file. This can.
+#
+# What the agent gets: one submit against the node it is bound to.
+# What it does not get: a choice of key, a choice of node, a body on argv.
+#
+# Reads DN_SUBMIT_BASE and DN_KEY_PATH from the environment run.sh exports.
+# Only ever allow-list the absolute path of THIS file.
+set -euo pipefail
+
+: "${DN_SUBMIT_BASE:?dn-submit: DN_SUBMIT_BASE is not set; run through run.sh}"
+: "${DN_KEY_PATH:?dn-submit: DN_KEY_PATH is not set; run through run.sh}"
+
+refuse() { printf 'dn-submit: refused: %s\n' "$*" >&2; exit 64; }
+
+real() { python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$1"; }
+
+BODY_FILE=""
+prev=""
+for arg in "$@"; do
+  case "$arg" in
+    --private-key|--private-key=*) refuse "--private-key is fixed by the binding and cannot be chosen" ;;
+    --rpc-url|--rpc-url=*)         refuse "--rpc-url is fixed by the binding and cannot be chosen" ;;
+    --body|--body=*)               refuse "--body is not accepted; write the body to a file and pass --body-file" ;;
+    --body-file=*)                 BODY_FILE="${arg#--body-file=}" ;;
+  esac
+  [ "$prev" = "--body-file" ] && BODY_FILE="$arg"
+  prev="$arg"
+done
+
+[ -n "$BODY_FILE" ] || refuse "--body-file is required"
+[ -f "$BODY_FILE" ] || refuse "no such body file: $BODY_FILE"
+if [ "$(real "$BODY_FILE")" = "$(real "$DN_KEY_PATH")" ]; then
+  refuse "the body file is the signing key"
+fi
+# Belt and braces: the CLI refuses PEM material too, but say it here first.
+if grep -q 'PRIVATE KEY-----' "$BODY_FILE"; then
+  refuse "the body file contains private key material"
+fi
+
+# DN_SUBMIT_BASE is a command line, so it is word-split on purpose. set -f
+# stops a stray * in it from globbing.
+set -f
+# shellcheck disable=SC2086
+exec $DN_SUBMIT_BASE --private-key "$DN_KEY_PATH" "$@"
