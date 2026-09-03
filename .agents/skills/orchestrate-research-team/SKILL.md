@@ -28,8 +28,8 @@ creating or starting any agent, resolve all of the following with the human:
 - the research mandate, including a named target or permission for researchers
   to select targets, plus any fields, methods, or topics to prefer or avoid
 - the exact host and project or workspace placed under the team's control
-- publication mode: either an exact human-authorized repository path or URL and
-  its allowed branch or push scope, or an explicit `local-only` choice
+- the exact human-authorized GitHub repository URL and its allowed branch or
+  push scope; this orchestrator requires a GitHub public-source destination
 - any Discovery Net node, identity or key paths, and external services the team
   may use; record references to credentials, never secret values in prompts
 - the model choice or permission to use the authenticated default, reasoning
@@ -43,8 +43,9 @@ Ask one concise follow-up containing only missing or ambiguous decisions. For
 ordinary reversible settings, propose explicit defaults so the human can accept
 them together instead of supplying every value manually. Never infer a
 publication repository from the current checkout, a Git remote, an earlier
-campaign, or the repository containing this skill. Repository authorization and
-`local-only` operation must always be explicit.
+campaign, or the repository containing this skill. If no GitHub URL is supplied,
+stop at this gate and ask for one. Do not install, schedule, create, or start any
+agent, and do not silently fall back to local-only operation.
 
 Present the resolved contract compactly and wait for human confirmation before
 crossing this gate. An initial prompt counts as confirmation only when it both
@@ -57,6 +58,13 @@ After confirmation, record the contract and use it as the source of truth for
 every generated prompt, replacement, and evaluation cycle. Do not ask again
 mid-run unless the human changes the contract or a new permission or destination
 is required.
+
+Before creating the first agent, verify the exact GitHub URL programmatically.
+With the bundled controller, run `research-team check-repository URL`. If it
+fails, treat the contract as blocked: create no partial fleet and report the
+repository error to the human. The controller repeats this non-interactive
+access check on `new`, `start`, and `retarget`, so an absent, malformed, or
+inaccessible repository is a hard error.
 
 Treat the stated counts as the standing target, not a one-time setup. On every
 wake, reconcile reality against them.
@@ -142,11 +150,20 @@ A researcher prompt must still establish the available composition:
 - `$math-research` as the engine
 - at most one primary `$math-approach-*` skill, normally chosen by the agent
 - only the `$math-tool-*` skills the agent determines it actually needs
-- `$github-math-research` when a repository is authorized
+- `$github-math-research` for every substantive result or reproducible artifact
 - the concrete node, key, repository, and scratch paths from the brief
 
-A reviewer prompt composes `$math-review` and lets the reviewer choose its own
-targets from the committed graph.
+Give each researcher the verified GitHub URL explicitly. Require source-first
+delivery: publish compact reproducible source, verify the remote commit and
+reader-facing links, and cite them in the original graph contribution whenever
+the evidence exists at submission time. If repository access fails during a
+pass, the agent must stop publication, report the operational failure, and avoid
+submitting a source-dependent claim with a knowingly dead or missing link.
+
+A reviewer prompt composes `$math-review` with `$github-math-research`, lets the
+reviewer choose its own targets from the committed graph, and requires compact
+independent review evidence to be published and cited when code or formal
+artifacts materially support the verdict.
 
 Give every researcher a distinct problem or a genuinely distinct approach to a
 shared problem. Two agents on one target are justified only by real

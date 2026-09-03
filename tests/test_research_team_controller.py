@@ -31,6 +31,7 @@ def _write_prompt(
     contract_confirmed: bool = True,
     max_passes: int = 0,
     max_total_tokens: int = 0,
+    github_repository: str = "https://github.com/example/math-research",
     body: str = "Work autonomously.",
 ) -> None:
     workspace = workspace or path.parent / "workspace"
@@ -48,6 +49,7 @@ def _write_prompt(
                 "network-access: true",
                 "web-search: live",
                 f"workspace: {workspace.resolve()}",
+                f"github-repository: {github_repository}",
                 f"contract-confirmed: {str(contract_confirmed).lower()}",
                 f"max-passes: {max_passes}",
                 f"max-total-tokens: {max_total_tokens}",
@@ -61,13 +63,33 @@ def _write_prompt(
 
 def _controller_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     state_root = tmp_path / "state"
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir(exist_ok=True)
+    fake_git = fake_bin / "git"
+    fake_git.write_text(
+        "#!/bin/sh\n"
+        "if [ -n \"$DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG\" ]; then\n"
+        "  printf '%s\\n' \"$*\" >> \"$DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG\"\n"
+        "fi\n"
+        "if [ \"$DISCOVERY_RESEARCH_TEAM_TEST_GITHUB_FAILURE\" = 1 ]; then\n"
+        "  exit 128\n"
+        "fi\n"
+        "case \" $* \" in\n"
+        "  *' ls-remote '*) printf '%s\\t%s\\n' "
+        "'0123456789abcdef0123456789abcdef01234567' 'HEAD' ;;\n"
+        "esac\n"
+        "exit 0\n"
+    )
+    fake_git.chmod(0o755)
     environment = os.environ.copy()
     environment.update(
         {
             "DISCOVERY_RESEARCH_TEAM_TESTING": "1",
             "DISCOVERY_RESEARCH_TEAM_ROOT": str(state_root),
+            "DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG": str(tmp_path / "git.log"),
         }
     )
+    environment["PATH"] = f"{fake_bin}{os.pathsep}{environment.get('PATH', '')}"
     source_root = Path(__file__).resolve().parents[1] / "src"
     existing_pythonpath = environment.get("PYTHONPATH")
     environment["PYTHONPATH"] = (
@@ -163,6 +185,77 @@ def test_controller_rejects_unconfirmed_contract_and_invalid_runtime(tmp_path: P
     )
     assert result.returncode != 0
     assert "contract-confirmed must be true" in result.stderr
+
+
+def test_controller_requires_and_checks_accessible_github_repository(tmp_path: Path) -> None:
+    environment, _ = _controller_environment(tmp_path)
+    prompt = tmp_path / "github.md"
+    _write_prompt(prompt)
+
+    checked = _run_controller(
+        environment,
+        "check-repository",
+        "https://github.com/example/math-research",
+    )
+    assert "GitHub repository accessible" in checked.stdout
+    git_log = (tmp_path / "git.log").read_text()
+    assert "ls-remote --exit-code" in git_log
+    assert "git@github.com:example/math-research.git HEAD" in git_log
+
+    prompt.write_text(
+        "\n".join(
+            line
+            for line in prompt.read_text().splitlines()
+            if not line.startswith("github-repository:")
+        )
+        + "\n"
+    )
+    result = subprocess.run(
+        [sys.executable, _controller_path(), "new", "researcher-1", prompt],
+        env=environment,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "prompt is missing metadata: github-repository" in result.stderr
+
+    _write_prompt(prompt, github_repository="https://example.com/not-github")
+    result = subprocess.run(
+        [sys.executable, _controller_path(), "new", "researcher-1", prompt],
+        env=environment,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "github-repository must be an https://github.com" in result.stderr
+
+    _write_prompt(prompt)
+    prompt.write_text(prompt.read_text().replace("network-access: true", "network-access: false"))
+    result = subprocess.run(
+        [sys.executable, _controller_path(), "new", "researcher-1", prompt],
+        env=environment,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "network-access must be true" in result.stderr
+
+    _write_prompt(prompt)
+    unavailable_environment = environment | {
+        "DISCOVERY_RESEARCH_TEAM_TEST_GITHUB_FAILURE": "1"
+    }
+    result = subprocess.run(
+        [sys.executable, _controller_path(), "new", "researcher-1", prompt],
+        env=unavailable_environment,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "GitHub repository is not accessible" in result.stderr
 
 
 def test_controller_is_packaged_and_old_linux_adapter_is_removed() -> None:
@@ -277,6 +370,7 @@ def test_machine_readable_status_report_wait_and_limits(tmp_path: Path, monkeypa
     status = json.loads(_run_controller(environment, "status", "--json").stdout)
     assert status[0]["name"] == "principal-1"
     assert status[0]["workspace"] == str((tmp_path / "workspace").resolve())
+    assert status[0]["github_repository"] == "https://github.com/example/math-research"
     assert status[0]["limits"] == {"max_passes": 1, "max_total_tokens": 200}
 
     report = state_root / "work/principal-1/last-message.md"

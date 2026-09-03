@@ -40,6 +40,7 @@ permissions: workspace-write
 network-access: true
 web-search: live
 workspace: /absolute/path/to/researcher-1-worktree
+github-repository: https://github.com/example/math-research-source
 contract-confirmed: true
 max-passes: 0
 max-total-tokens: 0
@@ -56,6 +57,11 @@ or `live`. `workspace` must be an existing absolute directory dedicated to
 this agent. Use a separate checkout or Git worktree when the agent needs a
 repository; this also makes that checkout's `.agents/skills` available to
 Codex. The controller rejects sharing a workspace between active agents.
+`github-repository` is mandatory for every role and must be an exact
+`https://github.com/OWNER/REPOSITORY` URL. `network-access` must be `true` so
+researchers and reviewers can publish and principals can inspect public
+evidence. The controller rejects a missing or malformed URL and performs a
+non-interactive `git ls-remote` access check on `new`, `start`, and `retarget`.
 `contract-confirmed` must be `true` and records that the orchestrator crossed
 the human confirmation gate. An optional `model:` line pins a model. Omit it to
 use the authenticated Codex default.
@@ -75,12 +81,22 @@ reports under `DISCOVERY_RESEARCH_TEAM_ROOT`; `workspace` is only the directory
 in which Codex performs the research. The rest of the file is the visible agent
 mandate. Start it with a compact `Human-approved contract` section containing
 the applicable roster, research scope, host and workspace, runtime choices,
-cadences, resource limits, and stop condition. Include either the exact
-authorized repository and push boundaries or the explicit statement
-`publication: local-only`. Also include the selected skill composition,
-authorized services, and scratch paths. Set a broad mandate rather than a
-detailed research recipe. Do not create this prompt until the human has
-confirmed the complete contract described in `SKILL.md`.
+cadences, resource limits, and stop condition. Include the exact authorized
+GitHub URL and branch or push boundaries. Also include the selected skill
+composition, authorized services, and scratch paths. Researcher prompts must
+compose `$github-math-research`; reviewer prompts must use it when publishing
+reproducible review evidence. Set a broad mandate rather than a detailed
+research recipe. Do not create this prompt until the human has confirmed the
+complete contract described in `SKILL.md`.
+
+Before creating any prompt or agent, preflight the human-authorized repository:
+
+```text
+research-team check-repository https://github.com/OWNER/REPOSITORY
+```
+
+If this command fails, stop setup and report the error. Do not create a partial
+fleet or substitute a repository inferred from the current checkout.
 
 ## Commands
 
@@ -88,6 +104,7 @@ Run the controller with the same Python environment used during setup:
 
 ```text
 doctor                         verify Python, SDK, Codex, and state access
+check-repository URL           verify the required GitHub repository is accessible
 list                           list configured agent names
 status [--json]                show roles, process state, and workspaces
 new NAME PROMPT_FILE           create an agent; continuous agents start now

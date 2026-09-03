@@ -25,6 +25,7 @@ from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 MINIMUM_SDK_VERSION = (0, 22, 0)
 MAXIMUM_SDK_VERSION = (0, 23, 0)
@@ -35,6 +36,9 @@ EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 TIERS = {"default", "flex"}
 PERMISSIONS = {"workspace-write", "unrestricted"}
 WEB_SEARCH_MODES = {"disabled", "cached", "live"}
+GITHUB_OWNER_PATTERN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+GITHUB_REPOSITORY_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+GITHUB_ACCESS_TIMEOUT_SECONDS = 20
 METADATA_KEYS = {
     "role",
     "mode",
@@ -45,6 +49,7 @@ METADATA_KEYS = {
     "network-access",
     "web-search",
     "workspace",
+    "github-repository",
     "contract-confirmed",
     "max-passes",
     "max-total-tokens",
@@ -68,6 +73,7 @@ class PromptConfig:
     network_access: bool
     web_search: str
     workspace: Path
+    github_repository: str
     max_passes: int | None
     max_total_tokens: int | None
     model: str | None
@@ -171,6 +177,62 @@ def parse_limit(value: str, key: str) -> int | None:
     return parsed or None
 
 
+def parse_github_repository(value: str) -> tuple[str, str]:
+    parsed = urlsplit(value)
+    parts = [part for part in parsed.path.split("/") if part]
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc.lower() != "github.com"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or len(parts) != 2
+    ):
+        raise ControllerError(
+            "github-repository must be an https://github.com/OWNER/REPOSITORY URL"
+        )
+    owner, repository = parts
+    if repository.endswith(".git"):
+        repository = repository[:-4]
+    if not GITHUB_OWNER_PATTERN.fullmatch(owner) or not GITHUB_REPOSITORY_PATTERN.fullmatch(
+        repository
+    ):
+        raise ControllerError(
+            "github-repository must be an https://github.com/OWNER/REPOSITORY URL"
+        )
+    return f"https://github.com/{owner}/{repository}", f"git@github.com:{owner}/{repository}.git"
+
+
+def verify_github_repository(value: str) -> str:
+    web_url, ssh_url = parse_github_repository(value)
+    git = shutil.which("git")
+    if git is None:
+        raise ControllerError("git is required to verify github-repository access")
+    environment = os.environ.copy()
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    environment.setdefault("GIT_SSH_COMMAND", "ssh -o BatchMode=yes -o ConnectTimeout=10")
+    failures: list[str] = []
+    for remote in (ssh_url, f"{web_url}.git"):
+        try:
+            result = subprocess.run(
+                [git, "ls-remote", "--exit-code", remote, "HEAD"],
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=GITHUB_ACCESS_TIMEOUT_SECONDS,
+                env=environment,
+            )
+        except subprocess.TimeoutExpired:
+            failures.append("timed out")
+            continue
+        if result.returncode == 0 and result.stdout.strip():
+            return web_url
+        failures.append(f"git exited {result.returncode}")
+    detail = ", ".join(failures)
+    raise ControllerError(f"GitHub repository is not accessible: {web_url} ({detail})")
+
+
 def parse_prompt(path: Path) -> PromptConfig:
     if not path.is_file():
         raise ControllerError(f"prompt file not found: {path}")
@@ -227,6 +289,10 @@ def parse_prompt(path: Path) -> PromptConfig:
         raise ControllerError("oneshot agents need restart-seconds: 0")
     if not "\n".join(lines[body_start:]).strip():
         raise ControllerError("prompt mandate is empty")
+    network_access = parse_bool(metadata["network-access"], "network-access")
+    if not network_access:
+        raise ControllerError("network-access must be true for the required GitHub repository")
+    github_repository, _ = parse_github_repository(metadata["github-repository"])
     return PromptConfig(
         role=metadata["role"],
         mode=metadata["mode"],
@@ -234,9 +300,10 @@ def parse_prompt(path: Path) -> PromptConfig:
         tier=metadata["tier"],
         restart_seconds=restart_seconds,
         permissions=metadata["permissions"],
-        network_access=parse_bool(metadata["network-access"], "network-access"),
+        network_access=network_access,
         web_search=metadata["web-search"],
         workspace=workspace,
+        github_repository=github_repository,
         max_passes=parse_limit(metadata["max-passes"], "max-passes"),
         max_total_tokens=parse_limit(metadata["max-total-tokens"], "max-total-tokens"),
         model=metadata.get("model") or None,
@@ -479,6 +546,7 @@ def stop_worker(name: str, *, quiet: bool = False) -> bool:
 def new_agent(name: str, source_prompt: Path) -> None:
     validate_name(name)
     config = parse_prompt(source_prompt)
+    verify_github_repository(config.github_repository)
     with state_lock():
         if prompt_path(name).exists():
             raise ControllerError(f"agent already exists: {name}")
@@ -502,7 +570,8 @@ def new_agent(name: str, source_prompt: Path) -> None:
 
 
 def start_agent(name: str) -> None:
-    require_agent(name)
+    config = parse_prompt(require_agent(name))
+    verify_github_repository(config.github_repository)
     pid = spawn_worker(name)
     record_change(f"started {name}")
     suffix = f" with pid {pid}" if pid is not None else ""
@@ -532,6 +601,7 @@ def stop_agent(name: str) -> None:
 def retarget_agent(name: str, source_prompt: Path) -> None:
     current = require_agent(name)
     replacement = parse_prompt(source_prompt)
+    verify_github_repository(replacement.github_repository)
     with state_lock():
         ensure_workspace_is_exclusive(name, replacement.workspace)
         archived = state_path("prompts.history", f"{name}.{timestamp()}.md")
@@ -565,6 +635,7 @@ def status_records() -> list[dict[str, Any]]:
                 "state": "running" if runtime else "inactive",
                 "pid": int(runtime["pid"]) if runtime is not None else None,
                 "workspace": str(config.workspace),
+                "github_repository": config.github_repository,
                 "prompt": str(prompt_path(name)),
                 "limits": {
                     "max_passes": config.max_passes or 0,
@@ -756,6 +827,11 @@ def doctor() -> None:
     )
 
 
+def check_repository(repository: str) -> None:
+    verified = verify_github_repository(repository)
+    print(f"GitHub repository accessible: {verified}")
+
+
 def next_followup(name: str) -> Path | None:
     paths = sorted(state_path("followups", name).glob("followup.*.md"))
     return paths[0] if paths else None
@@ -918,6 +994,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="research-team")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("doctor")
+    repository = subparsers.add_parser("check-repository")
+    repository.add_argument("repository")
     subparsers.add_parser("list")
     status = subparsers.add_parser("status")
     status.add_argument("--json", action="store_true")
@@ -973,6 +1051,8 @@ def dispatch(arguments: argparse.Namespace) -> None:
     command = arguments.command
     if command == "doctor":
         doctor()
+    elif command == "check-repository":
+        check_repository(arguments.repository)
     elif command == "list":
         print("\n".join(agent_names()))
     elif command == "status":
