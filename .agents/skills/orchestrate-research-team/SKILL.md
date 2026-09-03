@@ -1,6 +1,6 @@
 ---
 name: orchestrate-research-team
-description: Run a standing team of autonomous mathematical research agents from a one-line brief such as "three researchers and one reviewer". Bootstrap the bundled Linux controller when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
+description: Run a standing team of autonomous mathematical research agents from a one-line brief such as "three researchers and one reviewer". Bootstrap the bundled cross-platform Python controller when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
 ---
 
 # Research Team Orchestrator
@@ -45,11 +45,12 @@ timer or busy polling. A later human message may change the brief or cadence.
 ## Agent control interface
 
 Prefer an existing control interface supplied by the invoking prompt. Otherwise,
-on a Linux host with systemd and an authenticated Codex CLI, read
-[the bundled controller guide](references/bundled-controller.md) and use the
-controller shipped with this skill. Its privileged installation requires human
-authorization, but after installation the orchestrator handles the roster from
-the short brief without requiring the human to write prompts or commands.
+on macOS or Linux with Python 3.12 or newer and an authenticated Codex CLI, read
+[the Python controller guide](references/python-controller.md) and use the
+controller shipped with this skill. It uses the Codex extension in the OpenAI
+Agents SDK and requires no privileged installation. After its dependency is
+available, the orchestrator handles the roster from the short brief without
+requiring the human to write prompts or commands.
 
 Whichever adapter is selected must provide:
 

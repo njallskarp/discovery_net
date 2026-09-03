@@ -1,25 +1,57 @@
 from __future__ import annotations
 
+import asyncio
+import importlib.machinery
+import importlib.util
+import json
 import os
-import shutil
 import subprocess
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Any
 
 
 def _skill_root() -> Path:
     return Path(__file__).resolve().parents[1] / ".agents" / "skills" / "orchestrate-research-team"
 
 
-def _write_prompt(path: Path, *, effort: str = "xhigh", body: str = "Work autonomously.") -> None:
+def _controller_path() -> Path:
+    return _skill_root() / "scripts" / "research-team"
+
+
+def _load_controller() -> ModuleType:
+    loader = importlib.machinery.SourceFileLoader(
+        "research_team_controller", str(_controller_path())
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[loader.name] = module
+    loader.exec_module(module)
+    return module
+
+
+def _write_prompt(
+    path: Path,
+    *,
+    role: str = "researcher",
+    mode: str = "continuous",
+    effort: str = "xhigh",
+    body: str = "Work autonomously.",
+) -> None:
+    restart_seconds = 1800 if mode == "continuous" else 0
     path.write_text(
         "\n".join(
             (
-                "role: researcher",
-                "mode: continuous",
+                f"role: {role}",
+                f"mode: {mode}",
                 f"effort: {effort}",
                 "tier: default",
-                "restart-seconds: 1800",
+                f"restart-seconds: {restart_seconds}",
                 "permissions: workspace-write",
+                "network-access: true",
+                "web-search: live",
                 "",
                 body,
                 "",
@@ -28,218 +60,170 @@ def _write_prompt(path: Path, *, effort: str = "xhigh", body: str = "Work autono
     )
 
 
-def _controller_environment(tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
+def _controller_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     state_root = tmp_path / "state"
-    for relative in (
-        "bin",
-        "prompts",
-        "prompts.history",
-        "prompts.disabled",
-        "keys",
-        "followups",
-        "work",
-    ):
-        (state_root / relative).mkdir(parents=True, exist_ok=True)
-
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    systemctl_log = tmp_path / "systemctl.log"
-    fake_systemctl = fake_bin / "systemctl"
-    fake_systemctl.write_text(
-        "#!/usr/bin/env bash\n"
-        f"printf '%s\\n' \"$*\" >> {systemctl_log}\n"
-        'if [[ "${1:-}" == is-active ]]; then echo inactive; fi\n'
-    )
-    fake_systemctl.chmod(0o755)
-
-    config_file = tmp_path / "controller.conf"
-    config_file.write_text(
-        f"OPERATOR={os.environ.get('USER', 'nobody')}\n"
-        f"CODEX_BINARY={shutil.which('true') or '/usr/bin/true'}\n"
-        "AGENT_CAP=8\n"
-    )
-    unit_file = tmp_path / "research-team-agent@.service"
-    unit_file.write_text("[Service]\n")
-
     environment = os.environ.copy()
     environment.update(
         {
-            "PATH": f"{fake_bin}:{environment['PATH']}",
             "DISCOVERY_RESEARCH_TEAM_TESTING": "1",
             "DISCOVERY_RESEARCH_TEAM_ROOT": str(state_root),
-            "DISCOVERY_RESEARCH_TEAM_CONFIG": str(config_file),
-            "DISCOVERY_RESEARCH_TEAM_COMMAND": str(_skill_root() / "scripts" / "research-team"),
-            "DISCOVERY_RESEARCH_TEAM_UNIT": str(unit_file),
-            "DISCOVERY_RESEARCH_TEAM_OPERATOR": os.environ.get("USER", "nobody"),
         }
     )
-    return environment, state_root, systemctl_log
+    return environment, state_root
+
+
+def _run_controller(
+    environment: dict[str, str], *arguments: object
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, _controller_path(), *(str(argument) for argument in arguments)],
+        env=environment,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
 
 
 def test_controller_preserves_visible_prompt_history_and_retired_state(tmp_path: Path) -> None:
-    controller = _skill_root() / "scripts" / "research-team"
-    environment, state_root, systemctl_log = _controller_environment(tmp_path)
+    environment, state_root = _controller_environment(tmp_path)
     first_prompt = tmp_path / "first.md"
     second_prompt = tmp_path / "second.md"
     _write_prompt(first_prompt, body="First mandate.")
     _write_prompt(second_prompt, effort="high", body="Second mandate.")
 
-    subprocess.run(
-        [controller, "new", "researcher-1", first_prompt],
-        env=environment,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    shown = subprocess.run(
-        [controller, "prompt", "researcher-1"],
-        env=environment,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+    created = _run_controller(environment, "new", "researcher-1", first_prompt)
+    assert "created and started" in created.stdout
+    assert "researcher-1" in (state_root / "launches.log").read_text()
+
+    shown = _run_controller(environment, "prompt", "researcher-1")
     assert "First mandate." in shown.stdout
     assert "effort: xhigh" in shown.stdout
 
     followup = tmp_path / "followup.md"
     followup.write_text("Stay in this area, but avoid duplicating the other lane.\n")
-    subprocess.run(
-        [controller, "continue", "researcher-1", followup],
-        env=environment,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
-    queued_followups = list((state_root / "followups/researcher-1").glob("followup.*"))
+    _run_controller(environment, "continue", "researcher-1", followup)
+    queued_followups = list((state_root / "followups/researcher-1").glob("followup.*.md"))
     assert len(queued_followups) == 1
     assert "avoid duplicating" in queued_followups[0].read_text()
 
-    subprocess.run(
-        [controller, "retarget", "researcher-1", second_prompt],
-        env=environment,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+    _run_controller(environment, "retarget", "researcher-1", second_prompt)
     history = list((state_root / "prompts.history").glob("researcher-1.*.md"))
     assert len(history) == 1
     assert "First mandate." in history[0].read_text()
     assert "Second mandate." in (state_root / "prompts/researcher-1.md").read_text()
 
-    subprocess.run(
-        [controller, "retire", "researcher-1"],
-        env=environment,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+    _run_controller(environment, "retire", "researcher-1")
     assert not (state_root / "prompts/researcher-1.md").exists()
     retired = list((state_root / "prompts.disabled").glob("researcher-1.*.md"))
     assert len(retired) == 1
     assert "Second mandate." in retired[0].read_text()
-    systemctl_calls = systemctl_log.read_text()
-    assert "enable --now discovery-research-agent@researcher-1.service" in systemctl_calls
-    assert "disable --now discovery-research-agent@researcher-1.service" in systemctl_calls
+    assert (state_root / "keys/researcher-1.pem").stat().st_mode & 0o777 == 0o600
 
 
-def test_controller_rejects_implicit_or_invalid_runtime_settings(tmp_path: Path) -> None:
-    controller = _skill_root() / "scripts" / "research-team"
-    environment, _, _ = _controller_environment(tmp_path)
+def test_controller_rejects_non_default_tier_and_invalid_effort(tmp_path: Path) -> None:
+    environment, _ = _controller_environment(tmp_path)
     invalid_prompt = tmp_path / "invalid.md"
-    invalid_prompt.write_text(
-        "role: researcher\n"
-        "mode: continuous\n"
-        "tier: default\n"
-        "restart-seconds: 30\n"
-        "permissions: workspace-write\n"
-    )
+    _write_prompt(invalid_prompt, effort="ultra")
 
     result = subprocess.run(
-        [controller, "new", "researcher-1", invalid_prompt],
+        [sys.executable, _controller_path(), "new", "researcher-1", invalid_prompt],
         env=environment,
         check=False,
         text=True,
         capture_output=True,
     )
-
     assert result.returncode != 0
     assert "unsupported effort" in result.stderr
 
-
-def test_controller_scripts_are_valid_bash() -> None:
-    for script_name in ("research-team", "run-agent"):
-        subprocess.run(
-            ["bash", "-n", _skill_root() / "scripts" / script_name],
-            check=True,
-        )
-
-
-def test_runner_applies_explicit_metadata_and_archives_a_oneshot_report(
-    tmp_path: Path,
-) -> None:
-    state_root = tmp_path / "state"
-    prompt_directory = state_root / "prompts"
-    work_directory = state_root / "work/principal-1"
-    followup_directory = state_root / "followups/principal-1"
-    prompt_directory.mkdir(parents=True)
-    work_directory.mkdir(parents=True)
-    followup_directory.mkdir(parents=True)
-    prompt = prompt_directory / "principal-1.md"
-    prompt.write_text(
-        "role: principal\n"
-        "mode: oneshot\n"
-        "effort: high\n"
-        "tier: default\n"
-        "restart-seconds: 0\n"
-        "permissions: workspace-write\n"
-        "\nInspect the team independently.\n"
-    )
-    (followup_directory / "followup.000001").write_text(
-        "Focus the assessment on recent marginal progress.\n"
-    )
-    config = tmp_path / "controller.conf"
-    config.write_text("CODEX_BINARY=/unused\n")
-    argument_log = tmp_path / "codex-arguments.txt"
-    fake_codex = tmp_path / "codex"
-    fake_codex.write_text(
-        "#!/usr/bin/env bash\n"
-        f"printf '%s\\n' \"$*\" > {argument_log}\n"
-        "while [[ $# -gt 0 ]]; do\n"
-        '  if [[ "$1" == -o ]]; then shift; printf \'completed\\n\' > "$1"; fi\n'
-        "  shift\n"
-        "done\n"
-    )
-    fake_codex.chmod(0o755)
-    environment = os.environ.copy()
-    environment.update(
-        {
-            "DISCOVERY_RESEARCH_TEAM_ROOT": str(state_root),
-            "DISCOVERY_RESEARCH_TEAM_CONFIG": str(config),
-            "DISCOVERY_RESEARCH_TEAM_CODEX": str(fake_codex),
-        }
-    )
-
-    subprocess.run(
-        [_skill_root() / "scripts/run-agent", "principal-1"],
+    text = invalid_prompt.read_text().replace("effort: ultra", "effort: high")
+    invalid_prompt.write_text(text.replace("tier: default", "tier: flex"))
+    result = subprocess.run(
+        [sys.executable, _controller_path(), "new", "researcher-1", invalid_prompt],
         env=environment,
-        check=True,
+        check=False,
         text=True,
         capture_output=True,
     )
+    assert result.returncode != 0
+    assert "only tier: default" in result.stderr
 
-    arguments = argument_log.read_text()
-    assert "model_reasoning_effort=high" in arguments
-    assert "service_tier=default" in arguments
-    assert "--full-auto" in arguments
-    assert "Inspect the team independently." in arguments
-    assert "Focus the assessment on recent marginal progress." in arguments
-    reports = [
-        path
-        for path in (work_directory / "reports").glob("*.md")
-        if not path.name.startswith("followup-")
+
+def test_controller_is_python_and_old_linux_adapter_is_removed() -> None:
+    source = _controller_path().read_text()
+    assert source.startswith("#!/usr/bin/env python3")
+    assert "systemctl" not in source
+    assert not (_skill_root() / "scripts/run-agent").exists()
+    assert not (_skill_root() / "assets/research-team-agent@.service").exists()
+    compile(source, str(_controller_path()), "exec")
+
+
+def test_sdk_pass_resumes_thread_records_usage_and_avoids_repeating_prompt(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    controller = _load_controller()
+    monkeypatch.setenv("DISCOVERY_RESEARCH_TEAM_ROOT", str(tmp_path / "state"))
+    controller.ensure_state()
+    prompt = controller.prompt_path("principal-1")
+    _write_prompt(
+        prompt,
+        role="principal",
+        mode="oneshot",
+        effort="high",
+        body="Inspect the team independently.",
+    )
+    controller.state_path("work", "principal-1", "reports").mkdir(parents=True)
+    controller.state_path("followups", "principal-1").mkdir(parents=True)
+    followup = controller.state_path("followups", "principal-1", "followup.1.md")
+    followup.write_text("Focus on recent marginal progress.\n")
+
+    observed: dict[str, Any] = {"inputs": [], "options": []}
+
+    class FakeThreadOptions:
+        def __init__(self, **values: Any) -> None:
+            observed["options"].append(values)
+
+    class FakeThread:
+        def __init__(self, thread_id: str = "thread-123") -> None:
+            self.id = thread_id
+
+        async def run(self, prompt_text: str) -> SimpleNamespace:
+            observed["inputs"].append(prompt_text)
+            usage = SimpleNamespace(input_tokens=120, cached_input_tokens=40, output_tokens=30)
+            return SimpleNamespace(final_response="completed", usage=usage)
+
+    class FakeCodex:
+        def __init__(self, **options: Any) -> None:
+            observed["codex_options"] = options
+
+        def start_thread(self, options: object) -> FakeThread:
+            return FakeThread()
+
+        def resume_thread(self, thread_id: str, options: object) -> FakeThread:
+            assert thread_id == "thread-123"
+            return FakeThread(thread_id)
+
+    monkeypatch.setattr(controller, "load_codex_sdk", lambda: (FakeCodex, FakeThreadOptions))
+
+    asyncio.run(controller.run_one_pass("principal-1"))
+    asyncio.run(controller.run_one_pass("principal-1"))
+
+    assert "Inspect the team independently." in observed["inputs"][0]
+    assert "Focus on recent marginal progress." in observed["inputs"][0]
+    assert observed["inputs"][1].startswith("Continue the autonomous campaign")
+    assert observed["options"][0]["model_reasoning_effort"] == "high"
+    assert observed["options"][0]["sandbox_mode"] == "workspace-write"
+    assert observed["options"][0]["network_access_enabled"] is True
+    assert observed["options"][0]["web_search_mode"] == "live"
+    assert str(observed["codex_options"]["codex_path_override"]).endswith("codex-default-tier")
+    assert controller.state_path("work", "principal-1", "thread-id").read_text().strip() == (
+        "thread-123"
+    )
+    usage_records = [
+        json.loads(line)
+        for line in controller.state_path("work", "principal-1", "usage.jsonl")
+        .read_text()
+        .splitlines()
     ]
-    assert len(reports) == 1
-    assert reports[0].read_text() == "completed\n"
-    archived_followups = list((work_directory / "reports").glob("followup-*.md"))
-    assert len(archived_followups) == 1
-    assert not list(followup_directory.iterdir())
+    assert len(usage_records) == 2
+    assert usage_records[0]["total_tokens"] == 150
+    assert not list(controller.state_path("followups", "principal-1").iterdir())

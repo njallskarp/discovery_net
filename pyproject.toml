@@ -32,6 +32,9 @@ discovery-network = "discovery_net.node.runtime.formation_process:main"
 discovery-node = "discovery_net.node.process:main"
 
 [project.optional-dependencies]
+research-team = [
+  "openai-agents>=0.22,<0.23",
+]
 dev = [
   "mypy>=1.15",
   "pytest>=8.3",
