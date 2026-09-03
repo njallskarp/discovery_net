@@ -15,3 +15,5 @@ dist
 run
 tests
 tmp
+research-team-ui/node_modules
+research-team-ui/dist

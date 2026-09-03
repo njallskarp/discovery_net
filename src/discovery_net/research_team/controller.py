@@ -27,10 +27,19 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from discovery_net.research_team.impact import (
+    ImpactContext,
+    build_impact_context,
+    impact_prompt,
+    parse_impact_batch,
+    record_impact_batch,
+    run_identifier,
+)
+
 MINIMUM_SDK_VERSION = (0, 22, 0)
 MAXIMUM_SDK_VERSION = (0, 23, 0)
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
-ROLES = {"researcher", "reviewer", "principal", "orchestrator"}
+ROLES = {"researcher", "reviewer", "principal", "orchestrator", "impact-assessor"}
 MODES = {"continuous", "oneshot"}
 EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
 TIERS = {"default", "flex"}
@@ -50,6 +59,7 @@ METADATA_KEYS = {
     "web-search",
     "workspace",
     "github-repository",
+    "ledger-path",
     "contract-confirmed",
     "max-passes",
     "max-total-tokens",
@@ -74,6 +84,7 @@ class PromptConfig:
     web_search: str
     workspace: Path
     github_repository: str
+    ledger_path: Path | None
     max_passes: int | None
     max_total_tokens: int | None
     model: str | None
@@ -255,7 +266,7 @@ def parse_prompt(path: Path) -> PromptConfig:
             raise ControllerError(f"duplicate prompt metadata: {key}")
         metadata[key] = value
 
-    required = METADATA_KEYS - {"model"}
+    required = METADATA_KEYS - {"model", "ledger-path"}
     missing = sorted(required - metadata.keys())
     if missing:
         raise ControllerError(f"prompt is missing metadata: {', '.join(missing)}")
@@ -293,6 +304,17 @@ def parse_prompt(path: Path) -> PromptConfig:
     if not network_access:
         raise ControllerError("network-access must be true for the required GitHub repository")
     github_repository, _ = parse_github_repository(metadata["github-repository"])
+    ledger_path: Path | None = None
+    if "ledger-path" in metadata:
+        ledger_path = Path(metadata["ledger-path"]).expanduser()
+        if not ledger_path.is_absolute():
+            raise ControllerError("ledger-path must be an absolute path")
+        ledger_path = ledger_path.resolve()
+    if metadata["role"] == "impact-assessor":
+        if ledger_path is None:
+            raise ControllerError("impact-assessor prompts require ledger-path")
+        if not ledger_path.is_file():
+            raise ControllerError(f"artifact ledger does not exist: {ledger_path}")
     return PromptConfig(
         role=metadata["role"],
         mode=metadata["mode"],
@@ -304,6 +326,7 @@ def parse_prompt(path: Path) -> PromptConfig:
         web_search=metadata["web-search"],
         workspace=workspace,
         github_repository=github_repository,
+        ledger_path=ledger_path,
         max_passes=parse_limit(metadata["max-passes"], "max-passes"),
         max_total_tokens=parse_limit(metadata["max-total-tokens"], "max-total-tokens"),
         model=metadata.get("model") or None,
@@ -343,6 +366,14 @@ def ensure_workspace_is_exclusive(name: str, workspace: Path) -> None:
             raise ControllerError(
                 f"workspace is already assigned to {other_name}; each agent needs its own workspace"
             )
+
+
+def ensure_impact_assessor_is_unique(name: str, role: str) -> None:
+    if role != "impact-assessor":
+        return
+    for other_name in agent_names():
+        if other_name != name and parse_prompt(prompt_path(other_name)).role == "impact-assessor":
+            raise ControllerError("only one active impact-assessor is allowed")
 
 
 def config_value(key: str, default: Any) -> Any:
@@ -555,6 +586,7 @@ def new_agent(name: str, source_prompt: Path) -> None:
         if len(names) >= cap:
             raise ControllerError(f"agent cap reached: {len(names)}/{cap}")
         ensure_workspace_is_exclusive(name, config.workspace)
+        ensure_impact_assessor_is_unique(name, config.role)
         atomic_write(prompt_path(name), config.text)
         for relative in ("tmp", "reports"):
             state_path("work", name, relative).mkdir(parents=True, exist_ok=True)
@@ -604,6 +636,7 @@ def retarget_agent(name: str, source_prompt: Path) -> None:
     verify_github_repository(replacement.github_repository)
     with state_lock():
         ensure_workspace_is_exclusive(name, replacement.workspace)
+        ensure_impact_assessor_is_unique(name, replacement.role)
         archived = state_path("prompts.history", f"{name}.{timestamp()}.md")
         atomic_write(archived, current.read_text())
         atomic_write(current, replacement.text)
@@ -860,6 +893,12 @@ async def run_one_pass(name: str) -> PromptConfig:
     thread_id_path = state_path("work", name, "thread-id")
     thread_id = thread_id_path.read_text().strip() if thread_id_path.exists() else None
     prompt, followup = pass_input(name, config, thread_id)
+    impact_context: ImpactContext | None = None
+    if config.role == "impact-assessor":
+        if config.ledger_path is None:
+            raise ControllerError("impact-assessor prompt has no ledger-path")
+        impact_context = build_impact_context(state_root(), config.ledger_path)
+        prompt += impact_prompt(impact_context)
     sandbox_mode = (
         "danger-full-access" if config.permissions == "unrestricted" else "workspace-write"
     )
@@ -883,6 +922,18 @@ async def run_one_pass(name: str) -> PromptConfig:
         atomic_write(thread_id_path, resolved_thread_id + "\n")
     run_timestamp = timestamp()
     response = result.final_response.rstrip() + "\n"
+    if impact_context is not None:
+        try:
+            impact_batch = parse_impact_batch(response, impact_context.run_ids)
+        except ValueError as exc:
+            raise ControllerError(f"invalid impact-assessor response: {exc}") from exc
+        record_impact_batch(
+            state_root(),
+            name,
+            impact_context,
+            impact_batch,
+            assessed_at=finished_at,
+        )
     atomic_write(state_path("work", name, "last-message.md"), response)
     report_path = state_path("work", name, "reports", f"{run_timestamp}.md")
     atomic_write(report_path, response)
@@ -893,13 +944,16 @@ async def run_one_pass(name: str) -> PromptConfig:
     append_json(
         state_path("work", name, "usage.jsonl"),
         {
+            "run_id": run_identifier(name, started_at),
             "agent": name,
+            "role": config.role,
             "started_at": started_at,
             "finished_at": finished_at,
             "thread_id": resolved_thread_id,
             "model": config.model,
             "effort": config.effort,
             "tier": config.tier,
+            "report": str(report_path),
             "input_tokens": input_tokens,
             "cached_input_tokens": cached_input_tokens,
             "output_tokens": output_tokens,
@@ -952,6 +1006,19 @@ def worker(name: str, nonce: str) -> None:
                     flush=True,
                 )
                 pass_started_at = iso_timestamp()
+                atomic_write(
+                    state_path("work", name, "current-pass.json"),
+                    json.dumps(
+                        {
+                            "agent": name,
+                            "role": config.role,
+                            "started_at": pass_started_at,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n",
+                )
                 try:
                     config = asyncio.run(run_one_pass(name))
                     print(f"{iso_timestamp()} pass completed", flush=True)
@@ -961,6 +1028,10 @@ def worker(name: str, nonce: str) -> None:
                         state_path("work", name, "failures.jsonl"),
                         {
                             "timestamp": iso_timestamp(),
+                            "agent": name,
+                            "role": config.role,
+                            "started_at": pass_started_at,
+                            "finished_at": finished_at,
                             "error": f"{type(exc).__name__}: {exc}",
                         },
                     )
@@ -977,6 +1048,8 @@ def worker(name: str, nonce: str) -> None:
                             "error": f"{type(exc).__name__}: {exc}",
                         },
                     )
+                finally:
+                    state_path("work", name, "current-pass.json").unlink(missing_ok=True)
                 if config.mode == "oneshot":
                     return
                 reason = limit_reason(name, config)

@@ -46,7 +46,8 @@ max-passes: 0
 max-total-tokens: 0
 ```
 
-Allowed roles are `researcher`, `reviewer`, `principal`, and `orchestrator`.
+Allowed roles are `researcher`, `reviewer`, `principal`, `orchestrator`, and
+`impact-assessor`.
 Allowed modes are `continuous` and `oneshot`. Allowed reasoning efforts are
 `minimal`, `low`, `medium`, `high`, and `xhigh`. Allowed tiers are `default`
 and `flex`; record the human's choice explicitly so the fleet does not inherit
@@ -65,6 +66,15 @@ non-interactive `git ls-remote` access check on `new`, `start`, and `retarget`.
 `contract-confirmed` must be `true` and records that the orchestrator crossed
 the human confirmation gate. An optional `model:` line pins a model. Omit it to
 use the authenticated Codex default.
+
+An `impact-assessor` additionally requires an existing absolute `ledger-path`.
+Only one configured impact assessor may be active. Each pass receives at most
+twelve completed researcher runs after the durable impact cursor and a bounded recent
+graph neighborhood loaded through the read-only GraphQL executor. The
+controller validates its JSON response before recording annotations or moving
+the cursor. Use a 1,800-to-3,600-second cadence. Start from
+`research-team/impact-assessor.prompt.example.md`; the assessor is advisory and
+must not research, publish, submit to the graph, or manage agents.
 
 `max-passes` and `max-total-tokens` are controller-enforced limits checked
 between passes. Set either value to `0` for no controller limit. A token limit
@@ -143,6 +153,30 @@ process restarts. It sends the complete standing mandate only on the first pass
 and whenever that mandate changes. Ordinary passes receive a short continuation
 message, reducing repeated input tokens. Reports and per-pass token usage are
 recorded under the agent workspace.
+
+Every new usage record includes a stable run ID, role, report path, timing, and
+runtime choices. While a pass is active, the worker records a small
+`current-pass.json`; failures include their actual interval. These files drive
+the timeline without exposing prompt or report contents to the browser.
+
+## Docker timeline dashboard
+
+Build and launch the React timeline from the repository root:
+
+```text
+export DISCOVERY_RESEARCH_TEAM_ROOT=/absolute/path/to/campaign-state
+docker compose -f research-team/compose.yaml up --build -d
+```
+
+Open `http://127.0.0.1:8787`. Override the host port with
+`DISCOVERY_RESEARCH_TEAM_DASHBOARD_PORT`. The container mounts campaign state
+read-only and exposes only `/api/health`, `/api/timeline`, and its built static
+assets. The API deliberately omits prompts, reports, workspace contents,
+credential paths, and keys. The image also contains the Python controller and a
+pinned Codex CLI, but Compose launches only the dashboard. Keep detached agent
+workers on the authenticated host; moving them into containers requires every
+absolute workspace, ledger, Codex home, and authorized Git/SSH credential to be
+mounted deliberately at matching paths.
 
 ## Reconciliation
 

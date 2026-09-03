@@ -68,13 +68,13 @@ def _controller_environment(tmp_path: Path) -> tuple[dict[str, str], Path]:
     fake_git = fake_bin / "git"
     fake_git.write_text(
         "#!/bin/sh\n"
-        "if [ -n \"$DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG\" ]; then\n"
-        "  printf '%s\\n' \"$*\" >> \"$DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG\"\n"
+        'if [ -n "$DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG" ]; then\n'
+        '  printf \'%s\\n\' "$*" >> "$DISCOVERY_RESEARCH_TEAM_TEST_GIT_LOG"\n'
         "fi\n"
-        "if [ \"$DISCOVERY_RESEARCH_TEAM_TEST_GITHUB_FAILURE\" = 1 ]; then\n"
+        'if [ "$DISCOVERY_RESEARCH_TEAM_TEST_GITHUB_FAILURE" = 1 ]; then\n'
         "  exit 128\n"
         "fi\n"
-        "case \" $* \" in\n"
+        'case " $* " in\n'
         "  *' ls-remote '*) printf '%s\\t%s\\n' "
         "'0123456789abcdef0123456789abcdef01234567' 'HEAD' ;;\n"
         "esac\n"
@@ -244,9 +244,7 @@ def test_controller_requires_and_checks_accessible_github_repository(tmp_path: P
     assert "network-access must be true" in result.stderr
 
     _write_prompt(prompt)
-    unavailable_environment = environment | {
-        "DISCOVERY_RESEARCH_TEAM_TEST_GITHUB_FAILURE": "1"
-    }
+    unavailable_environment = environment | {"DISCOVERY_RESEARCH_TEAM_TEST_GITHUB_FAILURE": "1"}
     result = subprocess.run(
         [sys.executable, _controller_path(), "new", "researcher-1", prompt],
         env=unavailable_environment,

@@ -1,0 +1,45 @@
+name: discovery-research-team
+
+services:
+  dashboard:
+    image: ${DISCOVERY_RESEARCH_TEAM_IMAGE:-discovery-research-team:local}
+    build:
+      context: ..
+      dockerfile: research-team/Dockerfile
+    command:
+      - research-team-dashboard
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8787"
+      - --state-root
+      - /var/lib/research-team
+    cap_drop:
+      - ALL
+    init: true
+    restart: unless-stopped
+    pids_limit: 128
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - type: bind
+        source: ${DISCOVERY_RESEARCH_TEAM_ROOT:?Set the absolute campaign state directory}
+        target: /var/lib/research-team
+        read_only: true
+    ports:
+      - target: 8787
+        published: ${DISCOVERY_RESEARCH_TEAM_DASHBOARD_PORT:-8787}
+        host_ip: 127.0.0.1
+        protocol: tcp
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - from urllib.request import urlopen; urlopen('http://127.0.0.1:8787/api/health', timeout=1).close()
+      interval: 5s
+      timeout: 2s
+      retries: 12

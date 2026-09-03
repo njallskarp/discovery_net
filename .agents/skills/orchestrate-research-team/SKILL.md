@@ -1,6 +1,6 @@
 ---
 name: orchestrate-research-team
-description: Run a standing team of autonomous mathematical research agents from a short human brief. Collect and confirm the complete operating contract, bootstrap the bundled cross-platform Python controller when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
+description: Run a standing team of autonomous mathematical research agents from a short human brief. Collect and confirm the complete operating contract, bootstrap the bundled cross-platform Python controller and timeline dashboard when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, optionally maintain one incremental impact assessor, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
 ---
 
 # Research Team Orchestrator
@@ -36,6 +36,7 @@ creating or starting any agent, resolve all of the following with the human:
   effort, service tier, permissions, network and web-search policy for each role
 - researcher and reviewer pass cadences, plus the orchestrator evaluation
   cadence
+- whether to run one advisory impact assessor, and its 30-to-60-minute cadence
 - scratch and persistent-state locations, spending or usage limits, and the
   condition for pausing or ending the campaign
 
@@ -119,7 +120,8 @@ state and reports outside the research checkout.
 
 Each wake, in this order:
 
-1. Read `status --json` and classify each agent as researcher, reviewer, or other.
+1. Read `status --json` and classify each agent as researcher, reviewer,
+   principal, impact assessor, or other.
 2. Handle obvious operational failures such as dead agents or restart storms.
 3. Create agents to reach the target counts, newest last.
 4. Obtain the principal researcher's assessment of the viable team.
@@ -234,6 +236,38 @@ Reviewers exist to check work the researchers cannot check for themselves. You
 may add, retire, or re-scope reviewers. You may never point a reviewer at a
 particular contribution, tell it what verdict to reach, or let a researcher
 influence its assignment. A directed review is not independent evidence.
+
+## Impact assessor and dashboard
+
+When the human requests impact visibility, maintain at most one continuous
+`impact-assessor`. This role is observational management overhead, not a
+researcher, reviewer, or principal. Give it a 30-to-60-minute post-pass delay,
+a dedicated workspace, the committed ledger path, live web access for narrowly
+targeted primary-literature checks, and the same explicit model, effort, tier,
+and GitHub contract as the rest of the fleet. Use the bundled example prompt as
+the mandate baseline.
+
+The controller supplies each assessor pass with only completed researcher runs after
+its durable cursor, capped at twelve, plus the newest bounded neighborhood
+loaded through Discovery Net's read-only GraphQL schema. The assessor must
+return the controller's exact JSON contract. It classifies a run's problem lane,
+change type, likely impact, novelty signal, paper potential, confidence,
+rationale, evidence, and caveats. It must distinguish mathematical progress
+from review, packaging, and source publication. Treat all labels as advisory:
+even `strong_novelty_signal` is not proof of novelty, correctness, or
+publishability.
+
+Do not ask the assessor to scan the whole ledger or research archive, conduct
+new mathematics, submit graph artifacts, publish code, steer agents, or review
+proofs. Do not use its labels as the sole reason to stop or retarget a
+researcher. The principal and human retain those decisions.
+
+Launch the Docker dashboard when the human requests a visual view. It mounts
+controller state read-only, binds to localhost by default, and renders actual
+pass intervals, separate problem lanes, change markers, failures, and impact
+signals. Keep agent execution on the authenticated host unless the human has
+explicitly supplied a container credential and workspace-mount design; the
+dashboard container does not need GitHub, SSH, signing-key, or Codex access.
 
 ## Team coordination
 
