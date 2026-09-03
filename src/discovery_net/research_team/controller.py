@@ -32,6 +32,7 @@ NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
 ROLES = {"researcher", "reviewer", "principal", "orchestrator"}
 MODES = {"continuous", "oneshot"}
 EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
+TIERS = {"default", "flex"}
 PERMISSIONS = {"workspace-write", "unrestricted"}
 WEB_SEARCH_MODES = {"disabled", "cached", "live"}
 METADATA_KEYS = {
@@ -202,8 +203,8 @@ def parse_prompt(path: Path) -> PromptConfig:
         raise ControllerError(f"unsupported mode: {metadata['mode']}")
     if metadata["effort"] not in EFFORTS:
         raise ControllerError(f"unsupported effort: {metadata['effort']}")
-    if metadata["tier"] != "default":
-        raise ControllerError("the Python controller supports only tier: default")
+    if metadata["tier"] not in TIERS:
+        raise ControllerError(f"unsupported tier: {metadata['tier']}")
     if metadata["permissions"] not in PERMISSIONS:
         raise ControllerError(f"unsupported permissions: {metadata['permissions']}")
     if metadata["web-search"] not in WEB_SEARCH_MODES:
@@ -304,18 +305,20 @@ def generate_key(name: str) -> None:
     atomic_write(key_path, encoded.decode(), mode=0o600)
 
 
-def codex_wrapper() -> Path:
-    """Create a Python shim that forces standard service tier for SDK-launched Codex."""
+def codex_wrapper(tier: str) -> Path:
+    """Create a Python shim that pins the requested service tier for SDK-launched Codex."""
+    if tier not in TIERS:
+        raise ControllerError(f"unsupported tier: {tier}")
     codex = shutil.which("codex")
     if codex is None:
         raise ControllerError("Codex CLI is not available on PATH")
-    wrapper = state_path("bin", "codex-default-tier")
+    wrapper = state_path("bin", f"codex-{tier}-tier")
     source = (
         "#!/usr/bin/env python3\n"
         "import os\n"
         "import sys\n"
         f"codex = {codex!r}\n"
-        "os.execv(codex, [codex, '--config', 'service_tier=\"default\"', *sys.argv[1:]])\n"
+        f"os.execv(codex, [codex, '--config', 'service_tier=\"{tier}\"', *sys.argv[1:]])\n"
     )
     if not wrapper.exists() or wrapper.read_text() != source:
         atomic_write(wrapper, source, mode=0o755)
@@ -401,7 +404,7 @@ def spawn_worker(name: str) -> int | None:
             log.write(f"{name} {nonce}\n")
         return None
     load_codex_sdk()
-    codex_wrapper()
+    codex_wrapper(parse_prompt(require_agent(name)).tier)
     work = state_path("work", name)
     work.mkdir(parents=True, exist_ok=True)
     log_path = work / "agent.log"
@@ -745,7 +748,8 @@ def doctor() -> None:
     if login.returncode != 0:
         raise ControllerError("Codex CLI is not authenticated")
     ensure_state()
-    codex_wrapper()
+    for tier in sorted(TIERS):
+        codex_wrapper(tier)
     print(
         f"controller ready on {sys.platform}; openai-agents {sdk_version}; "
         f"{version.stdout.strip()}; state {state_root()}"
@@ -793,7 +797,7 @@ async def run_one_pass(name: str) -> PromptConfig:
         web_search_mode=config.web_search,
         approval_policy="never",
     )
-    codex = Codex(codex_path_override=str(codex_wrapper()))
+    codex = Codex(codex_path_override=str(codex_wrapper(config.tier)))
     thread = codex.resume_thread(thread_id, options) if thread_id else codex.start_thread(options)
     started_at = iso_timestamp()
     result = await thread.run(prompt)

@@ -26,6 +26,7 @@ def _write_prompt(
     role: str = "researcher",
     mode: str = "continuous",
     effort: str = "xhigh",
+    tier: str = "default",
     workspace: Path | None = None,
     contract_confirmed: bool = True,
     max_passes: int = 0,
@@ -41,7 +42,7 @@ def _write_prompt(
                 f"role: {role}",
                 f"mode: {mode}",
                 f"effort: {effort}",
-                "tier: default",
+                f"tier: {tier}",
                 f"restart-seconds: {restart_seconds}",
                 "permissions: workspace-write",
                 "network-access: true",
@@ -141,7 +142,7 @@ def test_controller_rejects_unconfirmed_contract_and_invalid_runtime(tmp_path: P
     assert "unsupported effort" in result.stderr
 
     text = invalid_prompt.read_text().replace("effort: ultra", "effort: high")
-    invalid_prompt.write_text(text.replace("tier: default", "tier: flex"))
+    invalid_prompt.write_text(text.replace("tier: default", "tier: priority"))
     result = subprocess.run(
         [sys.executable, _controller_path(), "new", "researcher-1", invalid_prompt],
         env=environment,
@@ -150,7 +151,7 @@ def test_controller_rejects_unconfirmed_contract_and_invalid_runtime(tmp_path: P
         capture_output=True,
     )
     assert result.returncode != 0
-    assert "only tier: default" in result.stderr
+    assert "unsupported tier" in result.stderr
 
     _write_prompt(invalid_prompt, contract_confirmed=False)
     result = subprocess.run(
@@ -188,6 +189,7 @@ def test_sdk_pass_resumes_thread_records_usage_and_avoids_repeating_prompt(
         role="principal",
         mode="oneshot",
         effort="high",
+        tier="flex",
         workspace=tmp_path / "workspace",
         body="Inspect the team independently.",
     )
@@ -223,8 +225,13 @@ def test_sdk_pass_resumes_thread_records_usage_and_avoids_repeating_prompt(
             return FakeThread(thread_id)
 
     monkeypatch.setattr(controller, "load_codex_sdk", lambda: (FakeCodex, FakeThreadOptions))
-    fake_codex = tmp_path / "codex-default-tier"
-    monkeypatch.setattr(controller, "codex_wrapper", lambda: fake_codex)
+    fake_codex = tmp_path / "codex-flex-tier"
+
+    def fake_wrapper(tier: str) -> Path:
+        assert tier == "flex"
+        return fake_codex
+
+    monkeypatch.setattr(controller, "codex_wrapper", fake_wrapper)
 
     asyncio.run(controller.run_one_pass("principal-1"))
     asyncio.run(controller.run_one_pass("principal-1"))

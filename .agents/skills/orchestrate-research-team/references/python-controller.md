@@ -47,9 +47,10 @@ max-total-tokens: 0
 
 Allowed roles are `researcher`, `reviewer`, `principal`, and `orchestrator`.
 Allowed modes are `continuous` and `oneshot`. Allowed reasoning efforts are
-`minimal`, `low`, `medium`, `high`, and `xhigh`. The controller accepts only
-`tier: default`; this prevents the fleet contract from silently selecting Flex
-or Priority. Allowed permissions are `workspace-write` and `unrestricted`.
+`minimal`, `low`, `medium`, `high`, and `xhigh`. Allowed tiers are `default`
+and `flex`; record the human's choice explicitly so the fleet does not inherit
+an ambient service-tier setting. Allowed permissions are `workspace-write` and
+`unrestricted`.
 `network-access` is `true` or `false`, and `web-search` is `disabled`, `cached`,
 or `live`. `workspace` must be an existing absolute directory dedicated to
 this agent. Use a separate checkout or Git worktree when the agent needs a
