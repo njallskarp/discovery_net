@@ -22,6 +22,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -712,7 +713,9 @@ def load_codex_sdk() -> tuple[Any, Any]:
             raise ControllerError(
                 f"openai-agents must be at least 0.22 and below 0.23; found {version}"
             )
-        from agents.extensions.experimental.codex import Codex, ThreadOptions
+        codex_module = import_module("agents.extensions.experimental.codex")
+        Codex = codex_module.Codex
+        ThreadOptions = codex_module.ThreadOptions
     except importlib.metadata.PackageNotFoundError as exc:
         raise ControllerError(
             "OpenAI Agents SDK is missing; install this repository with "
