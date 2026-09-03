@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+"""Repository-local wrapper for the installed research-team controller."""
+
+from discovery_net.research_team.controller import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

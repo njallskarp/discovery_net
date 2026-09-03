@@ -205,6 +205,7 @@ class _Query:
         info: Info[_GraphQLContext, None],
         kind: ContributionKind | None = None,
         title_contains: str | None = None,
+        last: int | None = None,
     ) -> list[_ContributionNode]:
         if title_contains is not None:
             indexed = info.context.queries.contributions_containing_title(
@@ -215,6 +216,10 @@ class _Query:
             indexed = info.context.queries.contributions_by_kind(kind)
         else:
             indexed = info.context.queries.contributions()
+        if last is not None:
+            if not 1 <= last <= 100:
+                raise ValueError("last must be between 1 and 100")
+            indexed = indexed[-last:]
         return _contribution_nodes(indexed)
 
     @strawberry.field

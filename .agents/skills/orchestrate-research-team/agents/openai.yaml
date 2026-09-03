@@ -1,0 +1,4 @@
+interface:
+  display_name: "Research Team Orchestrator"
+  short_description: "Run a self-managing mathematical research team"
+  default_prompt: "Use $orchestrate-research-team to prepare two researchers and one independent reviewer. Ask me for every missing contract decision, including the required GitHub publication repository, verify that repository programmatically, and wait for my confirmation before starting them."

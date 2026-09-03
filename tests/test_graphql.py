@@ -111,6 +111,18 @@ def test_graphql_composes_filtered_search_and_nested_graph_traversal() -> None:
     }
 
 
+def test_graphql_can_bound_newest_contributions() -> None:
+    graph = _graph_fixture()
+
+    result = graph.graphql.execute("{ contributions(last: 2) { artifactRef } }")
+
+    assert result.succeeded
+    assert result.data is not None
+    contributions = result.data["contributions"]
+    assert isinstance(contributions, list)
+    assert len(contributions) == 2
+
+
 def test_graphql_exposes_signed_relation_artifacts_and_resolved_endpoints() -> None:
     # Raw relation fields retain attribution and consensus provenance beside node traversal.
     graph = _graph_fixture()
