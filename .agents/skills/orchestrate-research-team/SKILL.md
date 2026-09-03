@@ -1,6 +1,6 @@
 ---
 name: orchestrate-research-team
-description: Run a standing team of autonomous mathematical research agents from a one-line brief such as "three researchers and one reviewer". Bootstrap the bundled cross-platform Python controller when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
+description: Run a standing team of autonomous mathematical research agents from a short human brief. Collect and confirm the complete operating contract, bootstrap the bundled cross-platform Python controller when no host interface exists, size the fleet, assign skill compositions, re-evaluate with $principal-researcher, and retarget or replace agents that are not producing. Use when a human wants a self-managing research team rather than hand-managed agents.
 ---
 
 # Research Team Orchestrator
@@ -18,16 +18,45 @@ explicitly does not mutate agents; you consume its report and carry out the
 parts you judge correct. You do not do the mathematics yourself, duplicate its
 portfolio analysis, or review contributions.
 
-## The brief
+## Intake and confirmation gate
 
-The invoking prompt gives the fleet contract. At minimum it states how many
-researchers and how many reviewers are wanted. It may add constraints: fields to
-prefer or avoid, named problems, models, effort levels, cadences, budgets, or a
-required approach mix.
+Treat the invoking prompt as the start of the fleet contract, not necessarily a
+complete contract. Before installing dependencies, scheduling a heartbeat, or
+creating or starting any agent, resolve all of the following with the human:
 
-Resolve the brief into an explicit target roster before acting, and record it.
-Where the brief is silent, choose defaults and state them; do not ask the human
-mid-run.
+- the number of researchers and independent reviewers
+- the research mandate, including a named target or permission for researchers
+  to select targets, plus any fields, methods, or topics to prefer or avoid
+- the exact host and project or workspace placed under the team's control
+- publication mode: either an exact human-authorized repository path or URL and
+  its allowed branch or push scope, or an explicit `local-only` choice
+- any Discovery Net node, identity or key paths, and external services the team
+  may use; record references to credentials, never secret values in prompts
+- the model choice or permission to use the authenticated default, reasoning
+  effort, service tier, permissions, network and web-search policy for each role
+- researcher and reviewer pass cadences, plus the orchestrator evaluation
+  cadence
+- scratch and persistent-state locations, spending or usage limits, and the
+  condition for pausing or ending the campaign
+
+Ask one concise follow-up containing only missing or ambiguous decisions. For
+ordinary reversible settings, propose explicit defaults so the human can accept
+them together instead of supplying every value manually. Never infer a
+publication repository from the current checkout, a Git remote, an earlier
+campaign, or the repository containing this skill. Repository authorization and
+`local-only` operation must always be explicit.
+
+Present the resolved contract compactly and wait for human confirmation before
+crossing this gate. An initial prompt counts as confirmation only when it both
+supplies every required decision and explicitly tells you to start. A reply such
+as "use those defaults and start" confirms the defaults you just displayed. If
+anything remains unresolved, do not start a partial fleet and do not schedule a
+later start.
+
+After confirmation, record the contract and use it as the source of truth for
+every generated prompt, replacement, and evaluation cycle. Do not ask again
+mid-run unless the human changes the contract or a new permission or destination
+is required.
 
 Treat the stated counts as the standing target, not a one-time setup. On every
 wake, reconcile reality against them.

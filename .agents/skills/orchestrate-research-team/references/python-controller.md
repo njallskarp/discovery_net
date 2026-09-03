@@ -55,10 +55,14 @@ failed pass and must be at least 60. For a one-shot principal, set it to `0`.
 The controller rejects missing or invalid metadata rather than choosing hidden
 runtime settings.
 
-The rest of the file is the visible agent mandate. Include the selected skill
-composition, authorized repositories and services, scratch paths, publication
-boundaries, and stopping condition. Set a broad mandate rather than a detailed
-research recipe.
+The rest of the file is the visible agent mandate. Start it with a compact
+`Human-approved contract` section containing the applicable roster, research
+scope, host and workspace, runtime choices, cadences, resource limits, and stop
+condition. Include either the exact authorized repository and push boundaries
+or the explicit statement `publication: local-only`. Also include the selected
+skill composition, authorized services, and scratch paths. Set a broad mandate
+rather than a detailed research recipe. Do not create this prompt until the
+human has confirmed the complete contract described in `SKILL.md`.
 
 ## Commands
 
