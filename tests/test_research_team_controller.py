@@ -203,6 +203,8 @@ def test_sdk_pass_resumes_thread_records_usage_and_avoids_repeating_prompt(
             return FakeThread(thread_id)
 
     monkeypatch.setattr(controller, "load_codex_sdk", lambda: (FakeCodex, FakeThreadOptions))
+    fake_codex = tmp_path / "codex-default-tier"
+    monkeypatch.setattr(controller, "codex_wrapper", lambda: fake_codex)
 
     asyncio.run(controller.run_one_pass("principal-1"))
     asyncio.run(controller.run_one_pass("principal-1"))
@@ -214,7 +216,7 @@ def test_sdk_pass_resumes_thread_records_usage_and_avoids_repeating_prompt(
     assert observed["options"][0]["sandbox_mode"] == "workspace-write"
     assert observed["options"][0]["network_access_enabled"] is True
     assert observed["options"][0]["web_search_mode"] == "live"
-    assert str(observed["codex_options"]["codex_path_override"]).endswith("codex-default-tier")
+    assert observed["codex_options"]["codex_path_override"] == str(fake_codex)
     assert controller.state_path("work", "principal-1", "thread-id").read_text().strip() == (
         "thread-123"
     )
