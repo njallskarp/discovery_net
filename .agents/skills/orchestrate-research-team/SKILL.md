@@ -100,11 +100,18 @@ Keep every complete runtime prompt inspectable. With the bundled controller,
 use its `prompt` and `history` commands; never hide the operative prompt only in
 a process argument, journal, or private orchestration summary.
 
+Before creating an agent with the bundled controller, prepare one existing,
+absolute workspace dedicated to that agent and record it in the prompt
+metadata. Use a separate clone or Git worktree when repository access is
+needed, and ensure the required `.agents/skills` are present in that checkout.
+Never point two active agents at the same writable workspace. Keep controller
+state and reports outside the research checkout.
+
 ## Reconcile the fleet
 
 Each wake, in this order:
 
-1. List current agents and classify each as researcher, reviewer, or other.
+1. Read `status --json` and classify each agent as researcher, reviewer, or other.
 2. Handle obvious operational failures such as dead agents or restart storms.
 3. Create agents to reach the target counts, newest last.
 4. Obtain the principal researcher's assessment of the viable team.
@@ -159,6 +166,11 @@ directly and return its report. The principal evaluator is management overhead,
 not one of the requested researchers or reviewers. Continue a stable evaluator
 when useful for longitudinal context; a fresh bounded evaluation is also valid
 when supplied the previous report.
+
+With the bundled controller, start the principal in one-shot mode, use `wait`
+for bounded completion, and retrieve its assessment with `report`. Treat a
+failed or timed-out principal run as an unavailable assessment; do not infer a
+recommendation from partial logs.
 
 Then make the decision yourself. Weigh the report against the human brief,
 minimum tenure, current computations, operational health, and resource limits.
@@ -226,6 +238,9 @@ and never let researcher coordination compromise reviewer independence.
 - Every prompt you write or change is logged, and the previous version kept.
 - Respect any stated cap on agent count, spend, or spawn rate as a hard limit,
   not a guideline.
+- Put confirmed pass and token ceilings into the controller metadata. The
+  controller checks them between passes; leave enough headroom because a token
+  ceiling cannot stop a pass already in progress.
 - A scheduled heartbeat authorizes recurring management under the brief; it
   does not expand publication, credential, infrastructure, or deletion access.
 - If a decision would be irreversible and the brief does not clearly authorize

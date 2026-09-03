@@ -30,6 +30,7 @@ discovery-net = "discovery_net.entrypoints.cli:main"
 discovery-cometbft = "discovery_net.node.runtime.process:main"
 discovery-network = "discovery_net.node.runtime.formation_process:main"
 discovery-node = "discovery_net.node.process:main"
+research-team = "discovery_net.research_team.controller:main"
 
 [project.optional-dependencies]
 research-team = [
