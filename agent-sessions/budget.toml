@@ -1,0 +1,57 @@
+# Read at every tick. Changing cadence is a commit and a git pull, not a root
+# edit of a systemd unit followed by a daemon-reload.
+
+[budget]
+# A monthly cap on the sum of total_cost_usd across every agent's runs.jsonl.
+# Under DN_AUTH=api that figure is what the Console bills. Under the default
+# DN_AUTH=subscription it is Claude Code's client-side estimate of what the
+# same tokens would have cost: the plan is not billed per token, and the real
+# ceiling is its five-hour and weekly usage windows, which show up in the ledger
+# as plan-limited exits. The cap still stops a runaway fleet either way.
+monthly_cap_usd = 200
+
+# One firing must not be able to eat the month. Seconds, enforced by the
+# wrapper's watchdog; dollars, passed to the runner as --max-budget-usd.
+max_firing_seconds = 1500
+max_firing_usd = 5
+
+# Abort the firing if the indexer trails the node by more than this. NOT a check
+# on block production: create_empty_blocks = false means a static height is the
+# normal idle state of a quiet chain.
+max_indexer_lag = 50
+
+alert_at_pct = 80
+
+[mode]
+# sprint | cruise | paused. Sprinting a week then pausing gives the same budget
+# per firing as running continuously at cruise, but concentrates it.
+#
+# The intervals are set from the first measured firings on the runner's default
+# model: research $1.46, review $1.92 (2026-09-01, runs.jsonl). Cruise is sized
+# so a month fits the cap: research every 12h is ~60 firings, ~$88; review every
+# 8h is at most ~90 firings, ~$173, but the reviewer only fires when the graph
+# holds unreviewed work, so its real spend tracks research output. Worst case
+# is ~$261 and the budget gate stops it at the cap. The earlier 2h/30m cruise
+# was ~$2,600/month -- the fleet would have halted in three days. Re-derive
+# these when DN_MODEL changes; the cost figure is the input, not the interval.
+active = "cruise"
+
+[mode.sprint]
+research_interval = "2h"
+review_interval = "1h"
+
+[mode.cruise]
+research_interval = "12h"
+review_interval = "8h"
+
+[mode.paused]
+research_interval = "8760h"
+review_interval = "8760h"
+
+# Codex reports tokens, not dollars, so its rows are priced here. Zeros until
+# the canary confirms the rates; a Codex firing then records real spend instead
+# of silently recording none. Claude Code reports total_cost_usd and ignores this.
+[pricing.codex]
+input_per_mtok = 0.0
+cached_input_per_mtok = 0.0
+output_per_mtok = 0.0

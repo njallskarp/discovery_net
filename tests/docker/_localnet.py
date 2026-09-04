@@ -19,7 +19,39 @@ from tests.integration._cometbft_rpc_client import CometBFTRPCClient
 _ROOT = Path(__file__).resolve().parents[2]
 _COMPOSE_FILE = _ROOT / "localnet" / "compose.yaml"
 _STARTUP_TIMEOUT_SECONDS = 30
-_PEER_DISCOVERY_TIMEOUT_SECONDS = 45
+
+# CometBFT's PEX reactor sweeps on a fixed 30s cycle -- measured straight out of a
+# failing CI log, "Ensure peers" at 01:50:24.062 then 01:50:54.063. Discovery
+# therefore lands on a tick, not on a smooth curve, and a budget of 45s admitted
+# exactly ONE tick: anything that missed the first sweep needed the second at
+# ~60s and failed. That is why the same commit passed and failed run to run.
+#
+# Measured locally on a fast machine with warm images, the PEX step (peer
+# learning the validator through the bridge) took 24.8s -- 55% of the old budget
+# already gone on the happy path.
+#
+# This has to clear several sweeps, not one. It is a ceiling, not a sleep: a
+# healthy run still returns in well under a second once the tick lands.
+_PEER_DISCOVERY_TIMEOUT_SECONDS = int(os.environ.get("DISCOVERY_NET_PEER_DISCOVERY_TIMEOUT", "120"))
+
+# Container lifecycle calls -- run, rm, exec, network create. These should fail
+# fast: if `docker rm` has not returned in three minutes, something is wedged and
+# waiting longer tells us nothing.
+_COMMAND_TIMEOUT_SECONDS = int(os.environ.get("DISCOVERY_NET_DOCKER_TIMEOUT", "180"))
+
+# The image build is a different kind of operation and was sharing the number
+# above, which is what made this job flake: localnet/Dockerfile pulls
+# golang:1.25-bookworm, compiles CometBFT from source with `go install`, then
+# pulls python:3.12-slim and pip-installs grpcio, cryptography and pydantic-core.
+# On a cold CI runner with no layer cache that legitimately exceeds three minutes,
+# and the build was killed mid-layer-download:
+#
+#   subprocess.TimeoutExpired: Command ('docker', 'build', ...) timed out after 180 seconds
+#
+# The same commit passed on an earlier run and failed on a later one, which is the
+# signature of a marginal limit rather than a defect. The enclosing job already
+# allows 20 minutes, so this bound was the binding constraint, not the budget.
+_BUILD_TIMEOUT_SECONDS = int(os.environ.get("DISCOVERY_NET_DOCKER_BUILD_TIMEOUT", "900"))
 
 type JSONObject = dict[str, object]
 
@@ -102,12 +134,23 @@ class DockerNode:
 
     def wait_for_peers(self, expected: frozenset[str]) -> None:
         """Wait until every expected moniker is directly connected."""
-        deadline = time.monotonic() + _PEER_DISCOVERY_TIMEOUT_SECONDS
+        started = time.monotonic()
+        deadline = started + _PEER_DISCOVERY_TIMEOUT_SECONDS
+        observed: frozenset[str] = frozenset()
         while time.monotonic() < deadline:
-            if expected <= self.peer_monikers():
+            observed = self.peer_monikers()
+            if expected <= observed:
                 return
             time.sleep(0.1)
-        raise AssertionError(f"{self.project} did not connect to {sorted(expected)}\n{self.logs()}")
+        # Say what was actually connected and for how long. The previous message
+        # gave neither, so a failure meant reading a few hundred lines of
+        # container log to learn that the node had simply dialled nobody.
+        raise AssertionError(
+            f"{self.project} did not connect to {sorted(expected)} "
+            f"within {_PEER_DISCOVERY_TIMEOUT_SECONDS}s "
+            f"(waited {time.monotonic() - started:.1f}s, connected to {sorted(observed)}, "
+            f"missing {sorted(expected - observed)})\n{self.logs()}"
+        )
 
     def snapshot(self) -> ArtifactLedgerSnapshot | None:
         """Load this node's committed application state from its isolated store."""
@@ -195,7 +238,8 @@ def build_image(image: str) -> None:
             "--file",
             str(_ROOT / "localnet" / "Dockerfile"),
             str(_ROOT),
-        )
+        ),
+        timeout=_BUILD_TIMEOUT_SECONDS,
     )
 
 
@@ -303,6 +347,7 @@ def _run(
     *,
     environment: dict[str, str] | None = None,
     check: bool = True,
+    timeout: int = _COMMAND_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         command,
@@ -310,5 +355,5 @@ def _run(
         check=check,
         env=environment,
         text=True,
-        timeout=180,
+        timeout=timeout,
     )

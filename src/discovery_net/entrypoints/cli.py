@@ -101,6 +101,43 @@ def main(arguments: Sequence[str] | None = None) -> int:
         return 1
 
 
+def _contribution_body(arguments: argparse.Namespace) -> str:
+    """The body text, from --body or --body-file.
+
+    A file gets exactly one trailing newline removed. Editors add one, argv does
+    not, and the body is hashed into the contribution's CID -- without this the
+    same text published two ways would address differently. Only the final
+    newline goes; interior blank lines and deliberate trailing blank lines
+    beyond the first are content.
+    """
+    if arguments.body is not None:
+        body = str(arguments.body)
+    else:
+        text = Path(arguments.body_file).read_text(encoding="utf-8")
+        body = text[:-1] if text.endswith("\n") else text
+    _refuse_private_key_material(body)
+    return body
+
+
+_PRIVATE_KEY_MARKER = "PRIVATE KEY-----"
+
+
+def _refuse_private_key_material(body: str) -> None:
+    """Refuse to publish anything that looks like a PEM private key.
+
+    The chain is append-only and public, so a body that carries a signing key
+    cannot be taken back. --body-file made this a one-flag mistake: an agent
+    holding a key path can be pointed at the key instead of a body, and a human
+    can tab-complete the wrong file. Checking the marker costs nothing and the
+    legitimate use of a PEM private key as a mathematical body is nil.
+    """
+    if _PRIVATE_KEY_MARKER in body:
+        raise ValueError(
+            "refusing to submit: the body contains PEM private key material "
+            f"({_PRIVATE_KEY_MARKER!r}); a private key must never be published"
+        )
+
+
 def _submit(arguments: argparse.Namespace) -> int:
     private_key = _load_private_key(arguments.private_key)
     submitter = ArtifactSubmitter(
@@ -112,7 +149,7 @@ def _submit(arguments: argparse.Namespace) -> int:
             Contribution(
                 kind=arguments.kind,
                 title=arguments.title,
-                body=arguments.body,
+                body=_contribution_body(arguments),
                 created_at=datetime.now(UTC),
             ),
             relations=(
@@ -252,7 +289,19 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="mathematical or organizational role of the contribution",
     )
     contribution.add_argument("--title", required=True, help="short contribution title")
-    contribution.add_argument("--body", required=True, help="contribution body")
+    # --body or --body-file, exactly one. A body is mathematics, so it contains
+    # backslashes and dollar signs; an agent runner that screens shell commands
+    # for injection characters cannot pass LaTeX through argv at all, and the
+    # agent is left silently publishing stripped-down content. Reading the body
+    # from a file is the way out. --body is unchanged and still works.
+    body_source = contribution.add_mutually_exclusive_group(required=True)
+    body_source.add_argument("--body", help="contribution body")
+    body_source.add_argument(
+        "--body-file",
+        type=Path,
+        metavar="PATH",
+        help="read the contribution body from a UTF-8 file instead of --body",
+    )
     contribution.add_argument(
         "--outgoing",
         action="append",

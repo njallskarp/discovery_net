@@ -1,0 +1,56 @@
+[Unit]
+Description=Discovery Net agent firing (%i)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=agents
+WorkingDirectory=/opt/discovery-net
+Environment=DN_STATE_ROOT=/srv/agent-sessions/state
+# Bindings are read from here: root-owned, agent-readable, never agent-writable.
+# Run init-node.sh / init-agent.sh with the same DN_CONFIG_ROOT and
+# DN_AGENTS_ROOT so setup writes where the unit reads.
+Environment=DN_CONFIG_ROOT=/etc/discovery-net
+Environment=DN_AGENTS_ROOT=/srv/agent-sessions/agents
+
+# Runner credentials. For DN_AUTH=subscription (the default) this file holds
+# CLAUDE_CODE_OAUTH_TOKEN, a one-year token from `claude setup-token` run on
+# the plan owner's machine; for DN_AUTH=api it holds ANTHROPIC_API_KEY. A Codex
+# host carries its own credential the same way. runners/claude.sh refuses to
+# start without the one its mode needs, so a missing value fails the first
+# tick loudly rather than deep inside a firing.
+#
+# The manager reads this as root before dropping to User=, so the file needs no
+# read access for the agent account: keep it 0600 root:root. It is deliberately
+# not optional (no leading '-') -- a missing file should fail the unit at start,
+# where systemctl status shows it, rather than mid-firing.
+#
+# Not in the repo, and not under /srv/agent-sessions: that path is in
+# ReadWritePaths, and a credential should not sit somewhere the agent can write.
+EnvironmentFile=/etc/discovery-net/agent.env
+
+ExecStart=/opt/discovery-net/agent-sessions/run.sh %i
+
+# The wrapper enforces its own deadline and signals the runner with SIGINT so a
+# firing can bank its work. These are the backstop for a wrapper that has itself
+# wedged, which is why the margin is generous.
+RuntimeMaxSec=1800
+TimeoutStopSec=120
+KillSignal=SIGINT
+
+# The lesson from the 2026-08-31 outage, written as policy: an agent cannot
+# starve the node it shares a box with.
+MemoryMax=6G
+CPUQuota=200%
+TasksMax=512
+Nice=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/agent-sessions
+
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,4 @@
+import argparse
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,7 +13,7 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
 )
 
-from discovery_net.entrypoints.cli import main
+from discovery_net.entrypoints.cli import _contribution_body, main
 from discovery_net.knowledge_graph import (
     Artifact,
     ArtifactRef,
@@ -100,6 +101,173 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
         OutgoingRelation(kind=RelationKind.ABOUT, to_contribution=PARENT_REF),
         IncomingRelation(from_contribution=PARENT_REF, kind=RelationKind.CITES),
     )
+
+
+def test_cli_reads_a_latex_body_from_a_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Path: --body-file → contribution body; guards the only route LaTeX can take.
+
+    A body full of backslashes and dollar signs cannot survive an agent runner
+    that screens shell commands for injection characters, so argv is not a usable
+    channel for mathematics. This is the channel that is.
+    """
+    key_path = _write_private_key(tmp_path)
+    latex = (
+        "Let $\\delta(n) = \\max_{v} \\min_{i} \\|t v_i\\|$.\n"
+        "\\begin{lemma}\nThe gap is rational.\n\\end{lemma}"
+    )
+    body_file = tmp_path / "body.md"
+    body_file.write_text(latex + "\n", encoding="utf-8")
+
+    submitter = MagicMock(spec=ArtifactSubmitter)
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-artifact"),),
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
+    )
+
+    with patch("discovery_net.entrypoints.cli.ArtifactSubmitter", return_value=submitter):
+        exit_code = main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.LEMMA,
+                "--title",
+                "Attainment lemma",
+                "--body-file",
+                str(body_file),
+            )
+        )
+
+    assert exit_code == 0
+    assert capsys.readouterr().err == ""
+    contribution = submitter.submit_contribution.call_args.args[0]
+    # Exactly the file's text, minus the one trailing newline an editor adds.
+    assert contribution.body == latex
+
+
+def test_cli_body_file_and_body_agree_on_the_same_text(
+    tmp_path: Path,
+) -> None:
+    """A body published either way is the same body, so it addresses the same.
+
+    The body is hashed into the contribution's CID. If the file route kept the
+    trailing newline that argv never has, the same text submitted two ways would
+    produce two different artifacts.
+    """
+    text = "One line of prose."
+    body_file = tmp_path / "body.md"
+    body_file.write_text(text + "\n", encoding="utf-8")
+
+    from_argv = argparse.Namespace(body=text, body_file=None)
+    from_file = argparse.Namespace(body=None, body_file=body_file)
+    assert _contribution_body(from_argv) == _contribution_body(from_file) == text
+
+
+def test_cli_body_file_keeps_interior_and_extra_trailing_blank_lines(
+    tmp_path: Path,
+) -> None:
+    """Only the final newline is a terminator; everything else is content."""
+    body_file = tmp_path / "body.md"
+    body_file.write_text("first\n\nsecond\n\n", encoding="utf-8")
+
+    body = _contribution_body(argparse.Namespace(body=None, body_file=body_file))
+    assert body == "first\n\nsecond\n"
+
+
+def test_cli_refuses_to_publish_a_private_key_as_the_body(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """--body-file pointed at the signing key must fail before anything is signed.
+
+    The chain is append-only, so a published key is unrecoverable. This is the
+    one-flag mistake --body-file made possible, for an agent and a human alike.
+    """
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+
+    with patch("discovery_net.entrypoints.cli.ArtifactSubmitter", return_value=submitter):
+        exit_code = main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.LEMMA,
+                "--title",
+                "Attainment lemma",
+                "--body-file",
+                str(key_path),
+            )
+        )
+
+    assert exit_code == 1
+    assert "private key" in capsys.readouterr().err
+    submitter.submit_contribution.assert_not_called()
+
+
+def test_cli_refuses_private_key_material_passed_inline() -> None:
+    """The same guard covers --body, so the two routes agree on what is publishable."""
+    pem = "-----BEGIN PRIVATE KEY-----\nMC4CAQAwBQYDK2VwBCIEIA==\n-----END PRIVATE KEY-----"
+    with pytest.raises(ValueError, match="private key"):
+        _contribution_body(argparse.Namespace(body=pem, body_file=None))
+
+
+def test_cli_rejects_both_body_and_body_file(
+    tmp_path: Path,
+) -> None:
+    """Two sources for one body is ambiguous; argparse must refuse it."""
+    key_path = _write_private_key(tmp_path)
+    body_file = tmp_path / "body.md"
+    body_file.write_text("from the file\n", encoding="utf-8")
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.LEMMA,
+                "--title",
+                "Attainment lemma",
+                "--body",
+                "from argv",
+                "--body-file",
+                str(body_file),
+            )
+        )
+    assert exit_info.value.code == 2
+
+
+def test_cli_requires_one_of_body_or_body_file(
+    tmp_path: Path,
+) -> None:
+    """Neither source given must fail, as --body alone used to."""
+    key_path = _write_private_key(tmp_path)
+
+    with pytest.raises(SystemExit) as exit_info:
+        main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.LEMMA,
+                "--title",
+                "Attainment lemma",
+            )
+        )
+    assert exit_info.value.code == 2
 
 
 def test_cli_returns_failure_when_check_tx_rejects_the_contribution(

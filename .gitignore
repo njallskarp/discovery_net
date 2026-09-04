@@ -11,13 +11,40 @@ node_modules/
 *.egg-info/
 .DS_Store
 
+# uv writes this when running the dev tools locally. CI installs with pip from
+# pyproject.toml, so a committed lock would pin nothing that anything reads.
+uv.lock
+
 # Local node identities, ledgers, and signing keys.
 /run/
 
 # Terraform runtime data. Commit only *.tfvars.example templates.
 **/.terraform/
+# Both spellings on purpose. `*.tfplan` never matched a file named exactly
+# `tfplan`, and `terraform plan -out=tfplan` is what this repo's own deploy guide
+# tells you to run -- so the plan it produces was untracked and unignored, one
+# `git add` away from being committed. A plan embeds resource values.
 *.tfplan
+tfplan
+tfplan.*
 *.tfstate
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# Agent and node bindings are generated OUTSIDE the checkout (see
+# agent-sessions/lib/paths.sh). These entries are a safety net for anyone who
+# copies one in by hand: a binding carries absolute paths and the location of a
+# contributor signing key. Committed *.env.example files show the shapes.
+/agent-sessions/bindings/nodes/*.env
+/agent-sessions/bindings/agents/*.env
+
+# Conformance run output — one file per runner per agent, machine-specific.
+/agent-sessions/conformance/smoke-*.out
+
+# Contributor signing keys. Never commit one.
+*.pem
+contributor.pem
+
+# Session handoff notes. Ephemeral, never committed.
+*.local.md

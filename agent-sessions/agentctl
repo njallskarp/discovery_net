@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Read-only view of what the agents are doing. The thing you actually use while
+# debugging; the public status page is generated from the same state later.
+set -eu
+HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
+CONFIG="${DN_CONFIG:-$HERE/budget.toml}"
+. "$HERE/lib/paths.sh"
+STATE_ROOT="$DN_STATE_ROOT"
+CAP="$(python3 "$HERE/lib/dnagent.py" config "$CONFIG" budget.monthly_cap_usd 0)"
+
+case "${1:-status}" in
+  status)  python3 "$HERE/lib/dnagent.py" status "$STATE_ROOT" "$CAP" ;;
+  watch)   while :; do clear; python3 "$HERE/lib/dnagent.py" status "$STATE_ROOT" "$CAP"; sleep 10; done ;;
+  runs)    cat "$STATE_ROOT"/*/runs.jsonl 2>/dev/null | tail -"${2:-20}" ;;
+  *)       echo "usage: agentctl [status|watch|runs [N]]" >&2; exit 2 ;;
+esac

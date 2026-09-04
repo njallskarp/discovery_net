@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+#   dn-compute <script.py> [args...]
+#
+# Run one Python script in a sandbox and print what it writes to stdout.
+#
+# Why a wrapper and not `Bash(python:*)`: an interpreter is not one more command,
+# it is every command. Python has `socket`, so the agent would have network even
+# though curl is denied; `subprocess`, so every Bash allow rule becomes advisory;
+# and `open()`, so DN_KEY_PATH is readable and exfiltratable. The allow list
+# cannot express "Python but no network". A kernel namespace can, so the boundary
+# lives here rather than in a permission rule.
+#
+# What the agent gets: exact arithmetic and enumeration, stdout back.
+# What it does not get: the network, the signing key, the host filesystem,
+# unbounded time or memory, or a way to leave anything behind.
+#
+# NOTE: only ever allow-list the absolute path of THIS file, never Bash(docker:*).
+# Docker socket access is root-equivalent on the host -- allowing it would be
+# strictly worse than the interpreter this exists to contain.
+set -euo pipefail
+
+IMAGE="${DN_COMPUTE_IMAGE:-dn-compute:local}"
+TIMEOUT="${DN_COMPUTE_TIMEOUT:-60}"
+MEMORY="${DN_COMPUTE_MEMORY:-512m}"
+
+SCRIPT="${1:?usage: dn-compute <script.py> [args...]}"; shift || true
+[ -f "$SCRIPT" ] || { echo "dn-compute: no such script: $SCRIPT" >&2; exit 2; }
+
+command -v docker >/dev/null 2>&1 || {
+  echo "dn-compute: docker is not available; this is the sandbox boundary, so there is no fallback" >&2
+  exit 3
+}
+docker image inspect "$IMAGE" >/dev/null 2>&1 || {
+  echo "dn-compute: image $IMAGE is missing. Build it once with:" >&2
+  echo "  docker build -f agent-sessions/tools/Dockerfile.compute -t $IMAGE agent-sessions/tools" >&2
+  exit 4
+}
+
+DIR="$(cd -- "$(dirname -- "$SCRIPT")" && pwd)"
+NAME="$(basename -- "$SCRIPT")"
+
+# --network none      no sockets, so no exfiltration and no hidden inputs
+# --read-only + tmpfs nothing survives the run; /tmp is scratch and is capped
+# -v DIR:ro           the script is readable, its directory is not writable
+# --user 65534        nobody, so even a mount mistake is unprivileged
+# --pids-limit        a fork bomb ends as a failed run rather than a dead host
+# --cap-drop ALL      no capabilities; --security-opt stops privilege regain
+exec docker run --rm --interactive=false \
+  --network none \
+  --read-only --tmpfs /tmp:rw,size=64m,mode=1777 \
+  --volume "$DIR":/work:ro --workdir /work \
+  --memory "$MEMORY" --memory-swap "$MEMORY" --cpus 1 --pids-limit 64 \
+  --user 65534:65534 \
+  --cap-drop ALL --security-opt no-new-privileges \
+  "$IMAGE" timeout --signal=KILL "$TIMEOUT" python "/work/$NAME" "$@"
