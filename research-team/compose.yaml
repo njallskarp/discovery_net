@@ -14,6 +14,8 @@ services:
       - "8787"
       - --state-root
       - /var/lib/research-team
+    environment:
+      DISCOVERY_RESEARCH_TEAM_MONITOR: /var/lib/research-team-monitor
     cap_drop:
       - ALL
     init: true
@@ -28,6 +30,10 @@ services:
       - type: bind
         source: ${DISCOVERY_RESEARCH_TEAM_ROOT:?Set the absolute campaign state directory}
         target: /var/lib/research-team
+        read_only: true
+      - type: bind
+        source: ${DISCOVERY_RESEARCH_TEAM_MONITOR:-/scratch/research-team-v2/monitor}
+        target: /var/lib/research-team-monitor
         read_only: true
     ports:
       - target: 8787

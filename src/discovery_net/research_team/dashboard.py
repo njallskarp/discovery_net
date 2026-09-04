@@ -18,7 +18,13 @@ from urllib.parse import urlsplit
 
 from discovery_net.research_team.impact import read_annotations, run_identifier
 
-ROLE_ORDER = {"researcher": 0, "reviewer": 1, "principal": 2, "impact-assessor": 3}
+ROLE_ORDER = {
+    "researcher": 0,
+    "reviewer": 1,
+    "principal": 2,
+    "impact-assessor": 3,
+    "orchestrator": 4,
+}
 SAFE_ASSET_PATH = re.compile(r"^/assets/[A-Za-z0-9._-]+$")
 
 
@@ -27,12 +33,19 @@ def timeline_snapshot(root: Path, *, now: datetime | None = None) -> dict[str, A
     snapshot_at = now or datetime.now(UTC)
     if snapshot_at.tzinfo is None:
         raise ValueError("now must be timezone-aware")
-    roles = _agent_roles(root)
-    annotations = {str(item["run_id"]): item for item in read_annotations(root)}
-    runs = _completed_runs(root, roles, annotations)
-    runs.extend(_failed_runs(root, roles))
-    runs.extend(_active_runs(root, roles, snapshot_at))
+    roles, campaign_starts = _active_agent_roles(root)
+    all_annotations = {str(item["run_id"]): item for item in read_annotations(root)}
+    runs = _completed_runs(root, roles, campaign_starts, all_annotations)
+    runs.extend(_failed_runs(root, roles, campaign_starts))
+    runs.extend(_active_runs(root, roles, campaign_starts, snapshot_at))
     runs.sort(key=lambda value: (str(value["started_at"]), str(value["agent"])))
+
+    visible_run_ids = {str(run["run_id"]) for run in runs}
+    annotations = {
+        run_id: annotation
+        for run_id, annotation in all_annotations.items()
+        if run_id in visible_run_ids
+    }
 
     lanes, events = _lanes_and_events(runs)
     role_counts: dict[str, int] = {}
@@ -53,7 +66,9 @@ def timeline_snapshot(root: Path, *, now: datetime | None = None) -> dict[str, A
         "lanes": lanes,
         "events": events,
         "annotations": list(annotations.values()),
+        "resources": _latest_resource_sample(root),
         "summary": {
+            "active_agents": len(roles),
             "completed_runs": sum(1 for run in runs if run["state"] == "completed"),
             "running_runs": sum(1 for run in runs if run["state"] == "running"),
             "failed_runs": sum(1 for run in runs if run["state"] == "failed"),
@@ -67,10 +82,11 @@ def timeline_snapshot(root: Path, *, now: datetime | None = None) -> dict[str, A
 def _completed_runs(
     root: Path,
     roles: dict[str, str],
+    campaign_starts: dict[str, datetime],
     annotations: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
-    for agent_root in _agent_workspaces(root):
+    for agent_root in _agent_workspaces(root, roles):
         usage_path = agent_root / "usage.jsonl"
         if not usage_path.is_file():
             continue
@@ -86,6 +102,8 @@ def _completed_runs(
                 _parse_timestamp(finished_at)
                 pass_number += 1
                 agent = str(record.get("agent") or agent_root.name)
+                if _parse_timestamp(started_at) < campaign_starts[agent]:
+                    continue
                 run_id = str(record.get("run_id") or run_identifier(agent, started_at))
                 annotation = annotations.get(run_id)
                 runs.append(
@@ -107,9 +125,13 @@ def _completed_runs(
     return runs
 
 
-def _failed_runs(root: Path, roles: dict[str, str]) -> list[dict[str, Any]]:
+def _failed_runs(
+    root: Path,
+    roles: dict[str, str],
+    campaign_starts: dict[str, datetime],
+) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
-    for agent_root in _agent_workspaces(root):
+    for agent_root in _agent_workspaces(root, roles):
         path = agent_root / "failures.jsonl"
         if not path.is_file():
             continue
@@ -123,6 +145,8 @@ def _failed_runs(root: Path, roles: dict[str, str]) -> list[dict[str, Any]]:
                 started_at = str(value.get("started_at") or finished_at)
                 _parse_timestamp(started_at)
                 _parse_timestamp(finished_at)
+                if _parse_timestamp(started_at) < campaign_starts[agent]:
+                    continue
                 runs.append(
                     {
                         "run_id": run_identifier(agent, started_at),
@@ -142,17 +166,19 @@ def _failed_runs(root: Path, roles: dict[str, str]) -> list[dict[str, Any]]:
 def _active_runs(
     root: Path,
     roles: dict[str, str],
+    campaign_starts: dict[str, datetime],
     snapshot_at: datetime,
 ) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
-    for agent_root in _agent_workspaces(root):
+    for agent_root in _agent_workspaces(root, roles):
         value = _read_object(agent_root / "current-pass.json")
         if value is None:
             continue
         with contextlib.suppress(KeyError, ValueError):
             agent = str(value.get("agent") or agent_root.name)
             started_at = str(value["started_at"])
-            _parse_timestamp(started_at)
+            if _parse_timestamp(started_at) < campaign_starts[agent]:
+                continue
             runs.append(
                 {
                     "run_id": run_identifier(agent, started_at),
@@ -174,20 +200,36 @@ def _lanes_and_events(
     lanes: dict[str, dict[str, str]] = {}
     events: list[dict[str, Any]] = []
     previous_lane: dict[str, str] = {}
+    previous_title: dict[str, str] = {}
     for run in runs:
         role = str(run["role"])
         agent = str(run["agent"])
         annotation = run.get("annotation")
-        lane_title = (
+        annotated_title = (
             str(annotation["lane_title"])
             if isinstance(annotation, dict) and annotation.get("lane_title")
-            else _default_lane_title(agent, role)
+            else None
+        )
+        lane_title = (
+            annotated_title
+            or previous_title.get(agent)
+            or _default_lane_title(agent, role)
         )
         lane_id = _lane_id(agent, role, lane_title)
         run["lane"] = lane_id
+        display_title = (
+            f"{agent} · {lane_title}"
+            if role == "researcher" and lane_title != agent
+            else lane_title
+        )
         lanes.setdefault(
             lane_id,
-            {"id": lane_id, "full": lane_title, "short": _short_title(lane_title), "role": role},
+            {
+                "id": lane_id,
+                "full": display_title,
+                "short": _short_title(display_title),
+                "role": role,
+            },
         )
         if isinstance(annotation, dict):
             change_type = str(annotation.get("change_type", "continuation"))
@@ -205,6 +247,7 @@ def _lanes_and_events(
                     event["from"] = old_lane
                 events.append(event)
         previous_lane[agent] = lane_id
+        previous_title[agent] = lane_title
     ordered = sorted(
         lanes.values(),
         key=lambda lane: (ROLE_ORDER.get(lane["role"], 9), _first_lane_index(runs, lane["id"])),
@@ -212,19 +255,21 @@ def _lanes_and_events(
     return ordered, events
 
 
-def _agent_roles(root: Path) -> dict[str, str]:
+def _active_agent_roles(root: Path) -> tuple[dict[str, str], dict[str, datetime]]:
     roles: dict[str, str] = {}
-    for directory in ("prompts", "prompts.history", "prompts.disabled"):
-        folder = root / directory
-        if not folder.is_dir():
+    starts: dict[str, datetime] = {}
+    folder = root / "prompts"
+    if not folder.is_dir():
+        return roles, starts
+    for path in sorted(folder.glob("*.md")):
+        metadata = _prompt_metadata(path)
+        role = metadata.get("role")
+        if not role:
             continue
-        for path in sorted(folder.glob("*.md")):
-            metadata = _prompt_metadata(path)
-            role = metadata.get("role")
-            if role:
-                name = path.name.split(".", 1)[0]
-                roles.setdefault(name, role)
-    return roles
+        name = path.stem
+        roles[name] = role
+        starts[name] = datetime.fromtimestamp(path.stat().st_mtime, UTC)
+    return roles, starts
 
 
 def _prompt_metadata(path: Path) -> dict[str, str]:
@@ -240,11 +285,26 @@ def _prompt_metadata(path: Path) -> dict[str, str]:
     return metadata
 
 
-def _agent_workspaces(root: Path) -> tuple[Path, ...]:
+def _agent_workspaces(root: Path, roles: dict[str, str]) -> tuple[Path, ...]:
     work = root / "work"
     if not work.is_dir():
         return ()
-    return tuple(sorted(path for path in work.iterdir() if path.is_dir()))
+    return tuple(work / agent for agent in sorted(roles) if (work / agent).is_dir())
+
+
+def _latest_resource_sample(root: Path) -> dict[str, Any] | None:
+    monitor_root = Path(os.environ.get("DISCOVERY_RESEARCH_TEAM_MONITOR", root / "monitor"))
+    path = monitor_root / "resources.jsonl"
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        with contextlib.suppress(json.JSONDecodeError):
+            value = json.loads(line)
+            if isinstance(value, dict):
+                return value
+    return None
 
 
 def _role(agent: str) -> str:
@@ -255,17 +315,13 @@ def _role(agent: str) -> str:
 
 
 def _default_lane_title(agent: str, role: str) -> str:
-    if role == "reviewer":
-        return "Fresh independent reviewers"
-    if role == "principal":
-        return "Fresh principal assessments"
     if role == "impact-assessor":
         return "Impact assessor"
     return agent
 
 
 def _lane_id(agent: str, role: str, title: str) -> str:
-    if role in {"reviewer", "principal", "impact-assessor"}:
+    if role == "impact-assessor":
         return role
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:60]
     return f"{agent}:{slug or 'research'}"

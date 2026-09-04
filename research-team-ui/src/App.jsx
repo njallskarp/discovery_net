@@ -5,6 +5,7 @@ const roleLabels = {
   researcher: "Researchers",
   reviewer: "Reviewers",
   principal: "Principals",
+  orchestrator: "Orchestrator",
   "impact-assessor": "Impact assessor",
 };
 
@@ -12,7 +13,7 @@ export default function App() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [activeRoles, setActiveRoles] = useState(
-    new Set(["researcher", "reviewer", "principal", "impact-assessor"]),
+    new Set(["researcher", "reviewer", "principal", "orchestrator", "impact-assessor"]),
   );
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function App() {
 
   const summary = data.summary;
   const impact = summary.impact_signals;
+  const resources = data.resources;
   const noteworthy = [...data.annotations]
     .filter(
       (item) =>
@@ -67,11 +69,10 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">Discovery Net · live campaign</p>
-          <h1>Research campaign timeline</h1>
+          <p className="eyebrow"><span className="live-dot" />Discovery Net · live campaign</p>
+          <h1>Research fleet</h1>
           <p className="subtitle">
-            Actual pass durations, problem pivots, approach changes, publications, and calibrated
-            impact signals. Refreshes every 30 seconds.
+            Two teams, one reviewer, and independent impact assessment.
           </p>
         </div>
         <div className="snapshot">
@@ -80,42 +81,49 @@ export default function App() {
         </div>
       </section>
 
+      {resources ? <ResourceStrip resources={resources} /> : null}
+
       <section className="metric-grid" aria-label="Campaign summary">
-        <Metric label="Completed passes" value={summary.completed_runs} />
-        <Metric label="Running now" value={summary.running_runs} />
-        <Metric label="Impact annotations" value={summary.annotations} />
+        <Metric label="Active agents" value={summary.active_agents} />
+        <Metric label="Passes running" value={summary.running_runs} />
+        <Metric label="Completed this campaign" value={summary.completed_runs} />
         <Metric
           label="Substantial / major"
           value={`${impact.substantial} / ${impact.major}`}
         />
-        <Metric label="High paper potential" value={impact.high_paper_potential} />
+        <Metric label="Failed passes" value={summary.failed_runs} tone={summary.failed_runs ? "danger" : "normal"} />
       </section>
 
       <section className="panel timeline-panel">
-        <div className="role-controls" aria-label="Visible roles">
-          {Object.entries(roleLabels).map(([role, label]) => (
-            <button
-              type="button"
-              key={role}
-              data-role={role}
-              aria-pressed={activeRoles.has(role)}
-              onClick={() => toggleRole(role)}
-            >
-              <span className={`role-swatch ${role}`} />
-              {label}
-            </button>
-          ))}
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">Current campaign</p>
+            <h2>Agent activity</h2>
+          </div>
+          <div className="role-controls" aria-label="Visible roles">
+            {Object.entries(roleLabels).map(([role, label]) => (
+              <button
+                type="button"
+                key={role}
+                data-role={role}
+                aria-pressed={activeRoles.has(role)}
+                onClick={() => toggleRole(role)}
+              >
+                <span className={`role-swatch ${role}`} />
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="marker-legend" aria-label="Marker legend">
-          <span><b className="pivot">◆</b>problem pivot</span>
-          <span><b className="approach">●</b>new approach</span>
-          <span><b className="publication">■</b>source/publication</span>
-          <span><b className="failure">×</b>failed pass</span>
+        <div className="timeline-key">
+          <div className="marker-legend" aria-label="Marker legend">
+            <span><b className="pivot">◆</b>problem pivot</span>
+            <span><b className="approach">●</b>new approach</span>
+            <span><b className="publication">■</b>publication</span>
+            <span><b className="failure">×</b>failed pass</span>
+          </div>
+          <p>Bars show active work. Select one for details.</p>
         </div>
-        <p className="timeline-note">
-          Solid bars are active passes; gaps are cadence or orchestration wait. Impact outlines are
-          advisory model judgments, not proof of novelty.
-        </p>
         <Timeline data={data} activeRoles={activeRoles} />
       </section>
 
@@ -152,11 +160,39 @@ export default function App() {
   );
 }
 
-function Metric({ label, value }) {
+function Metric({ label, value, tone = "normal" }) {
   return (
-    <div className="metric">
+    <div className={`metric metric-${tone}`}>
       <strong>{value}</strong>
       <span>{label}</span>
+    </div>
+  );
+}
+
+function ResourceStrip({ resources }) {
+  const memoryAvailable = resources.memory_available_bytes / (1024 ** 3);
+  const memoryTotal = resources.memory_total_bytes / (1024 ** 3);
+  const memoryUsed = Math.max(0, 100 - (memoryAvailable / memoryTotal) * 100);
+  const pressure = resources.cpu_percent >= 90 || resources.load1 > resources.cpu_count;
+  return (
+    <section className={`resource-strip ${pressure ? "resource-pressure" : ""}`} aria-label="Host resources">
+      <div className="resource-status">
+        <span className="resource-dot" />
+        <strong>{pressure ? "Host under pressure" : "Host healthy"}</strong>
+      </div>
+      <Resource label="CPU" value={`${Math.round(resources.cpu_percent)}%`} percent={resources.cpu_percent} />
+      <Resource label={`Load / ${resources.cpu_count} CPUs`} value={resources.load1.toFixed(1)} percent={(resources.load1 / resources.cpu_count) * 100} />
+      <Resource label="Memory" value={`${Math.round(memoryUsed)}%`} percent={memoryUsed} />
+      <Resource label="Scratch" value={`${Math.round(resources.scratch_used_percent)}%`} percent={resources.scratch_used_percent} />
+    </section>
+  );
+}
+
+function Resource({ label, value, percent }) {
+  return (
+    <div className="resource">
+      <div><span>{label}</span><strong>{value}</strong></div>
+      <div className="resource-bar"><i style={{ width: `${Math.min(100, Math.max(2, percent))}%` }} /></div>
     </div>
   );
 }

@@ -5,6 +5,7 @@ const roleTitle = {
   researcher: "Researcher",
   reviewer: "Reviewer",
   principal: "Principal",
+  orchestrator: "Orchestrator",
   "impact-assessor": "Impact assessor",
 };
 
@@ -19,9 +20,9 @@ export default function Timeline({ data, activeRoles }) {
     if (!host || !tooltip || !data.runs.length || !data.lanes.length) return undefined;
 
     const draw = () => {
-      const width = Math.max(1_800, host.parentElement?.clientWidth || 1_800);
-      const margin = { top: 38, right: 18, bottom: 66, left: 330 };
-      const laneHeight = 43;
+      const width = Math.max(1_080, host.parentElement?.clientWidth || 1_080);
+      const margin = { top: 30, right: 18, bottom: 52, left: 230 };
+      const laneHeight = 40;
       const innerHeight = laneHeight * data.lanes.length;
       const height = margin.top + margin.bottom + innerHeight;
       host.replaceChildren();
@@ -71,18 +72,21 @@ export default function Timeline({ data, activeRoles }) {
       svg.append("g").selectAll("text")
         .data(data.lanes)
         .join("text")
+        .attr("class", (lane) => `lane-label lane-${lane.role}`)
         .attr("x", margin.left - 12)
         .attr("y", (lane) => centerY(lane.id) + 4)
         .attr("text-anchor", "end")
+        .text((lane) => compactLaneTitle(lane))
+        .append("title")
         .text((lane) => lane.full);
 
       const tickFormat = new Intl.DateTimeFormat("en-US", {
         timeZone: "America/New_York",
-        month: "short",
-        day: "numeric",
         hour: "numeric",
+        minute: "2-digit",
       });
-      const axis = d3.axisBottom(x).ticks(15).tickSizeOuter(0).tickFormat((date) => tickFormat.format(date));
+      const tickCount = Math.max(4, Math.min(9, Math.floor((width - margin.left) / 135)));
+      const axis = d3.axisBottom(x).ticks(tickCount).tickSizeOuter(0).tickFormat((date) => tickFormat.format(date));
       svg.append("g")
         .attr("class", "axis")
         .attr("transform", `translate(0,${margin.top + innerHeight})`)
@@ -92,12 +96,7 @@ export default function Timeline({ data, activeRoles }) {
         .attr("x", margin.left + (width - margin.left - margin.right) / 2)
         .attr("y", height - 13)
         .attr("text-anchor", "middle")
-        .text("Time in New York");
-      svg.append("text")
-        .attr("class", "axis-title")
-        .attr("transform", `translate(14,${margin.top + innerHeight / 2}) rotate(-90)`)
-        .attr("text-anchor", "middle")
-        .text("Agent / problem lane");
+        .text("New York time");
 
       const snapshot = new Date(data.snapshot_at);
       svg.append("line")
@@ -279,4 +278,14 @@ function duration(start, end) {
 
 function humanize(value) {
   return String(value).replaceAll("_", " ");
+}
+
+function compactLaneTitle(lane) {
+  const match = lane.full.match(/^team-(hn|r55)-(\d)(?: · (.*))?$/i);
+  if (match) {
+    const team = match[1].toUpperCase();
+    const suffix = match[3] ? ` · ${match[3]}` : "";
+    return `${team} ${match[2]}${suffix}`.slice(0, 32) + (`${team} ${match[2]}${suffix}`.length > 32 ? "…" : "");
+  }
+  return lane.short;
 }
