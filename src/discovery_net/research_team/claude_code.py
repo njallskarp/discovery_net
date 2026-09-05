@@ -164,6 +164,24 @@ def _invoke(
     )
 
 
+def failure_detail(completed: subprocess.CompletedProcess[str]) -> str:
+    """Describe a failed run, preferring the CLI's own error result over log noise.
+
+    A usage-limit or API error still produces a JSON result object on stdout whose
+    ``result`` text says what happened, while stderr carries only telemetry lines.
+    """
+    try:
+        result = parse_result(completed.stdout)
+    except ClaudeCodeError:
+        result = None
+    if result is not None:
+        message = str(result.get("result") or "").strip()
+        status = result.get("api_error_status")
+        if message:
+            return f"{message} (api_error_status={status})" if status else message
+    return completed.stderr.strip() or completed.stdout.strip() or "no output"
+
+
 def _looks_like_lost_session(completed: subprocess.CompletedProcess[str]) -> bool:
     text = (completed.stderr + completed.stdout).lower()
     return any(marker in text for marker in RESUME_FAILURE_MARKERS)
@@ -217,8 +235,9 @@ def run_pass(
         )
         completed = _invoke(command, prompt=fresh_prompt, workspace=workspace)
     if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
-        raise ClaudeCodeError(f"Claude Code exited {completed.returncode}: {detail[-2000:]}")
+        raise ClaudeCodeError(
+            f"Claude Code exited {completed.returncode}: {failure_detail(completed)[-2000:]}"
+        )
     result = parse_result(completed.stdout)
     if result.get("is_error"):
         detail = str(result.get("result") or result.get("subtype") or "unknown error")

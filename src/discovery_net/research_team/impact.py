@@ -188,7 +188,11 @@ def impact_prompt(context: ImpactContext) -> str:
         '"summary":"...","rationale":"...","evidence":["..."],"caveats":["..."]}]}\n'
         "Use `substantial` or `major` only when the evidence packet supports it. If there are no "
         "runs, return an empty "
-        "assessments array and explain that there was no new completed work.\n\n"
+        "assessments array and explain that there was no new completed work.\n"
+        "Hard length limits, enforced by the controller: `lane_title` at most 120 characters, "
+        "`summary` at most 500, `rationale` and `portfolio_summary` at most 1500, and at most "
+        "8 entries each in `evidence` and `caveats`. A response over any limit is rejected "
+        "whole and the packet is re-sent next pass, so keep every field well inside them.\n\n"
         + json.dumps(context.payload, indent=2, sort_keys=True)
     )
 

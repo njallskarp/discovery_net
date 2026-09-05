@@ -301,3 +301,26 @@ def test_doctor_reports_claude_code_login(tmp_path: Path, monkeypatch: Any, caps
     with pytest.raises(controller.ControllerError, match="not an executable file"):
         controller.doctor("claude-code")
     assert not os.path.exists(missing)
+
+
+def test_failure_detail_prefers_the_cli_error_result_over_log_noise() -> None:
+    import subprocess
+
+    limit = json.dumps(
+        {
+            "type": "result",
+            "subtype": "success",
+            "is_error": True,
+            "api_error_status": 429,
+            "result": "You've hit your session limit \u00b7 resets 2:30am",
+        }
+    )
+    completed = subprocess.CompletedProcess(
+        ["claude"], 1, stdout=limit + "\n", stderr='[claude-code:unrecognized_model] {"m":1}\n'
+    )
+    detail = claude_code.failure_detail(completed)
+    assert detail.startswith("You've hit your session limit")
+    assert "api_error_status=429" in detail
+
+    no_result = subprocess.CompletedProcess(["claude"], 1, stdout="", stderr="boom\n")
+    assert claude_code.failure_detail(no_result) == "boom"
