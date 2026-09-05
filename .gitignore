@@ -21,3 +21,18 @@ node_modules/
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+
+# Session-local handoff and follow-up notes.
+*.local.md
+
+# Generated contributor and agent signing keys.
+*.pem
+
+# Terraform plan files saved without the .tfplan extension.
+tfplan
+
+# The repository is installed with pip; uv's lockfile is a local convenience.
+uv.lock
+
+# Local agent-session scratch output.
+agent-sessions/**/*.out
