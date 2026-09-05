@@ -48,11 +48,14 @@ max-total-tokens: 0
 
 Allowed roles are `researcher`, `reviewer`, `principal`, `orchestrator`, and
 `impact-assessor`.
-Allowed modes are `continuous` and `oneshot`. Allowed reasoning efforts are
-`minimal`, `low`, `medium`, `high`, and `xhigh`. Allowed tiers are `default`
-and `flex`; record the human's choice explicitly so the fleet does not inherit
-an ambient service-tier setting. Allowed permissions are `workspace-write` and
-`unrestricted`.
+Allowed modes are `continuous` and `oneshot`. An optional `runner:` line selects
+`codex` (the default) or `claude-code`; the Claude Code rules are in
+[the Claude Code runner guide](claude-code-controller.md). Allowed reasoning
+efforts for Codex are `minimal`, `low`, `medium`, `high`, and `xhigh`; Claude Code
+accepts `low` through `max`. Allowed tiers are `default` and `flex`; record the
+human's choice explicitly so the fleet does not inherit an ambient service-tier
+setting. Allowed permissions are `workspace-write` and `unrestricted`. An
+optional `max-pass-usd` per-pass cost ceiling applies only to Claude Code agents.
 `network-access` is `true` or `false`, and `web-search` is `disabled`, `cached`,
 or `live`. `workspace` must be an existing absolute directory dedicated to
 this agent. Use a separate checkout or Git worktree when the agent needs a
@@ -113,7 +116,7 @@ fleet or substitute a repository inferred from the current checkout.
 Run the controller with the same Python environment used during setup:
 
 ```text
-doctor                         verify Python, SDK, Codex, and state access
+doctor [--runner RUNNER]       verify Python, the runner (codex or claude-code), and state access
 check-repository URL           verify the required GitHub repository is accessible
 list                           list configured agent names
 status [--json]                show roles, process state, and workspaces

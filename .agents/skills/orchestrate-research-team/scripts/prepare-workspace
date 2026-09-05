@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+#
+# prepare-workspace — build one dedicated agent workspace for the bundled controller.
+#
+# Usage:
+#   prepare-workspace WORKSPACE_DIR GIT_SSH_URL [DEPLOY_KEY]
+#
+# Creates WORKSPACE_DIR with:
+#   notes/           a fresh clone of GIT_SSH_URL (the human-authorized repository),
+#                    committing as the workspace's agent when DEPLOY_KEY is given
+#   skills/          symlink to this repository's .agents/skills tree
+#   .claude/skills/  one symlink per skill so Claude Code discovers them from the cwd
+#   scratch/         throwaway working space outside the clone
+#
+# The controller rejects a workspace shared by two agents, so run this once per agent.
+# It never touches an existing clone: re-running on a prepared directory only repairs
+# the skill links.
+
+set -euo pipefail
+
+WORKSPACE="${1:?usage: prepare-workspace WORKSPACE_DIR GIT_SSH_URL [DEPLOY_KEY]}"
+REMOTE="${2:?usage: prepare-workspace WORKSPACE_DIR GIT_SSH_URL [DEPLOY_KEY]}"
+DEPLOY_KEY="${3:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILLS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+[ -f "$SKILLS_DIR/math-research/SKILL.md" ] || {
+  echo "prepare-workspace: cannot find the .agents/skills tree next to this script" >&2
+  exit 1
+}
+
+mkdir -p "$WORKSPACE/scratch" "$WORKSPACE/.claude/skills"
+WORKSPACE="$(cd "$WORKSPACE" && pwd)"
+
+if [ -n "$DEPLOY_KEY" ]; then
+  [ -r "$DEPLOY_KEY" ] || { echo "prepare-workspace: deploy key is not readable: $DEPLOY_KEY" >&2; exit 1; }
+  SSH_COMMAND="ssh -i $DEPLOY_KEY -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+else
+  SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+fi
+
+if [ ! -d "$WORKSPACE/notes/.git" ]; then
+  GIT_SSH_COMMAND="$SSH_COMMAND" git clone --quiet "$REMOTE" "$WORKSPACE/notes"
+  git -C "$WORKSPACE/notes" config core.sshCommand "$SSH_COMMAND"
+  git -C "$WORKSPACE/notes" config user.name "$(basename "$WORKSPACE") (research agent)"
+  git -C "$WORKSPACE/notes" config user.email "research-team+$(basename "$WORKSPACE")@users.noreply.github.com"
+fi
+
+ln -sfn "$SKILLS_DIR" "$WORKSPACE/skills"
+for skill in "$SKILLS_DIR"/*/; do
+  name="$(basename "$skill")"
+  ln -sfn "$SKILLS_DIR/$name" "$WORKSPACE/.claude/skills/$name"
+done
+
+echo "prepared $WORKSPACE (clone: notes/, skills: $(ls "$WORKSPACE/.claude/skills" | wc -l | tr -d ' ') linked)"
