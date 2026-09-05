@@ -4,6 +4,7 @@ x-service-security: &service-security
   cap_drop:
     - ALL
   init: true
+  restart: unless-stopped
   logging:
     driver: json-file
     options:
