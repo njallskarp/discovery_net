@@ -76,7 +76,7 @@ services:
       - --p2p-listen-endpoint
       - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
       - --p2p-advertised-endpoint
-      - ${P2P_ALIAS:?Set a unique P2P network alias}:26656
+      - ${P2P_ADVERTISED:-${P2P_ALIAS}}:26656
       - --persistent-peers=${PERSISTENT_PEERS:-}
       - --no-address-book-strict
       - --allow-duplicate-ip
