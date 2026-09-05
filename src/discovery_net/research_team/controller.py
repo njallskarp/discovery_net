@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cross-platform controller for a standing team of Codex research agents."""
+"""Cross-platform controller for a standing team of Codex or Claude Code research agents."""
 
 from __future__ import annotations
 
@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from discovery_net.research_team import claude_code
 from discovery_net.research_team.impact import (
     ImpactContext,
     build_impact_context,
@@ -41,7 +42,9 @@ MAXIMUM_SDK_VERSION = (0, 23, 0)
 NAME_PATTERN = re.compile(r"^[a-z][a-z0-9-]{1,30}$")
 ROLES = {"researcher", "reviewer", "principal", "orchestrator", "impact-assessor"}
 MODES = {"continuous", "oneshot"}
-EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
+RUNNERS = {"codex", "claude-code"}
+CODEX_EFFORTS = {"minimal", "low", "medium", "high", "xhigh"}
+EFFORTS = CODEX_EFFORTS | claude_code.EFFORTS
 TIERS = {"default", "flex"}
 PERMISSIONS = {"workspace-write", "unrestricted"}
 WEB_SEARCH_MODES = {"disabled", "cached", "live"}
@@ -64,7 +67,10 @@ METADATA_KEYS = {
     "max-passes",
     "max-total-tokens",
     "model",
+    "runner",
+    "max-pass-usd",
 }
+OPTIONAL_METADATA_KEYS = {"model", "ledger-path", "runner", "max-pass-usd"}
 TESTING = os.environ.get("DISCOVERY_RESEARCH_TEAM_TESTING") == "1"
 
 
@@ -88,6 +94,8 @@ class PromptConfig:
     max_passes: int | None
     max_total_tokens: int | None
     model: str | None
+    runner: str
+    max_pass_usd: float | None
     text: str
 
     @property
@@ -188,6 +196,16 @@ def parse_limit(value: str, key: str) -> int | None:
     return parsed or None
 
 
+def parse_dollars(value: str, key: str) -> float | None:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ControllerError(f"{key} must be a non-negative number of US dollars") from exc
+    if parsed < 0 or parsed != parsed:
+        raise ControllerError(f"{key} must be a non-negative number of US dollars")
+    return parsed or None
+
+
 def parse_github_repository(value: str) -> tuple[str, str]:
     parsed = urlsplit(value)
     parts = [part for part in parsed.path.split("/") if part]
@@ -266,7 +284,7 @@ def parse_prompt(path: Path) -> PromptConfig:
             raise ControllerError(f"duplicate prompt metadata: {key}")
         metadata[key] = value
 
-    required = METADATA_KEYS - {"model", "ledger-path"}
+    required = METADATA_KEYS - OPTIONAL_METADATA_KEYS
     missing = sorted(required - metadata.keys())
     if missing:
         raise ControllerError(f"prompt is missing metadata: {', '.join(missing)}")
@@ -274,10 +292,29 @@ def parse_prompt(path: Path) -> PromptConfig:
         raise ControllerError(f"unsupported role: {metadata['role']}")
     if metadata["mode"] not in MODES:
         raise ControllerError(f"unsupported mode: {metadata['mode']}")
+    runner = metadata.get("runner", "codex")
+    if runner not in RUNNERS:
+        raise ControllerError(f"unsupported runner: {runner}")
     if metadata["effort"] not in EFFORTS:
         raise ControllerError(f"unsupported effort: {metadata['effort']}")
     if metadata["tier"] not in TIERS:
         raise ControllerError(f"unsupported tier: {metadata['tier']}")
+    max_pass_usd = parse_dollars(metadata.get("max-pass-usd", "0"), "max-pass-usd")
+    if runner == "claude-code":
+        if metadata["effort"] not in claude_code.EFFORTS:
+            raise ControllerError(
+                f"unsupported effort for claude-code: {metadata['effort']} "
+                f"(use one of {', '.join(sorted(claude_code.EFFORTS))})"
+            )
+        if metadata["tier"] != "default":
+            raise ControllerError("claude-code has no service tiers; use tier: default")
+        if metadata["web-search"] not in claude_code.WEB_SEARCH_MODES:
+            raise ControllerError("claude-code web-search must be disabled or live")
+    else:
+        if metadata["effort"] not in CODEX_EFFORTS:
+            raise ControllerError(f"unsupported effort for codex: {metadata['effort']}")
+        if max_pass_usd is not None:
+            raise ControllerError("max-pass-usd is only supported by the claude-code runner")
     if metadata["permissions"] not in PERMISSIONS:
         raise ControllerError(f"unsupported permissions: {metadata['permissions']}")
     if metadata["web-search"] not in WEB_SEARCH_MODES:
@@ -330,6 +367,8 @@ def parse_prompt(path: Path) -> PromptConfig:
         max_passes=parse_limit(metadata["max-passes"], "max-passes"),
         max_total_tokens=parse_limit(metadata["max-total-tokens"], "max-total-tokens"),
         model=metadata.get("model") or None,
+        runner=runner,
+        max_pass_usd=max_pass_usd,
         text=text,
     )
 
@@ -501,8 +540,7 @@ def spawn_worker(name: str) -> int | None:
         with state_path("launches.log").open("a") as log:
             log.write(f"{name} {nonce}\n")
         return None
-    load_codex_sdk()
-    codex_wrapper(parse_prompt(require_agent(name)).tier)
+    preflight_runner(parse_prompt(require_agent(name)))
     work = state_path("work", name)
     work.mkdir(parents=True, exist_ok=True)
     log_path = work / "agent.log"
@@ -665,6 +703,7 @@ def status_records() -> list[dict[str, Any]]:
                 "name": name,
                 "role": config.role,
                 "mode": config.mode,
+                "runner": config.runner,
                 "state": "running" if runtime else "inactive",
                 "pid": int(runtime["pid"]) if runtime is not None else None,
                 "workspace": str(config.workspace),
@@ -833,7 +872,17 @@ def load_codex_sdk() -> tuple[Any, Any]:
     return Codex, ThreadOptions
 
 
-def doctor() -> None:
+def doctor(runner: str = "codex") -> None:
+    if runner not in RUNNERS:
+        raise ControllerError(f"unsupported runner: {runner}")
+    if runner == "claude-code":
+        ensure_state()
+        try:
+            summary = claude_code.doctor()
+        except claude_code.ClaudeCodeError as exc:
+            raise ControllerError(str(exc)) from exc
+        print(f"controller ready on {sys.platform}; {summary}; state {state_root()}")
+        return
     try:
         sdk_version = importlib.metadata.version("openai-agents")
     except importlib.metadata.PackageNotFoundError as exc:
@@ -887,18 +936,31 @@ def pass_input(name: str, config: PromptConfig, thread_id: str | None) -> tuple[
     return prompt, followup
 
 
-async def run_one_pass(name: str) -> PromptConfig:
-    config = parse_prompt(require_agent(name))
+@dataclass(frozen=True)
+class PassOutcome:
+    response: str
+    conversation_id: str | None
+    input_tokens: int
+    cached_input_tokens: int
+    output_tokens: int
+    cost_usd: float | None
+
+
+def preflight_runner(config: PromptConfig) -> None:
+    if config.runner == "claude-code":
+        claude_code.find_claude()
+        return
+    load_codex_sdk()
+    codex_wrapper(config.tier)
+
+
+def conversation_id_path(config: PromptConfig, name: str) -> Path:
+    filename = "session-id" if config.runner == "claude-code" else "thread-id"
+    return state_path("work", name, filename)
+
+
+async def run_codex_pass(config: PromptConfig, prompt: str, thread_id: str | None) -> PassOutcome:
     Codex, ThreadOptions = load_codex_sdk()
-    thread_id_path = state_path("work", name, "thread-id")
-    thread_id = thread_id_path.read_text().strip() if thread_id_path.exists() else None
-    prompt, followup = pass_input(name, config, thread_id)
-    impact_context: ImpactContext | None = None
-    if config.role == "impact-assessor":
-        if config.ledger_path is None:
-            raise ControllerError("impact-assessor prompt has no ledger-path")
-        impact_context = build_impact_context(state_root(), config.ledger_path)
-        prompt += impact_prompt(impact_context)
     sandbox_mode = (
         "danger-full-access" if config.permissions == "unrestricted" else "workspace-write"
     )
@@ -914,14 +976,65 @@ async def run_one_pass(name: str) -> PromptConfig:
     )
     codex = Codex(codex_path_override=str(codex_wrapper(config.tier)))
     thread = codex.resume_thread(thread_id, options) if thread_id else codex.start_thread(options)
-    started_at = iso_timestamp()
     result = await thread.run(prompt)
+    usage = result.usage
+    return PassOutcome(
+        response=result.final_response,
+        conversation_id=thread.id or thread_id,
+        input_tokens=int(usage.input_tokens) if usage is not None else 0,
+        cached_input_tokens=int(usage.cached_input_tokens) if usage is not None else 0,
+        output_tokens=int(usage.output_tokens) if usage is not None else 0,
+        cost_usd=None,
+    )
+
+
+def run_claude_code_pass(config: PromptConfig, prompt: str, session_id: str | None) -> PassOutcome:
+    try:
+        result = claude_code.run_pass(
+            prompt=prompt,
+            fresh_prompt=config.text if session_id else prompt,
+            workspace=config.workspace,
+            model=config.model,
+            effort=config.effort,
+            permissions=config.permissions,
+            web_search=config.web_search,
+            session_id=session_id,
+            max_pass_usd=config.max_pass_usd,
+        )
+    except claude_code.ClaudeCodeError as exc:
+        raise ControllerError(str(exc)) from exc
+    return PassOutcome(
+        response=result.response,
+        conversation_id=result.session_id,
+        input_tokens=result.input_tokens + result.cache_creation_input_tokens,
+        cached_input_tokens=result.cached_input_tokens,
+        output_tokens=result.output_tokens,
+        cost_usd=result.cost_usd,
+    )
+
+
+async def run_one_pass(name: str) -> PromptConfig:
+    config = parse_prompt(require_agent(name))
+    id_path = conversation_id_path(config, name)
+    conversation_id = id_path.read_text().strip() if id_path.exists() else None
+    prompt, followup = pass_input(name, config, conversation_id)
+    impact_context: ImpactContext | None = None
+    if config.role == "impact-assessor":
+        if config.ledger_path is None:
+            raise ControllerError("impact-assessor prompt has no ledger-path")
+        impact_context = build_impact_context(state_root(), config.ledger_path)
+        prompt += impact_prompt(impact_context)
+    started_at = iso_timestamp()
+    if config.runner == "claude-code":
+        outcome = await asyncio.to_thread(run_claude_code_pass, config, prompt, conversation_id)
+    else:
+        outcome = await run_codex_pass(config, prompt, conversation_id)
     finished_at = iso_timestamp()
-    resolved_thread_id = thread.id or thread_id
-    if resolved_thread_id:
-        atomic_write(thread_id_path, resolved_thread_id + "\n")
+    resolved_conversation_id = outcome.conversation_id
+    if resolved_conversation_id:
+        atomic_write(id_path, resolved_conversation_id + "\n")
     run_timestamp = timestamp()
-    response = result.final_response.rstrip() + "\n"
+    response = outcome.response.rstrip() + "\n"
     if impact_context is not None:
         try:
             impact_batch = parse_impact_batch(response, impact_context.run_ids)
@@ -937,29 +1050,26 @@ async def run_one_pass(name: str) -> PromptConfig:
     atomic_write(state_path("work", name, "last-message.md"), response)
     report_path = state_path("work", name, "reports", f"{run_timestamp}.md")
     atomic_write(report_path, response)
-    usage = result.usage
-    input_tokens = int(usage.input_tokens) if usage is not None else 0
-    cached_input_tokens = int(usage.cached_input_tokens) if usage is not None else 0
-    output_tokens = int(usage.output_tokens) if usage is not None else 0
-    append_json(
-        state_path("work", name, "usage.jsonl"),
-        {
-            "run_id": run_identifier(name, started_at),
-            "agent": name,
-            "role": config.role,
-            "started_at": started_at,
-            "finished_at": finished_at,
-            "thread_id": resolved_thread_id,
-            "model": config.model,
-            "effort": config.effort,
-            "tier": config.tier,
-            "report": str(report_path),
-            "input_tokens": input_tokens,
-            "cached_input_tokens": cached_input_tokens,
-            "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-        },
-    )
+    usage_record: dict[str, Any] = {
+        "run_id": run_identifier(name, started_at),
+        "agent": name,
+        "role": config.role,
+        "runner": config.runner,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "thread_id": resolved_conversation_id,
+        "model": config.model,
+        "effort": config.effort,
+        "tier": config.tier,
+        "report": str(report_path),
+        "input_tokens": outcome.input_tokens,
+        "cached_input_tokens": outcome.cached_input_tokens,
+        "output_tokens": outcome.output_tokens,
+        "total_tokens": outcome.input_tokens + outcome.output_tokens,
+    }
+    if outcome.cost_usd is not None:
+        usage_record["cost_usd"] = outcome.cost_usd
+    append_json(state_path("work", name, "usage.jsonl"), usage_record)
     atomic_write(state_path("work", name, "prompt.sha256"), config.digest + "\n")
     if followup is not None:
         followup.replace(state_path("work", name, "reports", f"followup-{run_timestamp}.md"))
@@ -969,7 +1079,7 @@ async def run_one_pass(name: str) -> PromptConfig:
             "status": "completed",
             "started_at": started_at,
             "finished_at": finished_at,
-            "thread_id": resolved_thread_id,
+            "thread_id": resolved_conversation_id,
             "report": str(report_path),
         },
     )
@@ -1001,8 +1111,8 @@ def worker(name: str, nonce: str) -> None:
                     print(f"{iso_timestamp()} stopping: {reason}", flush=True)
                     return
                 print(
-                    f"{iso_timestamp()} starting pass "
-                    f"(effort={config.effort}, tier={config.tier}, mode={config.mode})",
+                    f"{iso_timestamp()} starting pass (runner={config.runner}, "
+                    f"effort={config.effort}, tier={config.tier}, mode={config.mode})",
                     flush=True,
                 )
                 pass_started_at = iso_timestamp()
@@ -1066,7 +1176,8 @@ def worker(name: str, nonce: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="research-team")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("doctor")
+    doctor_parser = subparsers.add_parser("doctor")
+    doctor_parser.add_argument("--runner", choices=sorted(RUNNERS), default="codex")
     repository = subparsers.add_parser("check-repository")
     repository.add_argument("repository")
     subparsers.add_parser("list")
@@ -1123,7 +1234,7 @@ def build_parser() -> argparse.ArgumentParser:
 def dispatch(arguments: argparse.Namespace) -> None:
     command = arguments.command
     if command == "doctor":
-        doctor()
+        doctor(arguments.runner)
     elif command == "check-repository":
         check_repository(arguments.repository)
     elif command == "list":
