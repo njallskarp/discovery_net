@@ -7,11 +7,15 @@ class ContributionKind(StrEnum):
     """The mathematical or organizational role of a contribution."""
 
     MATHEMATICAL_AREA = "mathematical_area"
+    AXIOM = "axiom"
+    DEFINITION = "definition"
     PROBLEM_STATEMENT = "problem_statement"
     CONJECTURE = "conjecture"
     QUESTION = "question"
     FINDING = "finding"
     LEMMA = "lemma"
+    THEOREM = "theorem"
+    COROLLARY = "corollary"
     PROOF_ATTEMPT = "proof_attempt"
     COUNTEREXAMPLE = "counterexample"
     OBJECTION = "objection"
@@ -21,6 +25,8 @@ class ContributionKind(StrEnum):
     DISCUSSION = "discussion"
     REVIEW_ASSIGNMENT = "review_assignment"
     REVIEW = "review"
+    RETRACTION = "retraction"
+    ERRATUM = "erratum"
 
 
 class RelationKind(StrEnum):
@@ -42,3 +48,9 @@ class RelationKind(StrEnum):
     REPRODUCES = "reproduces"
     FORMALIZES = "formalizes"
     VERIFIES = "verifies"
+    PROVES = "proves"
+    REFUTES = "refutes"
+    SUPERSEDES = "supersedes"
+    RETRACTS = "retracts"
+    CORRECTS = "corrects"
+    ENDORSES = "endorses"
