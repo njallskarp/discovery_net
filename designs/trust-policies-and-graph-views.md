@@ -1,6 +1,6 @@
 # Trust policies and graph views
 
-Status: draft / proposal, 6 September 2026. This is a companion to [PR #60](https://github.com/njallskarp/discovery_net/pull/60), building on its separation of identity and domain standing. It proposes how trust, revocation and organization affect graph views, with implementation observations from main and the vocabulary proposed in [PR #58](https://github.com/njallskarp/discovery_net/pull/58). The behaviors below are proposals for discussion. The agreed pieces should eventually be consolidated into one design.
+Status: design exploration, 6 September 2026. This is a companion to [PR #60](https://github.com/njallskarp/discovery_net/pull/60), building on its separation of identity and domain standing. It explores how trust, revocation and organization could affect graph views, with implementation observations from main and the vocabulary proposed in [PR #58](https://github.com/njallskarp/discovery_net/pull/58). These mechanisms are independently adoptable options, not one required migration. Start with the [incremental adoption plan](trust-adoption-plan.md), which ranks benefits, implementation complexity and assumption burden and identifies the smaller changes that work over the existing ledger.
 
 **Recommendation.** Preserve every committed assertion, and derive revisable views under explicit policies. Keep unreviewed work discoverable. Give agents a separate way to request evidence-qualified results before relying on them. Revocation changes which evidence a view accepts; it does not erase work or establish mathematical falsehood.
 
@@ -34,7 +34,7 @@ flowchart LR
 
 If expiration or decay depends on time, the evaluation time must also be pinned, rather than silently using each server's clock. External checks become reproducible inputs through versioned reports and evidence references. The ledger's committed state hash remains separate from a policy-dependent view hash. Derived statuses may be cached or materialized; immutability does not require rerunning a global trust calculation for every query.
 
-**A finding can have a stable identity and an immutable revision history.** Separate four records:
+**Optional finding/version model.** If explicit correction links prove insufficient, a finding can have a stable identity and an immutable revision history. This option separates four records; it is not a prerequisite for precise reviews, typed evidence resources or improved graph queries:
 
 | Record | Purpose |
 |---|---|
@@ -180,12 +180,7 @@ Two proposed bootstrap signals need narrower wording. arXiv explicitly distingui
 
 The domain traversal also needs clarification. If standing propagates only upward, a credential in a subarea may contribute to an ancestor query. An ancestor credential must not automatically qualify its holder in the queried descendant. Sharing an ancestor cannot create standing in a sibling field. A depth cap is not a substitute for getting this direction right.
 
-**A first implementation should settle semantics before scores.**
-
-1. Specify finding revisions, fixed evidence manifests, structured assessments, scoped grants, withdrawals and moderation actions, with exact authorization and temporal rules.
-2. Add a rebuildable policy projection and the research/reference query distinction, including explanations and dependency stubs.
-3. Add revocation-driven invalidation of qualification and consumer notifications.
-4. Add organization proposals, bounded traversal and curated views; evaluate more elaborate reputation algorithms against observed attacks and data.
+**Adoption is incremental.** Begin with compact evidence reports and signer-aware relation handling, then explicit evidence states. Author correction signals and dependency warnings can follow independently of a finding/version split or expert registry. Query improvements and a problem-organization pilot also stand alone. The [adoption plan](trust-adoption-plan.md) gives scoped changes, prerequisites and evaluation criteria; the broader mechanisms above remain available for later experiments.
 
 Acceptance scenarios should include forged third-party dependencies, withdrawal of one among several endorsements, loss of a sole reviewer, an unaffected independent proof check, recovery from a malicious flag, compromise restricted to an interval, and reproducible queries across a revocation. Revision scenarios should cover unauthorized and concurrent revisions, same-block ordering, a corrected statement with an old review, a post-hoc manifest membership assertion, reuse of an unchanged evidence resource, and a lost assessment with a surviving alternative qualification route. These are proposed design checks, not tests already run.
 
