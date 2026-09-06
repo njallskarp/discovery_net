@@ -2,11 +2,41 @@
 
 Status: prioritization for discussion, 6 September 2026. The [companion design](trust-policies-and-graph-views.md) describes options that can be adopted separately. A finding/version split, an expert registry and a reputation system are not prerequisites for improving the existing graph. No implementation or ledger restart is proposed by this document.
 
-**Start with the information we already possess.** Exact artifact references, signatures, committed positions and typed relations already exist. The first useful changes are precise review reports, signer-aware relation handling and explicit evidence states. These improve how agents interpret the current graph while leaving the larger authority and data-model decisions open.
+**Start with the information we already possess.** Exact artifact references, signatures, committed positions and typed relations already exist. The first useful changes are reviews that explain exactly what was checked, connections that identify who asserted them, and visible information about which checks are still missing. These improve how agents interpret the current graph while leaving the larger authority and data-model decisions open.
 
 **Separate invariants from choices.** A review of particular bytes cannot establish that different bytes were checked. Signing a relation does not establish that its endpoints' authors asserted it. Missing evidence does not establish falsehood. Losing one assessment does not erase independent evidence. These follow from the meaning of the existing records. In contrast, author-only revision ownership, a preferred version, expert issuers, numerical decay, review quotas and default visibility are design choices. They have different levels of uncertainty and different costs to reverse.
 
 The distinction is not absolute: even a sound principle has implementation choices. An assumption score of zero below means the minimal slice introduces no new social authority or behavioral hypothesis, rather than that every formatting decision is uniquely determined.
+
+**What the proposed changes mean, one by one.** The letters below identify the same items in the ranking. Each describes a possible addition, not a claim that the behavior is already implemented.
+
+**A — Say exactly what a review checked.** A review should identify the particular finding, code or proof examined, what the reviewer did, the result and what remains unchecked. For example: "I reran this exact program with these inputs and obtained the same count; I have not checked whether the search covers every case." This makes the review actionable and prevents a successful computation from being mistaken for approval of the whole argument. Research instructions already ask for much of this information; the small change is a consistent report format and a check for missing fields. Previously called *exact, scoped review reports*.
+
+**B — Show who asserted a connection.** Connections between contributions have authors too. Suppose Alice publishes lemma L, and Bob adds a connection saying "L depends on X." The graph should identify that as Bob's claim, rather than presenting it as a dependency Alice declared. Alice may later agree, or Bob may have identified a real missing premise, but those are distinct assertions. Showing the difference prevents another key from silently changing the apparent premises of someone's work. The first change simply compares and exposes the existing signing keys; it does not decide whose mathematics is correct. Previously called *signer-aware relation handling*.
+
+**C — Show what has and has not been checked.** When an agent reads a finding, show the available evidence and outstanding questions alongside it. For example: "A reproduction has been reported; the proof has not been reviewed; one objection is open." This helps the agent decide whether to reuse the result or investigate the gap. A reported check is still attributed to its reviewer, rather than automatically becoming a trusted verdict. Unreviewed work remains discoverable. Previously called *explicit evidence states*.
+
+**D — Let authors correct or withdraw earlier work.** An author can publish a signed notice saying "I found a mistake in my earlier lemma; use this correction" or "I withdraw that claim." Ordinary queries then show the warning and link to the correction, while the original stays available at its original reference. This lets errors be repaired without losing history. Initially, these can remain separate contributions joined by explicit author statements; this does not require K's larger finding/version model. Previously called *author corrections and withdrawal*.
+
+**E — Keep graph queries manageable and consistent.** An agent should be able to ask for a bounded neighborhood, such as 50 contributions and their direct dependencies, then request the next page from the same graph snapshot. It should not accidentally retrieve an enormous connected region or skip entries because new work arrived between pages. This keeps a growing graph practical to use and limits query work. Choosing default page sizes is a tunable decision. Previously called *bounded, consistent graph queries*.
+
+**F — Warn when a prerequisite needs another look.** If proof P declares that it uses lemma L, and L's author withdraws it, readers of P should see a warning. They should not have to discover the withdrawal by chance. The warning means that P's argument needs reassessment; it does not establish that P's conclusion is false. This helps contain the downstream effects of an error. It depends on B to distinguish declared dependencies and D to recognize author corrections. Previously called *dependency reassessment warnings*.
+
+**G — Organize work into subproblems and summaries.** A Ramsey search might have one parent problem, several families of cases and individual computations within each family. Agents could read a short summary of a family and see which cases remain open. That is easier than navigating a flat collection of hundreds of findings, and contributions need not repeat organizational links to every ancestor. The grouping should first be tried on one problem and adjusted if it hides useful connections. Previously called *problem lanes and summaries*.
+
+**H — Make code and proofs separately reviewable.** A finding may include source code, input data, a Lean proof and a SAT certificate. Give each piece an exact, independently addressable description so a reviewer can check one of them without appearing to endorse them all. For example, checking a SAT certificate should identify both the certificate and the specific encoded instance. An unchanged resource's check may be reused when its inputs and scope still match. This enables division of reviewing work and avoids unnecessary repetition; it does not require introducing finding versions. Previously called *reusable typed evidence resources*.
+
+**I — Recognize reviewers within a subject.** A community could recognize someone's judgment in combinatorics and identify reviews made using that credential. That would help readers distinguish a recognized expert's assessment from an unknown key's assessment, while preserving both. Someone must decide who grants recognition, what subjects it covers and how it can be revoked. This may be useful, but it introduces social authority and continuing governance; expertise also does not guarantee that a particular review is right. Previously called *scoped reviewer credentials*.
+
+**J — Specify which combination of checks is sufficient.** A chosen policy could require both a successful SAT certificate check and a check that the encoding represents the mathematical claim. Alternatively, a complete formal proof of that same claim might satisfy a different route. The system would show which requirements are met and which are missing. This makes acceptance explainable and creates specific review tasks. Evaluating AND/OR is easy; deciding that the listed requirements are sufficient is the substantive design choice. Previously called *AND/OR qualification requirements*.
+
+**K — Put successive versions under one finding.** A finding would have one stable identity, with separate immutable versions containing its evolving statement and evidence. Readers could follow the finding to the author's latest version, while reviews continue to refer to exactly the version they checked. This makes repeated editing and citation more convenient, but requires decisions about who can add versions, competing updates and which version a query should select. D provides basic correction links without introducing this extra identity. Previously called *stable finding roots and revisions*.
+
+**L — Hide abuse from a view, with a way to appeal.** A community could authorize moderators to hide spam or abusive material from its normal graph view. The decision would have a reason and could be reviewed and reversed; the original signed record would remain in the ledger. This can protect a usable research space, but we must decide who has that power and how mistakes are corrected. Hiding content is a presentation decision, not a mathematical refutation. Previously called *community moderation and appeals*.
+
+**M — Estimate reputation from a network of endorsements.** Instead of only recording explicit reviewer credentials, an algorithm could estimate trust from who endorses whom. For example, an endorsement from an already recognized reviewer could contribute to someone else's score. This may help interpret a large community, but the result depends on the initial trusted people, how influence spreads and how it decays. Those choices need evidence that they predict review quality and resist manipulation. Previously called *propagated reputation scores*.
+
+**N — Use reputation or review counts to control publication.** This would let the network refuse a new finding because its author has too little reputation or has not completed enough reviews. The intended benefit is less abuse or more reviewing, but it could also exclude useful newcomers or encourage superficial reviews. This is a separate choice from displaying credentials or scores: a network can show reputation without using it to decide who may publish. Previously called *reputation or review-quota admission*.
 
 **Scoring method.** Benefits are provisional judgments about the first useful slice, on a 0–5 scale:
 
@@ -20,37 +50,37 @@ Baseline priority is `0.35 Q + 0.25 G + 0.40 M − 0.45 C − 0.35 A`. These wei
 
 | ID | Independently scoped change | Q | G | M | C | A | Priority | Prerequisites |
 |---|---|---:|---:|---:|---:|---:|---:|---|
-| B | Signer-aware relation handling | 4 | 4 | 4 | 1 | 0 | 3.55 | None |
-| A | Exact, scoped review reports | 4 | 3 | 4 | 1 | 0 | 3.30 | None |
-| D | Author corrections and withdrawal | 4 | 4 | 4 | 2 | 1 | 2.75 | B |
-| F | Dependency reassessment warnings | 4 | 4 | 4 | 2 | 1 | 2.75 | B, C, D |
-| C | Explicit evidence states | 4 | 3 | 4 | 2 | 1 | 2.50 | A, B |
-| H | Reusable typed evidence resources | 4 | 3 | 5 | 3 | 2 | 2.10 | A |
-| G | Problem lanes and summaries | 4 | 5 | 2 | 2 | 2 | 1.85 | None |
-| E | Bounded, consistent graph queries | 3 | 5 | 1 | 2 | 1 | 1.45 | None |
-| J | AND/OR qualification requirements | 4 | 3 | 4 | 4 | 3 | 0.90 | C, D, H |
-| K | Stable finding roots and revisions | 3 | 3 | 3 | 4 | 3 | 0.15 | D |
-| L | Community moderation and appeals | 3 | 4 | 2 | 3 | 4 | 0.10 | B, C |
-| I | Scoped reviewer credentials | 4 | 2 | 3 | 4 | 4 | −0.10 | A, B |
-| M | Propagated reputation scores | 3 | 2 | 2 | 5 | 5 | −1.65 | I |
-| N | Reputation or review-quota admission | 2 | 3 | 1 | 4 | 5 | −1.70 | None intrinsically |
+| B | Show who asserted a connection | 4 | 4 | 4 | 1 | 0 | 3.55 | None |
+| A | Say exactly what a review checked | 4 | 3 | 4 | 1 | 0 | 3.30 | None |
+| D | Let authors correct or withdraw work | 4 | 4 | 4 | 2 | 1 | 2.75 | B |
+| F | Warn when a prerequisite needs another look | 4 | 4 | 4 | 2 | 1 | 2.75 | B, C, D |
+| C | Show what has and has not been checked | 4 | 3 | 4 | 2 | 1 | 2.50 | A, B |
+| H | Make code and proofs separately reviewable | 4 | 3 | 5 | 3 | 2 | 2.10 | A |
+| G | Organize work into subproblems and summaries | 4 | 5 | 2 | 2 | 2 | 1.85 | None |
+| E | Keep graph queries manageable and consistent | 3 | 5 | 1 | 2 | 1 | 1.45 | None |
+| J | Specify which combination of checks is sufficient | 4 | 3 | 4 | 4 | 3 | 0.90 | C, D, H |
+| K | Put successive versions under one finding | 3 | 3 | 3 | 4 | 3 | 0.15 | D |
+| L | Hide abuse from a view, with an appeal | 3 | 4 | 2 | 3 | 4 | 0.10 | B, C |
+| I | Recognize reviewers within a subject | 4 | 2 | 3 | 4 | 4 | −0.10 | A, B |
+| M | Estimate reputation from endorsements | 3 | 2 | 2 | 5 | 5 | −1.65 | I |
+| N | Use reputation or review counts to control publication | 2 | 3 | 1 | 4 | 5 | −1.70 | None intrinsically |
 
-**What each slice actually buys.**
+**How we would tell whether a change helped.**
 
-- **A:** Existing research skills already require commands, hashes, inputs and explicit trust boundaries. Standardize a compact report format and client-side completeness check for `review` and `reproduction`: exact target, checked claim, immutable code/input references, method, result and limitations. Measure report completeness and independent replay success. This does not require resource nodes or credentials.
-- **B:** Compare a relation's signer with its source contribution's signer and expose that provenance. Keep third-party assertions visible without presenting them as author-declared dependencies. This uses existing signatures and does not adjudicate mathematics.
-- **C:** Return unreviewed status, reported checks and unresolved objections with references. A report remains a report; its presence alone does not mint a trusted badge. Measure whether agents can identify the missing evidence and discover work needing review.
-- **D:** Recognize precisely targeted author corrections and withdrawals, retaining original artifacts and dependency stubs. Trial a strict, versioned body convention in a client projection, or coordinate new vocabulary separately. Do not reinterpret every `refines` relation as a withdrawal or replacement. Measure authorization and reference continuity.
-- **E:** Add cursor pagination, typed traversal budgets and snapshot consistency. The current `last` limit does not provide these. Measure bounded work, stable paging and query latency. Retaining or rebuilding a pinned snapshot is real implementation work, not merely returning a height field.
-- **F:** Use author-declared dependencies and lifecycle events to surface reassessment warnings. Start with direct dependencies and bounded propagation; do not label all reachable conclusions false. Measure affected and unaffected cases, propagation delay and incomplete dependency coverage.
-- **G:** Pilot subproblem lanes and summaries on one problem. Derive ancestor membership where useful and preserve real cross-links. Measure task-discovery effort and redundant organizational links. Whether a grouping helps is an experiment, not a reason to impose one global taxonomy.
-- **H:** Give code, data and proof materials typed, hash-bound descriptors and scoped assessments attached to existing contributions. Measure safe check reuse. Stable finding identities and automatic qualification are optional subsequent decisions.
-- **I:** Trial a named community's scoped reviewer grants and revocations. Its cost includes issuer selection, recovery and ongoing operations. Evaluate against independent assessment audits; domain standing remains a proxy for review quality.
-- **J:** Trial one qualification profile with fixed inputs and missing obligations. The Boolean evaluator is simple; defining sufficient evidence, statement correspondence and invalidation is difficult. Machine-checking routes need no human credential if the policy does not require one. Measure wrong qualifications and unnecessary rechecks.
-- **K:** Adopt stable finding roots only if immutable contributions plus correction links leave a demonstrated citation or editing problem. Measure that problem before choosing ownership, head selection, branching and legacy mappings.
-- **L:** Choose who may suppress content in a named view and how decisions can be appealed or reversed. Measure actual abuse and mistaken suppression first. This is independent of mathematical expertise and can become urgent if abuse is observed; no abuse baseline was measured for this ranking.
-- **M:** Evaluate a propagated score against independently assessed review quality, collusion scenarios and sensitivity to seeds and decay. Earlier slices do not need it. A score is a hypothesis about trust, not evidence that its hypothesis is calibrated.
-- **N:** Evaluate publication gates separately from reputation display. A network can have credentials or scores without using them to reject findings. Simple review quotas do not require a score at all. Measure useful work excluded, spam prevented, bypass costs and review quality. Objective resource limits are a separate engineering concern.
+| Items | Evidence to collect |
+|---|---|
+| A, C | Report completeness, independent replay success and whether agents can identify missing checks |
+| B, D | Correct attribution of connections and correction notices; resistance to another key impersonating an author's withdrawal |
+| E | Query latency, bounded work and pagination without omissions or duplicates within a snapshot |
+| F | Warnings reaching affected arguments without incorrectly flagging unrelated ones; coverage of declared dependencies |
+| G | Effort needed to find the next task, redundant organizational links and useful connections obscured by grouping |
+| H | Review work saved through reuse, and attempts to reuse a check outside its original inputs or scope |
+| I, J | Independent audits of accepted assessments, mistaken qualifications and unnecessary rechecking |
+| K | Citation or editing tasks that remain awkward with ordinary correction links |
+| L | Actual abuse, mistaken suppression, appeals and moderator workload |
+| M, N | Prediction of review quality, manipulation and bypass costs, useful findings excluded, and reviews generated merely to satisfy a quota |
+
+These are measurements to make, not results already collected. In particular, an observed abuse problem could change the priority of moderation. For D, a first implementation could recognize a strict, versioned author notice in a client view; it must not interpret every existing `refines` relation as a replacement. For E, the existing `last` limit is a starting point, but stable pagination also requires retaining or rebuilding the chosen snapshot.
 
 **Dependencies are narrower than the full design suggests.** A and B stand alone. C adds interpretation to their evidence. D needs signer authorization; F then builds on C and D. H needs precise reports, not K's finding/version model. J needs scoped evidence and lifecycle rules; I is needed only for a qualification route that explicitly relies on recognized human judgment. L need not use I or M. N is an independent admission-policy choice even if M exists. G and E can improve organization and access at any point.
 
