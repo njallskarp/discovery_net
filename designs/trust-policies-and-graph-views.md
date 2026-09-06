@@ -34,11 +34,71 @@ flowchart LR
 
 If expiration or decay depends on time, the evaluation time must also be pinned, rather than silently using each server's clock. External checks become reproducible inputs through versioned reports and evidence references. The ledger's committed state hash remains separate from a policy-dependent view hash. Derived statuses may be cached or materialized; immutability does not require rerunning a global trust calculation for every query.
 
+**A finding can have a stable identity and an immutable revision history.** Separate four records:
+
+| Record | Purpose |
+|---|---|
+| Finding | Stable reference and original author; identifies the continuing contribution |
+| Revision | Exact statement, assumptions, explanation and evidence-manifest reference at one point in its history |
+| Evidence resource | Typed reference to specific source code, data, formal proof or computational certificate |
+| Assessment | Signed, scoped report about an exact revision, resource or combination of inputs |
+
+The finding's history is derived from signed `revision_of` and `revises` relations; it is not a mutable list stored on the finding. Publish the root, first revision and their links atomically. Subsequent revisions must be signed by the original finding author, with explicit recovery or delegation rules if added later. Other contributors remain free to attach evidence, objections and alternative findings; authorship controls the revision history, not who may examine the work.
+
+Version numbers can be display labels inferred from committed order: `(height, transaction_index, artifact_index)`. Author timestamps do not decide order, and height alone does not distinguish entries within a block. Preserve an explicit predecessor reference: two revisions extending the same predecessor are concurrent branches, not evidence that the later one incorporated the earlier one. Expose competing heads until the author explicitly selects or reconciles them. Ledger order still identifies the latest publication without silently resolving that editing conflict.
+
+Queries should distinguish `latestRevision` from `latestQualifiedRevision` and return the exact revision selected. The latter is recomputed under the current policy, including withdrawals and objections; it is not simply the last version that once had a badge. Discovery can follow the stable finding, but reviews and mathematical dependencies pin an immutable revision. Publishing a correction does not transfer earlier reviews to the changed claim or retarget existing dependents. A revision that identifies an error in earlier work should also record that correction or withdrawal explicitly.
+
+Publication priority attaches to the content actually committed in each revision. Creating a finding stub cannot backdate a result supplied later. Author control of the history also does not transfer credit for evidence or corrections supplied by other keys.
+
+```mermaid
+flowchart LR
+    F["Finding: stable identity"] -->|"history, derived"| R1["Earlier revision"]
+    F -->|"history, derived"| R2["New revision"]
+    R2 -->|revises| R1
+    R2 --> M["Fixed evidence manifest"]
+    M --> S["Source and inputs by hash"]
+    M --> L["Lean project and theorem"]
+    M --> C["SAT instance and certificate"]
+    A["Scoped assessment"] -->|"checks exact inputs"| C
+```
+
+This is a projected navigation view; the signed `revision_of` relations point from revisions back to the finding. Existing contributions can remain directly addressable as single-version work. The new records and relation semantics require a schema proposal; they are not present in the current enums or enforced by PR #58.
+
+**Evidence resources and assessment types should be explicit.** The protocol already uses *artifact* for any signed contribution or relation. Here, *evidence resource* denotes the code, proof or data being examined. A resource descriptor names its kind, format, content digest, retrieval locations and relevant environment. Large bytes can remain outside the ledger; a mutable repository URL alone does not identify what was checked.
+
+A revision must bind a fixed evidence set. A manifest node's content address does not, by itself, freeze relations that may be attached to it later. Bind the canonical member references and roles in the manifest, and expose that same membership through relations. A changed manifest produces a new revision. Third-party assessments and supplementary evidence may still accumulate around that revision, with their own signers and scope.
+
+| Resource / assessment | What the assessment establishes within its declared scope |
+|---|---|
+| Source, inputs and environment / execution reproduction | The specified execution produced the reported outputs |
+| Source and specification / source review | The reviewer assessed the claimed behavior against that specification |
+| Lean project and named theorem / formal proof check | The specified theorem checked in the identified environment, with its assumptions recorded |
+| SAT instance and certificate / certificate check | The certificate checks against that exact instance |
+| Formal statement or encoding / correspondence review | The checked object represents the claim and scope of the finding revision |
+
+An assessment binds its type, exact targets, checker or method, environment, outcome and report evidence. A signed "passed" report remains an assertion whose provenance the policy evaluates; another participant can rerun the check. Reproduction does not by itself establish source correctness or exhaustive coverage. Lean's own validation guidance separates proof checking from the meaning of the statement and examination of its axioms. [Lean proof validation](https://lean-lang.org/doc/reference/latest/ValidatingProofs/). Likewise, DRAT-trim takes both a formula and its proof; our design must separately represent the justification connecting that formula to the mathematical problem. [DRAT-trim](https://www.cs.utexas.edu/~marijn/drat-trim/).
+
+**Qualification can be an expression over scoped evidence.** For a claim admitting either a full formal proof or a complete SAT-based reduction, an illustrative policy is:
+
+```text
+qualified(revision) = eligible(revision) AND (
+    (formal_proof_checked AND statement_matches AND assumptions_accepted)
+ OR (sat_certificate_checked AND encoding_sound AND coverage_complete)
+)
+```
+
+Each term means that the policy accepts evidence for that obligation on exact inputs. `eligible` includes applicable lifecycle and moderation rules. These are alternative sufficient routes specified by the policy, not a universal recipe for mathematics. An author can propose an evidence plan, but cannot award a badge by weakening the policy's requirements. Supplementary resources need not all be checked when an independent sufficient route already qualifies the claim.
+
+Evaluate the expression against recorded evidence; do not search for an assignment that treats missing checks as true. Resource checks run in review workers or clients, outside ledger admission. Expose satisfied, unresolved and disputed obligations, the evidence used, and policy-defined blockers. Unknown evidence cannot satisfy a positive requirement, and mutually supporting reviews cannot bootstrap qualification without an accepted evidential basis. This makes missing checks available as concrete research tasks.
+
+Revocation then invalidates particular assessment inputs and recomputes affected routes. If the SAT route loses its only accepted encoding review, the formal route may still qualify the revision. Reusing unchanged resource hashes can preserve applicable checks across revisions, but the statement-to-evidence connection must be checked for the new revision. Merely adding a mirror for identical bytes need not invalidate a resource check; changing the code, inputs, assumptions or checker context requires reassessing what that report actually covers. This gives corrections a precise scope instead of resetting every check or inheriting them indiscriminately.
+
 **Unreviewed work should appear by default in research queries.** Otherwise the system makes discovery and review conditional on having already received review. That particularly disadvantages new keys and defeats the purpose of sharing partial results. A research view should surface unreviewed contributions with explicit status, while separating or quarantining spam under its moderation policy. A reference view should require a named evidence profile, such as an accepted reproduction or a scoped expert assessment. It should say why a result qualifies, without promising that it can never be corrected.
 
 Do not collapse everything into `verified: Boolean`. A result can be reproduced and disputed simultaneously. Expose at least lifecycle, evidence, unresolved challenges and dependency health. For example: active; reproduced by report R; objection O unresolved; required lemma L awaiting reassessment. A proof-assistant check should identify the exact statement, environment and assumptions it checked. Repeating a computation is evidence for that computation, with its declared limits.
 
-An illustrative, **new** GraphQL surface could be:
+An illustrative, **new** GraphQL surface could be (the finding reference is optional for records outside a revision history):
 
 ```graphql
 query Research($policy: ID!, $height: Int!) {
@@ -49,6 +109,7 @@ query Research($policy: ID!, $height: Int!) {
     contributions(first: 50, mode: RESEARCH) {
       nodes {
         ref
+        findingRef
         lifecycle
         evidence { kind reportRef qualifiesUnderPolicy }
         dependencyHealth { state reasonRefs }
@@ -58,7 +119,7 @@ query Research($policy: ID!, $height: Int!) {
 }
 ```
 
-`REFERENCE` would apply the policy's stated evidence requirements. Existing raw queries should retain their meaning. If a visible contribution references a suppressed or withdrawn artifact, return an identifiable stub and reason; never silently drop the dependency and make the argument appear self-contained. Audit retrieval exposes the original assertion and the later decisions about it.
+`ref` identifies the exact selected artifact or revision; `findingRef` identifies its stable finding when applicable. `REFERENCE` would apply the policy's stated evidence requirements. Existing raw queries should retain their meaning. If a visible contribution references a suppressed or withdrawn artifact, return an identifiable stub and reason; never silently drop the dependency and make the argument appear self-contained. Audit retrieval exposes the original assertion and the later decisions about it.
 
 **Anyone can review; recognized authority is scoped.** An unknown agent may publish a reproduction, an objection or a checkable certificate immediately. Recognition as an expert reviewer is a separate grant: issuer, subject key or bound identity, area, permitted action, validity interval and evidence for the grant. The default community policy starts with explicitly named issuers. It specifies who can issue further grants and revoke them. Delegation must be an explicit permission, not an automatic consequence of receiving a reviewer badge.
 
@@ -121,12 +182,12 @@ The domain traversal also needs clarification. If standing propagates only upwar
 
 **A first implementation should settle semantics before scores.**
 
-1. Specify structured assessments, scoped grants, withdrawals and moderation actions, with exact authorization and temporal rules.
+1. Specify finding revisions, fixed evidence manifests, structured assessments, scoped grants, withdrawals and moderation actions, with exact authorization and temporal rules.
 2. Add a rebuildable policy projection and the research/reference query distinction, including explanations and dependency stubs.
 3. Add revocation-driven invalidation of qualification and consumer notifications.
 4. Add organization proposals, bounded traversal and curated views; evaluate more elaborate reputation algorithms against observed attacks and data.
 
-Acceptance scenarios should include forged third-party dependencies, withdrawal of one among several endorsements, loss of a sole reviewer, an unaffected independent proof check, recovery from a malicious flag, compromise restricted to an interval, and reproducible queries across a revocation. These are proposed design checks, not tests already run.
+Acceptance scenarios should include forged third-party dependencies, withdrawal of one among several endorsements, loss of a sole reviewer, an unaffected independent proof check, recovery from a malicious flag, compromise restricted to an interval, and reproducible queries across a revocation. Revision scenarios should cover unauthorized and concurrent revisions, same-block ordering, a corrected statement with an old review, a post-hoc manifest membership assertion, reuse of an unchanged evidence resource, and a lost assessment with a surviving alternative qualification route. These are proposed design checks, not tests already run.
 
 The remaining policy choices are who initially issues credentials, which evidence profiles the default view accepts, how moderation appeals work, and how aggregate publication costs are bounded. They can be explicit and replaceable without holding up open publication of mathematical work.
 
