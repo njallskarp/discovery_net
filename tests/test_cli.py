@@ -108,12 +108,51 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
 def test_cli_requires_a_chain_id_and_refuses_to_sign_without_it(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Path: no --chain-id → argparse rejection; guards against silently trusting the RPC node."""
+    """Path: no --chain-id, no $CHAIN_ID → clean failure; guards against trusting the RPC node."""
+    monkeypatch.delenv("CHAIN_ID", raising=False)
     key_path = _write_private_key(tmp_path)
 
-    with pytest.raises(SystemExit) as excinfo:
-        main(
+    exit_code = main(
+        (
+            "submit",
+            "contribution",
+            "--private-key",
+            str(key_path),
+            "--kind",
+            ContributionKind.PROOF_ATTEMPT,
+            "--title",
+            "A spectral approach",
+            "--body",
+            "Consider the associated operator.",
+        )
+    )
+
+    assert exit_code == 1
+    assert "chain ID is required" in capsys.readouterr().err
+
+
+def test_cli_reads_the_chain_id_from_the_environment_when_the_flag_is_omitted(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path: $CHAIN_ID → submitter; lets agents avoid hardcoding the flag on every invocation."""
+    monkeypatch.setenv("CHAIN_ID", "discovery-net-devnet")
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-artifact"),),
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
+    )
+
+    with patch(
+        "discovery_net.entrypoints.cli.ArtifactSubmitter",
+        return_value=submitter,
+    ) as submitter_type:
+        exit_code = main(
             (
                 "submit",
                 "contribution",
@@ -128,8 +167,50 @@ def test_cli_requires_a_chain_id_and_refuses_to_sign_without_it(
             )
         )
 
-    assert excinfo.value.code == 2
-    assert "--chain-id" in capsys.readouterr().err
+    capsys.readouterr()
+    assert exit_code == 0
+    assert submitter_type.call_args.kwargs["expected_chain_id"] == "discovery-net-devnet"
+
+
+def test_cli_prefers_an_explicit_chain_id_flag_over_the_environment(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path: --chain-id + $CHAIN_ID → the flag wins; an explicit choice must not be overridden."""
+    monkeypatch.setenv("CHAIN_ID", "discovery-net-devnet")
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-artifact"),),
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
+    )
+
+    with patch(
+        "discovery_net.entrypoints.cli.ArtifactSubmitter",
+        return_value=submitter,
+    ) as submitter_type:
+        exit_code = main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--chain-id",
+                "discovery-net-mainnet",
+                "--kind",
+                ContributionKind.PROOF_ATTEMPT,
+                "--title",
+                "A spectral approach",
+                "--body",
+                "Consider the associated operator.",
+            )
+        )
+
+    capsys.readouterr()
+    assert exit_code == 0
+    assert submitter_type.call_args.kwargs["expected_chain_id"] == "discovery-net-mainnet"
 
 
 def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
