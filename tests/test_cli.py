@@ -63,6 +63,8 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
                 "contribution",
                 "--private-key",
                 str(key_path),
+                "--chain-id",
+                "discovery-net-mainnet",
                 "--kind",
                 ContributionKind.PROOF_ATTEMPT,
                 "--title",
@@ -88,6 +90,7 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
     }
     constructor_arguments = submitter_type.call_args.kwargs
     assert constructor_arguments["cometbft_rpc_url"] == "http://127.0.0.1:26657"
+    assert constructor_arguments["expected_chain_id"] == "discovery-net-mainnet"
     loaded_key = constructor_arguments["private_key"]
     assert isinstance(loaded_key, Ed25519PrivateKey)
     contribution = submitter.submit_contribution.call_args.args[0]
@@ -100,6 +103,33 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
         OutgoingRelation(kind=RelationKind.ABOUT, to_contribution=PARENT_REF),
         IncomingRelation(from_contribution=PARENT_REF, kind=RelationKind.CITES),
     )
+
+
+def test_cli_requires_a_chain_id_and_refuses_to_sign_without_it(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Path: no --chain-id → argparse rejection; guards against silently trusting the RPC node."""
+    key_path = _write_private_key(tmp_path)
+
+    with pytest.raises(SystemExit) as excinfo:
+        main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.PROOF_ATTEMPT,
+                "--title",
+                "A spectral approach",
+                "--body",
+                "Consider the associated operator.",
+            )
+        )
+
+    assert excinfo.value.code == 2
+    assert "--chain-id" in capsys.readouterr().err
 
 
 def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
@@ -122,6 +152,8 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
                 "contribution",
                 "--private-key",
                 str(key_path),
+                "--chain-id",
+                "discovery-net-devnet",
                 "--kind",
                 ContributionKind.OBJECTION,
                 "--title",
@@ -158,6 +190,8 @@ def test_cli_submits_a_post_hoc_relation_between_existing_contributions(
                 "relation",
                 "--private-key",
                 str(key_path),
+                "--chain-id",
+                "discovery-net-devnet",
                 "--kind",
                 RelationKind.CITES,
                 "--from",
@@ -190,6 +224,8 @@ def test_cli_reports_an_invalid_private_key(
             "contribution",
             "--private-key",
             str(key_path),
+            "--chain-id",
+            "discovery-net-devnet",
             "--kind",
             ContributionKind.FINDING,
             "--title",

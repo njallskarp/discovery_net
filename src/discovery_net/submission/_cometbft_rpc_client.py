@@ -1,6 +1,7 @@
 # Submits encoded transactions through CometBFT JSON-RPC.
 
 from typing import cast, final
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 from discovery_net.submission._broadcast_response import _BroadcastResponse
@@ -14,6 +15,7 @@ from discovery_net.submission._cometbft_rpc_messages import (
 from discovery_net.submission.submission_error import SubmissionError
 
 _RPC_TIMEOUT_SECONDS = 10
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 
 @final
@@ -25,6 +27,8 @@ class _CometBFTRPCClient:
     def __init__(self, *, url: str) -> None:
         if not isinstance(url, str):
             raise TypeError("url must be a string")
+        if urlsplit(url).scheme not in _ALLOWED_SCHEMES:
+            raise ValueError("url must be an http or https CometBFT RPC endpoint")
         self._url = url
 
     def broadcast_transaction(self, transaction: bytes) -> _BroadcastResponse:

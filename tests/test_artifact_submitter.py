@@ -252,7 +252,67 @@ def test_submitter_requires_an_ed25519_private_key() -> None:
         ArtifactSubmitter(
             private_key=object(),  # type: ignore[arg-type]
             cometbft_rpc_url=RPC_URL,
+            expected_chain_id=CHAIN_ID,
         )
+
+
+def test_submitter_rejects_a_blank_expected_chain_id() -> None:
+    with pytest.raises(ValueError, match="expected_chain_id must not be blank"):
+        ArtifactSubmitter(
+            private_key=PRIVATE_KEY,
+            cometbft_rpc_url=RPC_URL,
+            expected_chain_id=" ",
+        )
+
+
+def test_submitter_refuses_to_sign_for_a_chain_id_the_caller_did_not_expect() -> None:
+    with (
+        patch.object(
+            _CometBFTRPCClient,
+            "fetch_chain_id",
+            autospec=True,
+            return_value="a-different-chain",
+        ),
+        patch.object(_CometBFTRPCClient, "broadcast_transaction", autospec=True) as broadcast,
+        pytest.raises(SubmissionError, match="unexpected chain ID"),
+    ):
+        ArtifactSubmitter(
+            private_key=PRIVATE_KEY,
+            cometbft_rpc_url=RPC_URL,
+            expected_chain_id=CHAIN_ID,
+        ).submit_contribution(ARTIFACT)
+
+    broadcast.assert_not_called()
+
+
+def test_submitter_signs_for_the_expected_chain_id_when_it_matches() -> None:
+    with (
+        patch.object(
+            _CometBFTRPCClient,
+            "fetch_chain_id",
+            autospec=True,
+            return_value=CHAIN_ID,
+        ),
+        patch.object(
+            _CometBFTRPCClient,
+            "broadcast_transaction",
+            autospec=True,
+            side_effect=lambda _client, transaction: _response(transaction),
+        ),
+    ):
+        receipt = ArtifactSubmitter(
+            private_key=PRIVATE_KEY,
+            cometbft_rpc_url=RPC_URL,
+            expected_chain_id=CHAIN_ID,
+        ).submit_contribution(ARTIFACT)
+
+    assert receipt.accepted
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "ftp://node/status", "not-a-url"])
+def test_rpc_client_rejects_a_non_http_url(url: str) -> None:
+    with pytest.raises(ValueError, match="http or https"):
+        _CometBFTRPCClient(url=url)
 
 
 def test_rpc_client_encodes_broadcast_tx_sync_and_decodes_check_tx() -> None:
@@ -403,6 +463,7 @@ def _submitter() -> ArtifactSubmitter:
     return ArtifactSubmitter(
         private_key=PRIVATE_KEY,
         cometbft_rpc_url=RPC_URL,
+        expected_chain_id=CHAIN_ID,
     )
 
 

@@ -28,19 +28,25 @@ type AttachedRelation = IncomingRelation | OutgoingRelation
 class ArtifactSubmitter:
     """Signs artifacts and asks a local CometBFT node to broadcast them."""
 
-    __slots__ = ("_private_key", "_rpc_client")
+    __slots__ = ("_expected_chain_id", "_private_key", "_rpc_client")
 
     def __init__(
         self,
         *,
         private_key: Ed25519PrivateKey,
         cometbft_rpc_url: str,
+        expected_chain_id: str,
     ) -> None:
         if not isinstance(private_key, Ed25519PrivateKey):
             raise TypeError("private_key must be an Ed25519PrivateKey")
+        if not isinstance(expected_chain_id, str):
+            raise TypeError("expected_chain_id must be a string")
+        if not expected_chain_id.strip():
+            raise ValueError("expected_chain_id must not be blank")
 
         self._private_key = private_key
         self._rpc_client = _CometBFTRPCClient(url=cometbft_rpc_url)
+        self._expected_chain_id = expected_chain_id
 
     def submit_contribution(
         self,
@@ -57,7 +63,7 @@ class ArtifactSubmitter:
             raise TypeError("relations must contain incoming or outgoing relations")
         _require_artifact_count(1 + len(relations))
 
-        chain_id = self._rpc_client.fetch_chain_id()
+        chain_id = self._resolve_chain_id()
         contribution_envelope = sign_artifact(
             chain_id=chain_id,
             artifact=contribution,
@@ -87,13 +93,23 @@ class ArtifactSubmitter:
         """Submit a directed relation between existing contributions."""
         if not isinstance(relation, ContributionRelation):
             raise TypeError("relation must be a ContributionRelation")
-        chain_id = self._rpc_client.fetch_chain_id()
+        chain_id = self._resolve_chain_id()
         envelope = sign_artifact(
             chain_id=chain_id,
             artifact=relation,
             private_key=self._private_key,
         )
         return self._submit(sign_transaction(envelopes=(envelope,), private_key=self._private_key))
+
+    def _resolve_chain_id(self) -> str:
+        """Return the chain to sign for, refusing to sign for an unexpected chain."""
+        chain_id = self._rpc_client.fetch_chain_id()
+        if chain_id != self._expected_chain_id:
+            raise SubmissionError(
+                "CometBFT node reported an unexpected chain ID: "
+                f"expected {self._expected_chain_id!r}, got {chain_id!r}"
+            )
+        return chain_id
 
     def _submit(self, signed_transaction: SignedTransaction) -> SubmissionReceipt:
         transaction = encode_transaction(signed_transaction)

@@ -106,6 +106,7 @@ def _submit(arguments: argparse.Namespace) -> int:
     submitter = ArtifactSubmitter(
         private_key=private_key,
         cometbft_rpc_url=arguments.rpc_url,
+        expected_chain_id=arguments.chain_id,
     )
     if arguments.submission == "contribution":
         receipt = submitter.submit_contribution(
@@ -384,6 +385,14 @@ def _add_submission_arguments(parser: argparse.ArgumentParser) -> None:
         "--rpc-url",
         default=_DEFAULT_COMETBFT_RPC_URL,
         help=f"local CometBFT RPC URL (default: {_DEFAULT_COMETBFT_RPC_URL})",
+    )
+    parser.add_argument(
+        "--chain-id",
+        required=True,
+        help=(
+            "chain ID this submission must target; refused if the node reports "
+            "a different chain ID instead of silently signing for it"
+        ),
     )
 
 
