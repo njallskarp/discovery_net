@@ -43,13 +43,20 @@ variable "machine_type" {
 }
 
 variable "boot_disk_size_gb" {
-  description = "Boot disk size in GiB."
+  description = <<-DESC
+    Boot disk size in GiB. Docker's images, layers, and build cache live here, not on
+    the node-data disk, and deploy.sh builds the node image on the host. A completed
+    build leaves roughly 5 GiB of image and cache on top of the base system, so 10 GiB
+    fills the root filesystem. A full root filesystem takes the whole host down, not
+    just the build: systemd cannot write its state, container health checks fail, and
+    sshd cannot open a session, so the symptom looks like a network outage.
+  DESC
   type        = number
-  default     = 10
+  default     = 30
 
   validation {
-    condition     = var.boot_disk_size_gb >= 10
-    error_message = "boot_disk_size_gb must be at least 10."
+    condition     = var.boot_disk_size_gb >= 20
+    error_message = "boot_disk_size_gb must be at least 20; a host image build does not fit in less."
   }
 }
 
