@@ -185,4 +185,4 @@ curl http://127.0.0.1:26667/status
 
 The joining node needs no validator initialization. On its first start, the launcher creates a persistent node identity, verifies the supplied genesis, connects to the bootstrap peer, and synchronizes the chain.
 
-This Docker workflow currently supports peers sharing a Docker host and external Docker P2P network. Connecting nodes on different physical machines still needs a deliberate P2P port exposure or gateway increment.
+This Docker workflow currently supports peers sharing a Docker host and external Docker P2P network. Connecting nodes on different physical machines still needs a deliberate P2P port exposure or gateway increment. A node that dials a cloud peer from behind NAT can still join as an outbound-only leaf with `localnet.sh join ... --advertise <public IP>` (`P2P_ADVERTISED` in the env file), because a peer with a strict address book rejects an advertised Docker alias it cannot resolve.

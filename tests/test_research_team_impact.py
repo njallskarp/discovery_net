@@ -101,3 +101,14 @@ def test_impact_response_must_cover_exact_pending_run_ids() -> None:
     response = json.dumps({"portfolio_summary": "Nothing supplied.", "assessments": []})
     with pytest.raises(ValueError, match="every supplied run_id"):
         parse_impact_batch(response, ("researcher-1:run",))
+
+
+def test_impact_prompt_states_the_enforced_length_limits() -> None:
+    from discovery_net.research_team.impact import ImpactContext, impact_prompt
+
+    context = ImpactContext(
+        payload={"runs": []}, run_ids=(), latest_finished_at=None, indexed_height=0
+    )
+    prompt = impact_prompt(context)
+    assert "`lane_title` at most 120 characters" in prompt
+    assert "`rationale` and `portfolio_summary` at most 1500" in prompt

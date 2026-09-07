@@ -18,6 +18,7 @@
 #   node-id NODE                Print NODE's peer address (id@NODE:26656).
 #   status NODE                 Curl NODE's RPC /status.
 #   logs NODE [...]             Follow NODE's container logs.
+#   up NODE                     (Re)start NODE from its saved env file.
 #   down NODE [-v]              Stop NODE (-v also removes anon volumes).
 #
 # Options (or environment)
@@ -31,6 +32,10 @@
 #                                    non-local peer. Egress nodes dial OUT only — they are
 #                                    not reachable from the internet (no published P2P port).
 #   --peer STR                       join: bootstrap peer  id@host:26656  (required)
+#   --advertise HOST  (DN_ADVERTISE)  join: address to advertise to peers instead of
+#                                    the Docker alias. A cloud peer with a strict
+#                                    address book rejects an unresolvable alias, so
+#                                    pass this host's public IP when joining one.
 #   --genesis FILE                   join: trusted genesis.json           (required)
 #   --genesis-sha256 HEX             join: trusted digest                 (required)
 #   --force                          bootstrap: redo validator/genesis even if present
@@ -44,7 +49,7 @@
 #   # join a cloud node (deploy/gcp/single-node): egress is auto-enabled, and the
 #   # cloud operator must allowlist this host's public /32 for port 26656:
 #   ./localnet/localnet.sh join cloud-peer --peer <cloud-id>@203.0.113.7:26656 \
-#       --genesis ./genesis.json --genesis-sha256 <sha>
+#       --genesis ./genesis.json --genesis-sha256 <sha> --advertise <this host's public IP>
 #
 # Peers on other machines need a routable P2P path (egress mode here, or the
 # deploy/gcp overlay on the far side), matching the network model in README.md.
@@ -70,6 +75,7 @@ usage() { awk 'NR==1{next} /^#/{sub(/^# ?/,""); print; next} {exit}' "${BASH_SOU
 # ---- option pre-pass ---------------------------------------------------------
 ROOT_OPT=""; PEER=""; GENESIS=""; GENESIS_SHA256=""; RPC_PORT=""; FORCE=0
 EGRESS="${DN_EGRESS:-}"
+ADVERTISE="${DN_ADVERTISE:-}"
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -81,6 +87,7 @@ while [ $# -gt 0 ]; do
     --egress)         EGRESS=1; shift;;
     --no-egress)      EGRESS=0; shift;;
     --peer)           PEER="$2"; shift 2;;
+    --advertise)      ADVERTISE="$2"; shift 2;;
     --genesis)        GENESIS="$(abspath "$2")"; shift 2;;
     --genesis-sha256) GENESIS_SHA256="$2"; shift 2;;
     --force)          FORCE=1; shift;;
@@ -146,8 +153,8 @@ ensure_p2p_network() {  # $1 = 1 for egress (non-internal), else internal
   fi
 }
 
-write_env() {  # write_env NODE GENESIS_FILE GENESIS_SHA PEERS RPC_PORT
-  local node="$1" genesis_file="$2" genesis_sha="$3" peers="$4" rpc_port="$5"
+write_env() {  # write_env NODE GENESIS_FILE GENESIS_SHA PEERS RPC_PORT [ADVERTISE]
+  local node="$1" genesis_file="$2" genesis_sha="$3" peers="$4" rpc_port="$5" advertise="${6:-}"
   cat > "$ROOT/$node.env" <<EOF
 COMPOSE_PROJECT_NAME=discovery-$node
 DISCOVERY_NET_IMAGE=$IMAGE
@@ -164,6 +171,7 @@ LEDGER_DATA_DIRECTORY=$ROOT/$node/ledger-data
 
 P2P_NETWORK=$P2P_NETWORK
 P2P_ALIAS=$node
+P2P_ADVERTISED=${advertise:-$node}
 PERSISTENT_PEERS=$peers
 
 RPC_PORT=$rpc_port
@@ -239,7 +247,7 @@ cmd_join() {
   image_exists || cmd_build
   mkdir -p "$ROOT/$node/cometbft-data" "$ROOT/$node/ledger-data"
   ensure_p2p_network "$egress"
-  write_env "$node" "$GENESIS" "$GENESIS_SHA256" "$PEER" "$rpc_port"
+  write_env "$node" "$GENESIS" "$GENESIS_SHA256" "$PEER" "$rpc_port" "$ADVERTISE"
   compose "$node" up -d
 
   echo "Joined. RPC: http://127.0.0.1:$rpc_port/status"
@@ -247,7 +255,9 @@ cmd_join() {
     cat <<EOF
 
 Egress P2P enabled: '$node' dials OUT to $(peer_host "$PEER") but is not itself
-reachable from the internet (no published P2P port, advertises its Docker alias).
+reachable from the internet (no published P2P port). It advertises
+${ADVERTISE:-its Docker alias '$node', which a peer with a strict address book rejects;
+re-run with --advertise <this host's public IP> if the peer drops the handshake}.
 The remote operator must allowlist this host's public egress /32 for TCP 26656
 (deploy/gcp/single-node/README.md, "Configure the peer side").
 EOF
@@ -271,6 +281,11 @@ cmd_logs() {
   compose "$node" logs -f "$@"
 }
 
+cmd_up() {
+  local node="${1:-}"; [ -n "$node" ] || die "usage: up NODE"
+  compose "$node" up -d
+}
+
 cmd_down() {
   local node="${1:-}"; [ -n "$node" ] || die "usage: down NODE [-v]"
   shift
@@ -286,6 +301,7 @@ case "$SUBCMD" in
   node-id)   cmd_node_id "$@";;
   status)    cmd_status "$@";;
   logs)      cmd_logs "$@";;
+  up)        cmd_up "$@";;
   down)      cmd_down "$@";;
   ""|-h|--help) usage;;
   *) die "unknown subcommand: $SUBCMD (try --help)";;

@@ -83,12 +83,21 @@ timer or busy polling. A later human message may change the brief or cadence.
 ## Agent control interface
 
 Prefer an existing control interface supplied by the invoking prompt. Otherwise,
-on macOS or Linux with Python 3.12 or newer and an authenticated Codex CLI, read
+on macOS or Linux with Python 3.12 or newer, read
 [the Python controller guide](references/python-controller.md) and use the
-controller shipped with this skill. It uses the Codex extension in the OpenAI
-Agents SDK and requires no privileged installation. After its dependency is
-available, the orchestrator handles the roster from the short brief without
-requiring the human to write prompts or commands.
+controller shipped with this skill. It runs each agent on one of two runners,
+chosen per agent with the `runner:` prompt metadata:
+
+- `codex` (the default) uses the Codex extension in the OpenAI Agents SDK and
+  an authenticated Codex CLI.
+- `claude-code` drives a headless, session-resuming Claude Code CLI under the
+  operator's existing login; read
+  [the Claude Code runner guide](references/claude-code-controller.md).
+
+Neither requires privileged installation. Confirm the runner with
+`research-team doctor --runner RUNNER` before creating agents. After that, the
+orchestrator handles the roster from the short brief without requiring the
+human to write prompts or commands.
 
 Whichever adapter is selected must provide:
 
@@ -112,9 +121,11 @@ a process argument, journal, or private orchestration summary.
 Before creating an agent with the bundled controller, prepare one existing,
 absolute workspace dedicated to that agent and record it in the prompt
 metadata. Use a separate clone or Git worktree when repository access is
-needed, and ensure the required `.agents/skills` are present in that checkout.
-Never point two active agents at the same writable workspace. Keep controller
-state and reports outside the research checkout.
+needed, and ensure the required `.agents/skills` are present in that checkout;
+the bundled `scripts/prepare-workspace` builds such a workspace with the clone,
+the skill links, and a scratch directory. Never point two active agents at the
+same writable workspace. Keep controller state and reports outside the research
+checkout.
 
 ## Reconcile the fleet
 
