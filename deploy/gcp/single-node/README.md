@@ -303,6 +303,7 @@ through the existing CLI while the contributor key remains local:
 discovery-net submit contribution \
   --private-key /LOCAL/PATH/contributor.pem \
   --rpc-url http://127.0.0.1:26657 \
+  --chain-id "$CHAIN_ID" \
   --kind finding \
   --title 'Title' \
   --body 'Body'

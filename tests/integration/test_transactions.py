@@ -33,6 +33,7 @@ def test_artifact_submitter_reaches_committed_state_through_live_cometbft(
         submitter = ArtifactSubmitter(
             private_key=private_key(),
             cometbft_rpc_url=node.rpc_url,
+            expected_chain_id=network.chain_id,
         )
 
         receipt = submitter.submit_contribution(artifact)

@@ -63,6 +63,8 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
                 "contribution",
                 "--private-key",
                 str(key_path),
+                "--chain-id",
+                "discovery-net-mainnet",
                 "--kind",
                 ContributionKind.PROOF_ATTEMPT,
                 "--title",
@@ -88,6 +90,7 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
     }
     constructor_arguments = submitter_type.call_args.kwargs
     assert constructor_arguments["cometbft_rpc_url"] == "http://127.0.0.1:26657"
+    assert constructor_arguments["expected_chain_id"] == "discovery-net-mainnet"
     loaded_key = constructor_arguments["private_key"]
     assert isinstance(loaded_key, Ed25519PrivateKey)
     contribution = submitter.submit_contribution.call_args.args[0]
@@ -100,6 +103,114 @@ def test_cli_builds_and_submits_a_contribution_to_the_local_node(
         OutgoingRelation(kind=RelationKind.ABOUT, to_contribution=PARENT_REF),
         IncomingRelation(from_contribution=PARENT_REF, kind=RelationKind.CITES),
     )
+
+
+def test_cli_requires_a_chain_id_and_refuses_to_sign_without_it(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path: no --chain-id, no $CHAIN_ID → clean failure; guards against trusting the RPC node."""
+    monkeypatch.delenv("CHAIN_ID", raising=False)
+    key_path = _write_private_key(tmp_path)
+
+    exit_code = main(
+        (
+            "submit",
+            "contribution",
+            "--private-key",
+            str(key_path),
+            "--kind",
+            ContributionKind.PROOF_ATTEMPT,
+            "--title",
+            "A spectral approach",
+            "--body",
+            "Consider the associated operator.",
+        )
+    )
+
+    assert exit_code == 1
+    assert "chain ID is required" in capsys.readouterr().err
+
+
+def test_cli_reads_the_chain_id_from_the_environment_when_the_flag_is_omitted(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path: $CHAIN_ID → submitter; lets agents avoid hardcoding the flag on every invocation."""
+    monkeypatch.setenv("CHAIN_ID", "discovery-net-devnet")
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-artifact"),),
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
+    )
+
+    with patch(
+        "discovery_net.entrypoints.cli.ArtifactSubmitter",
+        return_value=submitter,
+    ) as submitter_type:
+        exit_code = main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--kind",
+                ContributionKind.PROOF_ATTEMPT,
+                "--title",
+                "A spectral approach",
+                "--body",
+                "Consider the associated operator.",
+            )
+        )
+
+    capsys.readouterr()
+    assert exit_code == 0
+    assert submitter_type.call_args.kwargs["expected_chain_id"] == "discovery-net-devnet"
+
+
+def test_cli_prefers_an_explicit_chain_id_flag_over_the_environment(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Path: --chain-id + $CHAIN_ID → the flag wins; an explicit choice must not be overridden."""
+    monkeypatch.setenv("CHAIN_ID", "discovery-net-devnet")
+    key_path = _write_private_key(tmp_path)
+    submitter = MagicMock(spec=ArtifactSubmitter)
+    submitter.submit_contribution.return_value = SubmissionReceipt(
+        artifact_refs=(ArtifactRef("bafy-artifact"),),
+        transaction_hash=TRANSACTION_HASH,
+        check_tx_code=0,
+    )
+
+    with patch(
+        "discovery_net.entrypoints.cli.ArtifactSubmitter",
+        return_value=submitter,
+    ) as submitter_type:
+        exit_code = main(
+            (
+                "submit",
+                "contribution",
+                "--private-key",
+                str(key_path),
+                "--chain-id",
+                "discovery-net-mainnet",
+                "--kind",
+                ContributionKind.PROOF_ATTEMPT,
+                "--title",
+                "A spectral approach",
+                "--body",
+                "Consider the associated operator.",
+            )
+        )
+
+    capsys.readouterr()
+    assert exit_code == 0
+    assert submitter_type.call_args.kwargs["expected_chain_id"] == "discovery-net-mainnet"
 
 
 def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
@@ -122,6 +233,8 @@ def test_cli_returns_failure_when_check_tx_rejects_the_contribution(
                 "contribution",
                 "--private-key",
                 str(key_path),
+                "--chain-id",
+                "discovery-net-devnet",
                 "--kind",
                 ContributionKind.OBJECTION,
                 "--title",
@@ -158,6 +271,8 @@ def test_cli_submits_a_post_hoc_relation_between_existing_contributions(
                 "relation",
                 "--private-key",
                 str(key_path),
+                "--chain-id",
+                "discovery-net-devnet",
                 "--kind",
                 RelationKind.CITES,
                 "--from",
@@ -190,6 +305,8 @@ def test_cli_reports_an_invalid_private_key(
             "contribution",
             "--private-key",
             str(key_path),
+            "--chain-id",
+            "discovery-net-devnet",
             "--kind",
             ContributionKind.FINDING,
             "--title",

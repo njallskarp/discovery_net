@@ -54,6 +54,7 @@ def test_inspector_observes_live_peers_and_newly_committed_knowledge(
             receipt = ArtifactSubmitter(
                 private_key=private_key(),
                 cometbft_rpc_url=node.rpc_url,
+                expected_chain_id=network.chain_id,
             ).submit_contribution(artifact)
             committed = node.wait_for_snapshot(minimum_entries=1)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sqlite3
 import sys
 from collections.abc import Sequence
@@ -34,6 +35,7 @@ from discovery_net.submission import (
 from discovery_net.wire import PayloadType, parse_artifact_ref
 
 _DEFAULT_COMETBFT_RPC_URL = "http://127.0.0.1:26657"
+_CHAIN_ID_ENVIRONMENT_VARIABLE = "CHAIN_ID"
 
 
 class _SubmissionOutput(BaseModel):
@@ -102,10 +104,17 @@ def main(arguments: Sequence[str] | None = None) -> int:
 
 
 def _submit(arguments: argparse.Namespace) -> int:
+    chain_id = arguments.chain_id
+    if not isinstance(chain_id, str) or not chain_id.strip():
+        raise ValueError(
+            "a chain ID is required: pass --chain-id or set the "
+            f"{_CHAIN_ID_ENVIRONMENT_VARIABLE} environment variable"
+        )
     private_key = _load_private_key(arguments.private_key)
     submitter = ArtifactSubmitter(
         private_key=private_key,
         cometbft_rpc_url=arguments.rpc_url,
+        expected_chain_id=chain_id,
     )
     if arguments.submission == "contribution":
         receipt = submitter.submit_contribution(
@@ -384,6 +393,15 @@ def _add_submission_arguments(parser: argparse.ArgumentParser) -> None:
         "--rpc-url",
         default=_DEFAULT_COMETBFT_RPC_URL,
         help=f"local CometBFT RPC URL (default: {_DEFAULT_COMETBFT_RPC_URL})",
+    )
+    parser.add_argument(
+        "--chain-id",
+        default=os.environ.get(_CHAIN_ID_ENVIRONMENT_VARIABLE),
+        help=(
+            "chain ID this submission must target; refused if the node reports "
+            "a different chain ID instead of silently signing for it. Defaults "
+            f"to the {_CHAIN_ID_ENVIRONMENT_VARIABLE} environment variable when set."
+        ),
     )
 
 
