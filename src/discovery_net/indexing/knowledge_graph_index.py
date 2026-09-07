@@ -9,7 +9,7 @@ from discovery_net.artifacts import ArtifactRef
 from discovery_net.artifacts.index import ArtifactIndex, IndexedEnvelope
 from discovery_net.artifacts.projection import GraphProjection, ProjectedGraph
 from discovery_net.domains.math import Artifact, ContributionKind, RelationKind
-from discovery_net.domains.math.projection import LegacyMathProjection
+from discovery_net.domains.math.projection import MathProjection
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.wire import SignedEnvelope, decode_payload
@@ -75,12 +75,12 @@ class _GraphState:
 
 @final
 class KnowledgeGraphIndex:
-    """Preserves legacy query APIs while allowing an explicit development projection."""
+    """Math query APIs over a configurable graph projection."""
 
     __slots__ = ("_projection", "_state")
 
     def __init__(self, *, projection: GraphProjection | None = None) -> None:
-        self._projection = projection if projection is not None else LegacyMathProjection()
+        self._projection = projection if projection is not None else MathProjection()
         self._state = _GraphState(
             graph=ProjectedGraph(raw=ArtifactIndex(), projection=self._projection),
             decoded={},

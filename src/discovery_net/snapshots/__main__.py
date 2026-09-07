@@ -1,4 +1,4 @@
-"""Development-only offline commands: python -m discovery_net.development."""
+"""Verified ledger snapshot commands: python -m discovery_net.snapshots."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from discovery_net.development.ledger_baseline import export_baseline
+from discovery_net.snapshots.ledger_baseline import export_baseline
 
 
 def main(arguments: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Offline Discovery Net development tools")
+    parser = argparse.ArgumentParser(description="Offline Discovery Net ledger snapshots")
     commands = parser.add_subparsers(dest="command", required=True)
     baseline = commands.add_parser("baseline", help="export and verify a read-only ledger backup")
     baseline.add_argument("--ledger", type=Path, required=True)

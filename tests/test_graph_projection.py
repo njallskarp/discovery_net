@@ -16,14 +16,53 @@ from discovery_net.domains.math import (
     ContributionRelation,
     RelationKind,
 )
-from discovery_net.domains.math.projection import LegacyMathProjection
+from discovery_net.domains.math.projection import MathProjection
 from discovery_net.indexing import KnowledgeGraphIndex
 from discovery_net.node import ArtifactLedgerEntry, ArtifactLedgerSnapshot, LocalArtifactLedger
+from discovery_net.node._ledger_from_snapshot import ledger_from_snapshot
+from discovery_net.node.transaction_validator import TransactionValidator
 from discovery_net.query import KnowledgeGraphQueries
 from discovery_net.wire import artifact_ref, encode_envelope, sign_artifact, sign_transaction
 
 KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
 NOW = datetime(2026, 9, 7, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("node_kind", "edge_kind"),
+    [
+        (ContributionKind.AXIOM, RelationKind.PROVES),
+        (ContributionKind.DEFINITION, RelationKind.REFUTES),
+        (ContributionKind.THEOREM, RelationKind.SUPERSEDES),
+        (ContributionKind.COROLLARY, RelationKind.RETRACTS),
+        (ContributionKind.RETRACTION, RelationKind.CORRECTS),
+        (ContributionKind.ERRATUM, RelationKind.ENDORSES),
+    ],
+)
+def test_peer_review_vocabulary_survives_replay_and_projection(
+    node_kind: ContributionKind, edge_kind: RelationKind
+) -> None:
+    # Exercise every kind added in PR #58 across the moved codec, validator, and index.
+    source = Contribution(kind=node_kind, title="Peer review", body="", created_at=NOW)
+    target = _node("Target")
+    source_ref = artifact_ref(_entry(source).transaction.envelopes[0])
+    target_ref = artifact_ref(_entry(target).transaction.envelopes[0])
+    relation = ContributionRelation(
+        kind=edge_kind,
+        from_contribution=source_ref,
+        to_contribution=target_ref,
+        created_at=NOW,
+    )
+    entry = _entry(source, target, relation)
+    snapshot = ArtifactLedgerSnapshot(height=1, entries=(entry,))
+    ledger_from_snapshot(snapshot, TransactionValidator(expected_chain_id="projection-test"))
+    index = KnowledgeGraphIndex()
+    index.refresh(snapshot)
+
+    assert tuple(record.artifact for record in index.contributions(node_kind)) == (source,)
+    assert tuple(record.artifact for record in index.relations(edge_kind)) == (relation,)
+    assert index.outgoing_relations(source_ref, edge_kind) == index.relations(edge_kind)
+    assert index.incoming_relations(target_ref, edge_kind) == index.relations(edge_kind)
 
 
 def _node(title: str) -> Contribution:
@@ -79,7 +118,7 @@ class _Exclude:
     def project(self, record: IndexedEnvelope) -> GraphNode | GraphEdge | None:
         if record.artifact_ref in self.references:
             return None
-        return LegacyMathProjection().project(record)
+        return MathProjection().project(record)
 
 
 def test_two_projections_share_raw_records_without_math_specific_indexing() -> None:
@@ -92,7 +131,7 @@ def test_two_projections_share_raw_records_without_math_specific_indexing() -> N
             return GraphNode(kind="audit_record")
 
     audit = ProjectedGraph(raw=raw, projection=AuditProjection())
-    math = ProjectedGraph(raw=raw, projection=LegacyMathProjection())
+    math = ProjectedGraph(raw=raw, projection=MathProjection())
 
     assert audit.raw is math.raw is raw
     assert audit.nodes("audit_record") == raw.artifacts()
@@ -155,7 +194,7 @@ def test_failed_projection_preserves_both_the_raw_and_decoded_index(refresh: boo
         def project(self, record: IndexedEnvelope) -> GraphNode | GraphEdge:
             if record.artifact_ref == rejected:
                 raise ValueError("cannot project candidate")
-            return LegacyMathProjection().project(record)
+            return MathProjection().project(record)
 
     index = KnowledgeGraphIndex(projection=FailingProjection())
     index.refresh(fixture.snapshot)

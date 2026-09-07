@@ -1,4 +1,4 @@
-"""Shared canonical encoding primitives, independent of any research domain."""
+"""Canonical JSON and CodecError moved from discovery_net.wire.codec."""
 
 import json
 

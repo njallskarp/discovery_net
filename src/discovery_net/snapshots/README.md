@@ -1,9 +1,9 @@
-# Offline graph development
+# Verified ledger snapshots
 
 Create a consistent baseline without writing to the source ledger:
 
 ```sh
-python -m discovery_net.development baseline \
+python -m discovery_net.snapshots baseline \
   --ledger /path/to/live/artifact-ledger.sqlite \
   --output /path/to/new/baseline-directory \
   --chain-id discovery-net
@@ -27,5 +27,5 @@ or authenticate a consensus block header. The state hash is recomputed from the
 copied ledger, not independently attested by validators. An empty ledger contains
 no signed chain identity, so its manifest sets `chain_id_verified` to false.
 
-The command is development-only and does not submit artifacts, connect to network
+The command runs offline and does not submit artifacts, connect to network
 peers, or change node startup behavior. Keep real baselines out of source control.

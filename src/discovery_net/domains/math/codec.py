@@ -1,4 +1,7 @@
-"""The legacy math payload rules; the live wire protocol remains closed to this domain."""
+"""Math payload schemas and codecs extracted from discovery_net.wire.codec.
+
+MathDomain is a new adapter over these existing rules. It also owns the node and
+reference classification previously in discovery_net.node.transaction_validator."""
 
 from datetime import UTC, datetime
 from typing import Final

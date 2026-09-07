@@ -1,4 +1,7 @@
-"""The existing math topology expressed through the domain-independent view contract."""
+"""Math classification extracted from discovery_net.indexing.knowledge_graph_index.
+
+MathProjection is the permanent math implementation of GraphProjection. It owns
+the contribution/relation classification formerly in _build_state and _append_state."""
 
 from discovery_net.artifacts.index import IndexedEnvelope
 from discovery_net.artifacts.projection import GraphEdge, GraphNode
@@ -6,8 +9,8 @@ from discovery_net.domains.math.codec import MATH_DOMAIN
 from discovery_net.domains.math.models import Contribution
 
 
-class LegacyMathProjection:
-    """Select every legacy contribution and relation, preserving their direction."""
+class MathProjection:
+    """Select every contribution and relation, preserving their direction."""
 
     __slots__ = ()
 

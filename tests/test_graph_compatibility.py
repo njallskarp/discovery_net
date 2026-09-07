@@ -54,7 +54,7 @@ class _History(_FixtureModel):
 
 
 _HISTORY = _History.model_validate_json(
-    (Path(__file__).parent / "fixtures" / "legacy_graph" / "history.json").read_bytes()
+    (Path(__file__).parent / "fixtures" / "graph_compatibility" / "history.json").read_bytes()
 )
 _ACCEPTED = [
     transaction

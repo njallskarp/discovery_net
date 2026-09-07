@@ -16,19 +16,19 @@ from discovery_net.domains.math import (
 )
 from discovery_net.domains.math.codec import MATH_DOMAIN
 from discovery_net.knowledge_graph import (
-    ArtifactRef as LegacyRef,
+    ArtifactRef as PublicRef,
 )
 from discovery_net.knowledge_graph import (
-    Contribution as LegacyContribution,
+    Contribution as PublicContribution,
 )
 from discovery_net.knowledge_graph import (
-    ContributionKind as LegacyKind,
+    ContributionKind as PublicKind,
 )
 from discovery_net.knowledge_graph import (
-    ContributionRelation as LegacyRelation,
+    ContributionRelation as PublicRelation,
 )
 from discovery_net.knowledge_graph import (
-    RelationKind as LegacyRelationKind,
+    RelationKind as PublicRelationKind,
 )
 from discovery_net.wire import PayloadType, decode_payload
 
@@ -72,12 +72,12 @@ def _round_trip[T](domain: ArtifactDomain[T], artifact: T) -> T:
 
 
 def test_old_import_paths_export_the_same_classes_and_enum_members() -> None:
-    assert LegacyRef is ArtifactRef
-    assert LegacyContribution is Contribution
-    assert LegacyKind is ContributionKind
-    assert LegacyRelation is ContributionRelation
-    assert LegacyRelationKind is RelationKind
-    assert LegacyKind.LEMMA is ContributionKind.LEMMA
+    assert PublicRef is ArtifactRef
+    assert PublicContribution is Contribution
+    assert PublicKind is ContributionKind
+    assert PublicRelation is ContributionRelation
+    assert PublicRelationKind is RelationKind
+    assert PublicKind.LEMMA is ContributionKind.LEMMA
 
 
 def test_second_domain_round_trips_through_the_shared_contract() -> None:

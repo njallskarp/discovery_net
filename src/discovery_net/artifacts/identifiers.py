@@ -1,4 +1,6 @@
-# Static identifier types for knowledge-graph entities.
+"""ArtifactRef moved from discovery_net.knowledge_graph.identifiers.
+
+CID parsing moved from discovery_net.wire.codec with the same validation rules."""
 
 from functools import lru_cache
 from typing import NewType

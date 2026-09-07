@@ -1,4 +1,4 @@
-"""Exercise real SQLite backup/replay and the development command's failure paths."""
+"""Exercise real SQLite backup/replay and the snapshot command's failure paths."""
 
 import json
 import sqlite3
@@ -11,8 +11,6 @@ from unittest.mock import patch
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from discovery_net.development.__main__ import main
-from discovery_net.development.ledger_baseline import BaselineManifest, export_baseline
 from discovery_net.knowledge_graph import Contribution, ContributionKind
 from discovery_net.node import (
     ArtifactLedgerEntry,
@@ -20,6 +18,8 @@ from discovery_net.node import (
     LocalArtifactLedger,
     SQLiteArtifactLedgerStore,
 )
+from discovery_net.snapshots.__main__ import main
+from discovery_net.snapshots.ledger_baseline import BaselineManifest, export_baseline
 from discovery_net.wire import sign_artifact, sign_transaction
 
 CHAIN = "baseline-test"
@@ -187,9 +187,7 @@ def test_backup_pins_a_consistent_snapshot_during_a_real_wal_commit(tmp_path: Pa
                 return connect(database, uri=True, factory=ConcurrentReader)
             return connect(database)
 
-        with patch(
-            "discovery_net.development.ledger_baseline.sqlite3.connect", connect_with_reader
-        ):
+        with patch("discovery_net.snapshots.ledger_baseline.sqlite3.connect", connect_with_reader):
             manifest = export_baseline(ledger=source, output=output, chain_id=CHAIN)
 
         assert live_store.load() == next_snapshot
@@ -207,7 +205,7 @@ def test_an_output_created_during_capture_is_preserved(tmp_path: Path) -> None:
         return None, None
 
     with (
-        patch("discovery_net.development.ledger_baseline._source_revision", competing_output),
+        patch("discovery_net.snapshots.ledger_baseline._source_revision", competing_output),
         pytest.raises(FileExistsError),
     ):
         export_baseline(ledger=source, output=output, chain_id=CHAIN)
@@ -216,7 +214,7 @@ def test_an_output_created_during_capture_is_preserved(tmp_path: Path) -> None:
     assert (output / "keep").read_text() == "concurrent owner"
 
 
-def test_development_command_reports_manifest_and_actionable_failure(
+def test_snapshot_command_reports_manifest_and_actionable_failure(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:

@@ -1,4 +1,9 @@
-"""Select graph structure independently of signed artifact storage and domain vocabulary."""
+"""Domain-independent graph selection and traversal.
+
+GraphNode, GraphEdge, and GraphProjection are new contracts. ProjectedGraph
+refactors adjacency and kind indexing formerly in _GraphState, _build_state,
+_append_state, and _connect in discovery_net.indexing.knowledge_graph_index,
+adding explicit record selection without altering raw history."""
 
 from __future__ import annotations
 

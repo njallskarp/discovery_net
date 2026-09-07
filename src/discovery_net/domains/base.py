@@ -9,7 +9,7 @@ class ArtifactDomain[ArtifactT](Protocol):
     """Deterministic structure validation and node reference extraction.
 
     Implementing this contract does not register a domain with the live protocol.
-    The current wire layer explicitly uses only the legacy math implementation.
+    The current wire layer explicitly uses only the math implementation.
     """
 
     def encode(self, artifact: ArtifactT) -> tuple[str, bytes]: ...

@@ -1,12 +1,29 @@
 # Six-PR implementation plan: domains and canonical math topology
 
-Integration branch: `codex/domain-topology-development`, based on `652f4de`.
+Integration branch: `codex/domain-topology-development`, rebased onto main at
+`673c8b8` (including Siggi’s PR #58).
 This supersedes the earlier eighteen-PR sequence. The smaller implementation steps
 are commits inside the six PRs below, not separate review requests.
 
 PRs 1–5 target the integration branch in order. PR 6 is the release PR from that
 branch to main, including the final rehearsal evidence and rollout instructions.
-Main and live nodes remain on the existing release during development.
+Main and live nodes remain on the existing release during development. Keep the
+integration branch current with main and rebase each pending PR onto it. PR 6 is
+reviewed as one cumulative diff and squash-merged into main after validation.
+
+Development isolation belongs in Git branches. Packages and class names describe
+their lasting responsibilities. A temporary parallel implementation must use a
+`V2` suffix and a nearby comment of this form:
+
+```python
+# TODO: remove versioning once migration is complete. Temporary replacement for
+# ClassName in discovery_net.module_name; promote this implementation and remove
+# the superseded implementation before the integration branch merges to main.
+```
+
+Use the actual class/module references in each comment. Record whether each new
+class is moved, refactored, or new in the PR description. PR 1 introduces permanent
+boundaries and needs no parallel V2 implementations.
 
 ## Fixed boundaries
 
@@ -23,28 +40,26 @@ Main and live nodes remain on the existing release during development.
 
 ## PR 1 — Separate core and math, with compatibility and snapshot tooling
 
-Existing draft: [#62](https://github.com/njallskarp/discovery_net/pull/62).
+Review: [#62](https://github.com/njallskarp/discovery_net/pull/62).
 Branch: `codex/legacy-graph-contracts`. Depends on: none.
-
-Expand the existing draft instead of creating replacement PRs.
 
 Commit order:
 
-1. Freeze legacy bytes, signatures, IDs, transaction results, replay hashes, and
-   representative graph queries. **Implemented in 2dab3d7.**
-2. Add a development-only baseline export command: SQLite read-only connection,
+1. Freeze existing bytes, signatures, IDs, transaction results, replay hashes, and
+   representative graph queries.
+2. Add an offline baseline export command: SQLite read-only connection,
    backup to a new destination, replay verification, and a manifest containing
    chain, height, state hash, checksum, artifact counts, and source revision.
 3. Move mathematical models and vocabulary into `domains/math`, retaining
-   compatibility imports and exact legacy codecs.
+   compatibility imports and exact payload codecs.
 4. Separate raw artifact/provenance indexing from graph projection. Route existing
-   queries through a legacy math projection and exercise the domain boundary with
+   queries through `MathProjection` and exercise the domain boundary with
    a small second-domain test fixture.
 
-Primary files: `knowledge_graph/`, new `domains/math/` and `development/`,
+Primary files: `knowledge_graph/`, new `domains/math/` and `snapshots/`,
 `indexing/`, `query/`, compatibility and snapshot tests.
 
-Merge gate: legacy fixtures stay unchanged; source ledger is untouched; backup
+Merge gate: historical fixtures stay unchanged; source ledger is untouched; backup
 works with concurrent WAL writes; rebuilt/incremental indexes agree; current CLI
 and GraphQL behavior remains identical. No new live protocol behavior.
 
@@ -67,8 +82,8 @@ Commit order:
    scientific and discussion edges while replacing the organizational links named
    in the plan.
 
-Primary files: `development/topology_plan.py`, `domains/math/topology.py`,
-development inspector configuration, candidate fixtures and comparison tests.
+Primary files: `domains/math/topology.py`, snapshot tooling,
+inspector configuration, candidate fixtures and comparison tests.
 
 Merge gate: the concrete candidate topology works on real data; reruns produce
 the same plan digest; unchanged contributions retain their IDs; every omitted or
@@ -110,7 +125,7 @@ Branch: `codex/identity-and-math-authority`. Depends on: PR 3.
 Commit order:
 
 1. Add the minimum new domain node/assertion formats needed by identities and math.
-   Keep legacy wire formats untouched. Allow individually identifiable attestations
+   Keep existing wire formats untouched. Allow individually identifiable attestations
    and withdrawal targets; validate endpoint types through registered domain rules.
 2. Add identity applications, evidence references, candidate key consent, and
    threshold-approved recognition. Separate pending claims from recognized identities.
@@ -173,7 +188,11 @@ Commit order:
 4. Add the operator rollout and recovery runbook: compatible software first,
    coordinated activation, migration staging, completeness checks, then canonical
    query promotion. Document that old binaries may not replay new formats.
-5. Present the cumulative release diff with links to PRs 1–5 and their evidence.
+5. Remove temporary V2 replacements, version selectors, migration-only scaffolding,
+   and their removal TODOs. Promote the validated topology under canonical names.
+   Preserve historical decoding and intentional public import aliases as needed.
+6. Present the cumulative release diff with links to PRs 1–5 and their evidence;
+   squash-merge the validated integration branch into main.
 
 Merge gate: reproducible full rehearsal, passing required checks, reconciled
 migration, and an exact rollout/recovery procedure. Live activation and publication

@@ -73,7 +73,7 @@ def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
 
 
 def decode_payload(payload_type: PayloadType, data: bytes) -> Artifact:
-    """Validate a legacy math payload without enabling additional wire types."""
+    """Validate a math payload without enabling additional wire types."""
     if not isinstance(data, bytes):
         raise TypeError("payload data must be bytes")
     if not isinstance(payload_type, PayloadType):
