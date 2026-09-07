@@ -1,5 +1,5 @@
-# Static identifier types for knowledge-graph entities.
+"""Compatibility exports for existing imports."""
 
-from typing import NewType
+from discovery_net.artifacts import ArtifactRef
 
-ArtifactRef = NewType("ArtifactRef", str)
+__all__ = ["ArtifactRef"]

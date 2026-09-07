@@ -3,7 +3,8 @@
 Status: initial design discussion. The actionable implementation sequence is now
 in [domain-topology-pr-plan.md](domain-topology-pr-plan.md).
 
-Development branch: `codex/domain-topology-development`, based on `652f4de`.
+Integration branch: `codex/domain-topology-development`. Its current base and
+squash-release gates are maintained in [the implementation plan](domain-topology-pr-plan.md).
 
 ## Intended outcome
 

@@ -1,19 +1,15 @@
-# Projects committed artifacts into an in-memory knowledge graph.
+"""Compatibility math queries over separate raw artifact and projected graph indexes."""
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import final
 
-from discovery_net.knowledge_graph import (
-    Artifact,
-    ArtifactRef,
-    Contribution,
-    ContributionKind,
-    ContributionRelation,
-    RelationKind,
-)
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.artifacts.index import ArtifactIndex, IndexedEnvelope
+from discovery_net.artifacts.projection import GraphProjection, ProjectedGraph
+from discovery_net.domains.math import Artifact, ContributionKind, RelationKind
+from discovery_net.domains.math.projection import MathProjection
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.wire import SignedEnvelope, decode_payload
@@ -56,123 +52,96 @@ class IndexedArtifact:
         """Return the artifact reference derived from the signed envelope."""
         return self._artifact_ref
 
-
-@dataclass(frozen=True, slots=True)
-class _ContributionKindNode:
-    kind: ContributionKind
-
-
-@dataclass(frozen=True, slots=True)
-class _RelationKindNode:
-    kind: RelationKind
-
-
-type _AdjacencyKey = ArtifactRef | _ContributionKindNode | _RelationKindNode
+    @classmethod
+    def from_record(cls, record: IndexedEnvelope) -> IndexedArtifact:
+        """Decode once for math queries, sharing the original envelope and cached ID."""
+        indexed = object.__new__(cls)
+        object.__setattr__(indexed, "ledger_entry", record.ledger_entry)
+        object.__setattr__(indexed, "artifact_index", record.artifact_index)
+        object.__setattr__(indexed, "_artifact_ref", record.artifact_ref)
+        object.__setattr__(
+            indexed,
+            "artifact",
+            decode_payload(record.envelope.payload_type, record.envelope.payload),
+        )
+        return indexed
 
 
 @dataclass(frozen=True, slots=True)
 class _GraphState:
-    height: int
-    nodes: dict[ArtifactRef, IndexedArtifact]
-    adjacency: dict[_AdjacencyKey, tuple[ArtifactRef, ...]]
+    graph: ProjectedGraph
+    decoded: dict[ArtifactRef, IndexedArtifact]
 
 
 @final
 class KnowledgeGraphIndex:
-    """Provides in-memory graph queries over a committed ledger snapshot."""
+    """Math query APIs over a configurable graph projection."""
 
-    __slots__ = ("_state",)
+    __slots__ = ("_projection", "_state")
 
-    def __init__(self) -> None:
-        self._state = _GraphState(height=0, nodes={}, adjacency={})
+    def __init__(self, *, projection: GraphProjection | None = None) -> None:
+        self._projection = projection if projection is not None else MathProjection()
+        self._state = _GraphState(
+            graph=ProjectedGraph(raw=ArtifactIndex(), projection=self._projection),
+            decoded={},
+        )
 
     @property
     def indexed_height(self) -> int:
-        """Return the committed height represented by this index."""
-        return self._state.height
+        return self._state.graph.raw.height
+
+    @property
+    def raw_index(self) -> ArtifactIndex:
+        """Immutable raw records, including artifacts omitted by the selected projection."""
+        return self._state.graph.raw
 
     def refresh(self, snapshot: ArtifactLedgerSnapshot) -> None:
-        """Atomically rebuild the index from a committed ledger snapshot."""
         if not isinstance(snapshot, ArtifactLedgerSnapshot):
             raise TypeError("snapshot must be an ArtifactLedgerSnapshot")
-        self._state = _build_state(snapshot)
+        graph = ProjectedGraph(raw=ArtifactIndex(snapshot), projection=self._projection)
+        decoded = {
+            record.artifact_ref: IndexedArtifact.from_record(record)
+            for record in graph.raw.artifacts()
+        }
+        self._state = _GraphState(graph=graph, decoded=decoded)
 
-    def append(
-        self,
-        *,
-        entries: tuple[ArtifactLedgerEntry, ...],
-        height: int,
-    ) -> None:
-        """Atomically append newly committed entries and advance the indexed height."""
-        if not isinstance(entries, tuple):
-            raise TypeError("entries must be a tuple")
-        if any(not isinstance(entry, ArtifactLedgerEntry) for entry in entries):
-            raise TypeError("entries must contain ArtifactLedgerEntry values")
-        if not isinstance(height, int) or isinstance(height, bool):
-            raise TypeError("height must be an integer")
-        if height < self._state.height:
-            raise ValueError("height must not precede the indexed height")
-        if any(entry.height <= self._state.height for entry in entries):
-            raise ValueError("entries must follow the indexed height")
-        if any(entry.height > height for entry in entries):
-            raise ValueError("entry height must not exceed the indexed height")
-        if height == self._state.height and entries:
-            raise ValueError("entries cannot change an already indexed height")
-        self._state = _append_state(self._state, entries=entries, height=height)
+    def append(self, *, entries: tuple[ArtifactLedgerEntry, ...], height: int) -> None:
+        state = self._state
+        graph = state.graph.append(entries=entries, height=height)
+        decoded = dict(state.decoded)
+        for record in graph.raw.artifacts():
+            if record.artifact_ref not in decoded:
+                decoded[record.artifact_ref] = IndexedArtifact.from_record(record)
+        self._state = _GraphState(graph=graph, decoded=decoded)
 
     def artifacts(self) -> tuple[IndexedArtifact, ...]:
-        """Return all artifacts in canonical ledger order."""
-        return tuple(self._state.nodes.values())
+        """Return all raw artifacts in ledger order, independent of view selection."""
+        return tuple(self._state.decoded.values())
 
     def get(self, artifact_ref: ArtifactRef) -> IndexedArtifact | None:
-        """Return an indexed artifact by reference, if present."""
-        return self._state.nodes.get(artifact_ref)
+        """Retrieve raw provenance even for an artifact excluded from the view."""
+        return self._state.decoded.get(artifact_ref)
 
-    def contributions(
-        self,
-        kind: ContributionKind | None = None,
-    ) -> tuple[IndexedArtifact, ...]:
-        """Return contributions in canonical ledger order."""
-        state = self._state
-        if kind is None:
-            return tuple(
-                indexed
-                for indexed in state.nodes.values()
-                if isinstance(indexed.artifact, Contribution)
-            )
-        if not isinstance(kind, ContributionKind):
+    def contributions(self, kind: ContributionKind | None = None) -> tuple[IndexedArtifact, ...]:
+        if kind is not None and not isinstance(kind, ContributionKind):
             raise TypeError("kind must be a ContributionKind")
-        return _indexed_neighbors(state, _ContributionKindNode(kind))
-
-    def relations(
-        self,
-        kind: RelationKind | None = None,
-    ) -> tuple[IndexedArtifact, ...]:
-        """Return contribution relations in canonical ledger order."""
         state = self._state
-        if kind is None:
-            return tuple(
-                indexed
-                for indexed in state.nodes.values()
-                if isinstance(indexed.artifact, ContributionRelation)
-            )
-        if not isinstance(kind, RelationKind):
-            raise TypeError("kind must be a RelationKind")
-        return _indexed_neighbors(state, _RelationKindNode(kind))
+        return _decoded(state, state.graph.nodes(kind.value if kind is not None else None))
+
+    def relations(self, kind: RelationKind | None = None) -> tuple[IndexedArtifact, ...]:
+        _require_relation_kind(kind)
+        state = self._state
+        return _decoded(state, state.graph.edges(kind.value if kind is not None else None))
 
     def incoming_relations(
         self,
         artifact_ref: ArtifactRef,
         kind: RelationKind | None = None,
     ) -> tuple[IndexedArtifact, ...]:
-        """Return relations whose destination is the referenced artifact."""
         _require_relation_kind(kind)
-        return tuple(
-            indexed
-            for indexed in _indexed_neighbors(self._state, artifact_ref)
-            if isinstance(indexed.artifact, ContributionRelation)
-            and indexed.artifact.to_contribution == artifact_ref
-            and (kind is None or indexed.artifact.kind is kind)
+        state = self._state
+        return _decoded(
+            state, state.graph.incoming(artifact_ref, kind.value if kind is not None else None)
         )
 
     def outgoing_relations(
@@ -180,88 +149,17 @@ class KnowledgeGraphIndex:
         artifact_ref: ArtifactRef,
         kind: RelationKind | None = None,
     ) -> tuple[IndexedArtifact, ...]:
-        """Return relations whose source is the referenced artifact."""
         _require_relation_kind(kind)
-        return tuple(
-            indexed
-            for indexed in _indexed_neighbors(self._state, artifact_ref)
-            if isinstance(indexed.artifact, ContributionRelation)
-            and indexed.artifact.from_contribution == artifact_ref
-            and (kind is None or indexed.artifact.kind is kind)
+        state = self._state
+        return _decoded(
+            state, state.graph.outgoing(artifact_ref, kind.value if kind is not None else None)
         )
 
 
-def _build_state(snapshot: ArtifactLedgerSnapshot) -> _GraphState:
-    nodes: dict[ArtifactRef, IndexedArtifact] = {}
-    adjacency: defaultdict[_AdjacencyKey, list[ArtifactRef]] = defaultdict(list)
-
-    for ledger_entry in snapshot.entries:
-        for artifact_index in range(len(ledger_entry.transaction.envelopes)):
-            indexed = IndexedArtifact(
-                ledger_entry=ledger_entry,
-                artifact_index=artifact_index,
-            )
-            reference = indexed.artifact_ref
-            if reference in nodes:
-                raise ValueError("snapshot must not contain duplicate artifacts")
-            nodes[reference] = indexed
-            _connect(indexed, reference, adjacency)
-
-    return _GraphState(
-        height=snapshot.height,
-        nodes=nodes,
-        adjacency={key: tuple(references) for key, references in adjacency.items()},
-    )
-
-
-def _append_state(
-    state: _GraphState,
-    *,
-    entries: tuple[ArtifactLedgerEntry, ...],
-    height: int,
-) -> _GraphState:
-    nodes = dict(state.nodes)
-    adjacency = defaultdict(list, {key: list(refs) for key, refs in state.adjacency.items()})
-
-    for ledger_entry in entries:
-        for artifact_index in range(len(ledger_entry.transaction.envelopes)):
-            indexed = IndexedArtifact(
-                ledger_entry=ledger_entry,
-                artifact_index=artifact_index,
-            )
-            reference = indexed.artifact_ref
-            if reference in nodes:
-                raise ValueError("entries must not contain duplicate artifacts")
-            nodes[reference] = indexed
-            _connect(indexed, reference, adjacency)
-
-    return _GraphState(
-        height=height,
-        nodes=nodes,
-        adjacency={key: tuple(references) for key, references in adjacency.items()},
-    )
-
-
-def _connect(
-    indexed: IndexedArtifact,
-    reference: ArtifactRef,
-    adjacency: defaultdict[_AdjacencyKey, list[ArtifactRef]],
-) -> None:
-    artifact = indexed.artifact
-    if isinstance(artifact, Contribution):
-        adjacency[_ContributionKindNode(artifact.kind)].append(reference)
-        return
-
-    adjacency[_RelationKindNode(artifact.kind)].append(reference)
-    adjacency[artifact.from_contribution].append(reference)
-    adjacency[artifact.to_contribution].append(reference)
-
-
-def _indexed_neighbors(
-    state: _GraphState,
-    key: _AdjacencyKey,
+def _decoded(
+    state: _GraphState, records: tuple[IndexedEnvelope, ...]
 ) -> tuple[IndexedArtifact, ...]:
-    return tuple(state.nodes[reference] for reference in state.adjacency.get(key, ()))
+    return tuple(state.decoded[record.artifact_ref] for record in records)
 
 
 def _require_relation_kind(kind: RelationKind | None) -> None:

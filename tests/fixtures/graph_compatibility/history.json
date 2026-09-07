@@ -1,0 +1,278 @@
+{
+  "baseline_commit": "652f4de5900c19b75af00e0f356a056299797ece",
+  "chain_id": "discovery-net-legacy-fixture",
+  "initial_state_hash": "658209c56cbbf49d7da1e00b6393fe444854670953c5e48cfa791f0fb750cb07",
+  "artifact_refs": {
+    "mathematics": "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa",
+    "combinatorics": "bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi",
+    "combinatorics_subarea": "bafkreie2uqh6koriopwxlpcl2fdziey67lfnwlqwsfaheguszfxnhmy3zu",
+    "problem": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+    "problem_area": "bafkreih3l7xirt3nhw4mpqlvbtezojwyxsmlgskeowyu2r2vivupcnax2y",
+    "proof": "bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m",
+    "proof_problem": "bafkreidtbipxlmpxfyvlbbzbqodekun6fbit3u6l7fyx2uflmhdu3rgilu",
+    "lemma": "bafkreifsotv5yjslolinaj64cbnhvhpdpupgpswbagjkjztfrswty4ba6e",
+    "dependency": "bafkreicm2sijrwv4may6zzxhejgduo5txtrnrm62oidxfoalatunwgvpfq",
+    "redundant_area": "bafkreicyrlmhgkcyi3ftzpdwsfn32dz6usazwwkai4i2fvgv6pr4ob5sky",
+    "objection": "bafkreihivkg62vplpsa65ekq2c3sckmyxsvp2c5ul6lvrvccx5ewpofi2m",
+    "objection_proof": "bafkreicciy2b6kuh7fg6i7rc5ikqwtt7ve3ukklrpd6yqkhq3gschi2tfq"
+  },
+  "blocks": [
+    {
+      "height": 1,
+      "transactions": [
+        {
+          "name": "root_area",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: Mathematics.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"mathematical_area\",\"title\":\"Mathematics\"},\"payload_type\":\"contribution\",\"signature\":\"c5a519d38efb46d51baadd2cc639efc256af9f0f706dee83b6cf816556cf2c0739b487a7031a7fe1bc64cd20cac1906d59375fbe97a261f918a9be85c931d301\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"d477aa952d622f11e19fa498515410f05b0aca04652f9979fbbc1bc1a8625ac5dd8cd24f589a368ea8cd5cb02be501df286e32ac9be3ab43a5f53052f2aed60c\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa"
+          ]
+        },
+        {
+          "name": "subarea_forward_reference",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi\",\"kind\":\"subarea_of\",\"to_contribution\":\"bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa\"},\"payload_type\":\"contribution_relation\",\"signature\":\"af1fc6167979d3f42083579b79ad40ecacb654e6b1b0a6388c7cbad5ab6a39d06741d3bdd0dc98b5e217747904573069ddf07bdaa856f1333f4e0659e1a9da00\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"},{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: Combinatorics.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"mathematical_area\",\"title\":\"Combinatorics\"},\"payload_type\":\"contribution\",\"signature\":\"f7699c84f16f6d7b0837828860a31ea32ef5ef8067e5595e490f0a264a401620f6ca93679a4bf2d5d305e5793e98d3ee2724aafb0dabe030bcee02ad16a9aa0a\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"18578a996019de83e671737f7827f7e0de79f872d51cb65f7c0569b23e1520138818f1773a5e8ace1deb9be330bb58a8776d52899b1fe2ee804fa90be6515a08\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreie2uqh6koriopwxlpcl2fdziey67lfnwlqwsfaheguszfxnhmy3zu",
+            "bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi"
+          ]
+        }
+      ],
+      "state_hash": "aabfd60f671854fa9f10121d6c0b0d2d2b14d9b6fb1fc8d624b701c685568b0d"
+    },
+    {
+      "height": 2,
+      "transactions": [
+        {
+          "name": "problem_and_area",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: A synthetic Ramsey problem.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"problem_statement\",\"title\":\"A synthetic Ramsey problem\"},\"payload_type\":\"contribution\",\"signature\":\"ba73228c1e5b9afd74935af4b965fd1ff6b00c6400ced9badb5e0e38398f483d2e8f1826d5e126712be9e373c3e5a29bedcfc238f49c331b36f32a1943e84c04\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"},{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu\",\"kind\":\"about\",\"to_contribution\":\"bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi\"},\"payload_type\":\"contribution_relation\",\"signature\":\"1a95abf722c1382fb3b111dd7bfc16b54412c3972a4f6617f7226c4ddcf28eb9a19b24f7b9a01bf70cdfcc722e662f3ed903f35cb6767a15961e8e1daab91705\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"65c669255a16f086cee002de40f9e79c6a0f92eca0d1b3a0cd1e6e025196d6e02afc98dd74a8f02fc2237692d47dd8c869f542eee499b5a3c49fad4200901605\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+            "bafkreih3l7xirt3nhw4mpqlvbtezojwyxsmlgskeowyu2r2vivupcnax2y"
+          ]
+        },
+        {
+          "name": "proof_and_problem_link",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: A synthetic proof attempt.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"proof_attempt\",\"title\":\"A synthetic proof attempt\"},\"payload_type\":\"contribution\",\"signature\":\"5df427532a276c558152bd9760923fc7ae65ecdadaef6a9dc593eeb230ba877a7af452931ac0354b3ec9a040252c535fade5ff6c9af3eab97d7a865b4b13fa02\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"},{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m\",\"kind\":\"about\",\"to_contribution\":\"bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu\"},\"payload_type\":\"contribution_relation\",\"signature\":\"114ab2bcf1b245f31668096eaff16d1188b63e794ee36137c7ce84fcfa0f22b3df91a18bb31e3dc1dacf3c02eb3fbe6daed77abdcb3b54b0c7fa2b3d559a090d\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"}],\"signature\":\"edb3907d0c98bc290fc534a12c35190415c3f2bcfb11401cb00190cc8ee9b4d6fdf3b31f38311759a5497846587073fc831b9ccb73b991134e99ba5b40917a04\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m",
+            "bafkreidtbipxlmpxfyvlbbzbqodekun6fbit3u6l7fyx2uflmhdu3rgilu"
+          ]
+        },
+        {
+          "name": "lemma",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: A synthetic counting lemma.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"lemma\",\"title\":\"A synthetic counting lemma\"},\"payload_type\":\"contribution\",\"signature\":\"a2ab109214b73881792a2e510f9e4d99aadf57a41e83c834548dd3625a09356676058a0685185243c29ef731f8d79ec5510afd8dd42ccee1033bc61a54604209\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"}],\"signature\":\"ba38db2c46aaf1eabcd1efde40906a6b9b0d4f00fb0f664ffe37a066910d3e851f6da5adf85531e1fed7ee6849dd2dcd4eceb508ac24f8376e88ad777b01f10d\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreifsotv5yjslolinaj64cbnhvhpdpupgpswbagjkjztfrswty4ba6e"
+          ]
+        }
+      ],
+      "state_hash": "436f6ad8282959bf4ec87c5f03b6d312cc7ff25da07a9cf5d1dae110d30674fe"
+    },
+    {
+      "height": 3,
+      "transactions": [
+        {
+          "name": "missing_endpoint",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m\",\"kind\":\"supports\",\"to_contribution\":\"bafkreiakigl4oasn54lfpsqqdrlt6qa4espwoevgia3d66ct547ux6kqkm\"},\"payload_type\":\"contribution_relation\",\"signature\":\"5bf10cbd947aa923576e998b32be12f51f96e226be7d4357f1fa14fe777e3ab46dee290d8eab5a3ee9f63aac965541a526d4203f5f26272d88e05f637a1a5b09\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"841be8e2c853f4e26ad1ebbf4f5c3c5d4ea03dfd50565968dda0b99f0dc9129f0a45ded0ac6a824467abf2e47bbf41fcf0b7b46949f2d6cad72b816320918303\"}",
+          "code": 5,
+          "artifact_refs": []
+        },
+        {
+          "name": "third_party_dependency",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m\",\"kind\":\"depends_on\",\"to_contribution\":\"bafkreifsotv5yjslolinaj64cbnhvhpdpupgpswbagjkjztfrswty4ba6e\"},\"payload_type\":\"contribution_relation\",\"signature\":\"df004031ed1c8988a2335d7f85b8eec46e31b18199dfdcbe07e6b2ca38ad5d59e3dee85c5c51721dee19c0ab62eac653304550370ab314d74a87fd89e8ed5d08\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"b0f247504931b5786a78654f29845d8fbd7278559c9c6aa6ea8eac83d220730f58d5104353134cad340301f620b25063f3c57664699d5aae2246f1a8a02f4607\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreicm2sijrwv4may6zzxhejgduo5txtrnrm62oidxfoalatunwgvpfq"
+          ]
+        },
+        {
+          "name": "duplicate_proof",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: A synthetic proof attempt.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"proof_attempt\",\"title\":\"A synthetic proof attempt\"},\"payload_type\":\"contribution\",\"signature\":\"5df427532a276c558152bd9760923fc7ae65ecdadaef6a9dc593eeb230ba877a7af452931ac0354b3ec9a040252c535fade5ff6c9af3eab97d7a865b4b13fa02\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"},{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m\",\"kind\":\"about\",\"to_contribution\":\"bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu\"},\"payload_type\":\"contribution_relation\",\"signature\":\"114ab2bcf1b245f31668096eaff16d1188b63e794ee36137c7ce84fcfa0f22b3df91a18bb31e3dc1dacf3c02eb3fbe6daed77abdcb3b54b0c7fa2b3d559a090d\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"}],\"signature\":\"edb3907d0c98bc290fc534a12c35190415c3f2bcfb11401cb00190cc8ee9b4d6fdf3b31f38311759a5497846587073fc831b9ccb73b991134e99ba5b40917a04\"}",
+          "code": 4,
+          "artifact_refs": []
+        },
+        {
+          "name": "invalid_signature",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: A synthetic counting lemma.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"lemma\",\"title\":\"A synthetic counting lemma\"},\"payload_type\":\"contribution\",\"signature\":\"a2ab109214b73881792a2e510f9e4d99aadf57a41e83c834548dd3625a09356676058a0685185243c29ef731f8d79ec5510afd8dd42ccee1033bc61a54604209\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"}],\"signature\":\"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"}",
+          "code": 3,
+          "artifact_refs": []
+        },
+        {
+          "name": "third_party_redundant_area",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu\",\"kind\":\"about\",\"to_contribution\":\"bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa\"},\"payload_type\":\"contribution_relation\",\"signature\":\"af6d75723f73608b1b7f6eaf5ce96bcde3509dce9f4190c6fdec3f63f1514d40046ea65cc6d6c4c92fdc69df8fc29eeb982dc64ca693f46e82f43b213c889700\",\"signer_public_key\":\"29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7\"}],\"signature\":\"659da2d2e4b80894e4a573b913bb9137ddb60d20460f553f75b372409c5a2203b4b037620f87371cf1975432033c92828f642e1fc9a77db90dcbcedc5c52f108\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreicyrlmhgkcyi3ftzpdwsfn32dz6usazwwkai4i2fvgv6pr4ob5sky"
+          ]
+        },
+        {
+          "name": "wrong_chain",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-another-chain\",\"payload\":{\"body\":\"\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"question\",\"title\":\"Wrong chain\"},\"payload_type\":\"contribution\",\"signature\":\"d9a15862eb8139aa7b438a3ca79a745b8f5f970a884a67356d2d63ab433c9a4502811307598632153c718cf2623d88bfb496b933e430d596faedbcd57f0cf809\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"f29ea4e52996c50b839963b419a8dd5d38e00a2fd91ba0847695c6cb2d748a52460291c58b1a526b898261ffb9a050980baac90b76c98ee1113e49c0054d7f04\"}",
+          "code": 2,
+          "artifact_refs": []
+        },
+        {
+          "name": "noncanonical",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: Mathematics.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"mathematical_area\",\"title\":\"Mathematics\"},\"payload_type\":\"contribution\",\"signature\":\"c5a519d38efb46d51baadd2cc639efc256af9f0f706dee83b6cf816556cf2c0739b487a7031a7fe1bc64cd20cac1906d59375fbe97a261f918a9be85c931d301\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"d477aa952d622f11e19fa498515410f05b0aca04652f9979fbbc1bc1a8625ac5dd8cd24f589a368ea8cd5cb02be501df286e32ac9be3ab43a5f53052f2aed60c\"}\n",
+          "code": 1,
+          "artifact_refs": []
+        },
+        {
+          "name": "relation_cannot_target_relation",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m\",\"kind\":\"supports\",\"to_contribution\":\"bafkreicm2sijrwv4may6zzxhejgduo5txtrnrm62oidxfoalatunwgvpfq\"},\"payload_type\":\"contribution_relation\",\"signature\":\"67b099355eb388230a79895b2988672a6e26a6f8d9af7aa023982166cd2dd4d824870172fb8290377b41cc20ee1121b595006024343ef139b90404b018ccf20f\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"6fa063ce6b84df0962c61fa209271f8b945a648033e78e5d2ee2f903e71b6d184462481c01a0b5625de20c71d40ba42775275e1aadc66b79164665d38860a20d\"}",
+          "code": 5,
+          "artifact_refs": []
+        }
+      ],
+      "state_hash": "fa49e32b102c4f61d80ebdd8c6ae7d68a6624e79d94ed2fb85ecbdcfb7a24d16"
+    },
+    {
+      "height": 4,
+      "transactions": [],
+      "state_hash": "fa49e32b102c4f61d80ebdd8c6ae7d68a6624e79d94ed2fb85ecbdcfb7a24d16"
+    },
+    {
+      "height": 5,
+      "transactions": [
+        {
+          "name": "objection_and_assertion",
+          "wire": "{\"envelopes\":[{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"body\":\"Synthetic compatibility fixture: A synthetic objection.\",\"created_at\":\"2026-09-07T12:00:00Z\",\"kind\":\"objection\",\"title\":\"A synthetic objection\"},\"payload_type\":\"contribution\",\"signature\":\"317406b6f0a5fcf322809dd40ea17360220e6a1328a0971af118cf27607f0006b641d4256c62620248f6ed9439d6fd39147482df911d3ea175c869dae393db0f\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"},{\"chain_id\":\"discovery-net-legacy-fixture\",\"payload\":{\"created_at\":\"2026-09-07T12:00:00Z\",\"from_contribution\":\"bafkreihivkg62vplpsa65ekq2c3sckmyxsvp2c5ul6lvrvccx5ewpofi2m\",\"kind\":\"contradicts\",\"to_contribution\":\"bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m\"},\"payload_type\":\"contribution_relation\",\"signature\":\"faae4696dcf75d6ce648af571e92a72034fe4ed9176c59d60bf92787a2a40f97043106467ffaa1593dab6e103f60bace64c5356f13718a973e3285733700e607\",\"signer_public_key\":\"03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8\"}],\"signature\":\"f94fc5b02c3b7c9eb85e9b7c981bea8fe4b2a19994b2baa27ea04176fa723a5eac8ac45c0dc83c4c2a4bcf79dc521e4a17166b336bbb17e47c3193f84d91d401\"}",
+          "code": 0,
+          "artifact_refs": [
+            "bafkreihivkg62vplpsa65ekq2c3sckmyxsvp2c5ul6lvrvccx5ewpofi2m",
+            "bafkreicciy2b6kuh7fg6i7rc5ikqwtt7ve3ukklrpd6yqkhq3gschi2tfq"
+          ]
+        }
+      ],
+      "state_hash": "7f852964b2bc9ccae68889104ec3f6df2ec3fb75c3a778684f96597d8495c945"
+    }
+  ],
+  "query": "query LegacyTopology {\n  indexedHeight\n  areas: contributions(kind: MATHEMATICAL_AREA) {\n    artifactRef title\n    parents: outgoingContributions(via: SUBAREA_OF) { artifactRef title }\n    problems: incomingContributions(via: ABOUT, kind: PROBLEM_STATEMENT) { artifactRef title }\n  }\n  problems: contributions(kind: PROBLEM_STATEMENT) {\n    artifactRef title\n    areas: outgoingContributions(via: ABOUT, kind: MATHEMATICAL_AREA) { artifactRef title }\n    proofs: incomingContributions(via: ABOUT, kind: PROOF_ATTEMPT) {\n      artifactRef title signerPublicKey\n      dependencies: outgoingContributions(via: DEPENDS_ON) { artifactRef title }\n      objections: incomingContributions(via: CONTRADICTS) { artifactRef title }\n    }\n  }\n  assertions: relations {\n    artifactRef kind fromContributionRef toContributionRef signerPublicKey height transactionIndex\n  }\n}",
+  "query_result": {
+    "indexedHeight": "5",
+    "areas": [
+      {
+        "artifactRef": "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa",
+        "title": "Mathematics",
+        "parents": [],
+        "problems": [
+          {
+            "artifactRef": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+            "title": "A synthetic Ramsey problem"
+          }
+        ]
+      },
+      {
+        "artifactRef": "bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi",
+        "title": "Combinatorics",
+        "parents": [
+          {
+            "artifactRef": "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa",
+            "title": "Mathematics"
+          }
+        ],
+        "problems": [
+          {
+            "artifactRef": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+            "title": "A synthetic Ramsey problem"
+          }
+        ]
+      }
+    ],
+    "problems": [
+      {
+        "artifactRef": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+        "title": "A synthetic Ramsey problem",
+        "areas": [
+          {
+            "artifactRef": "bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi",
+            "title": "Combinatorics"
+          },
+          {
+            "artifactRef": "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa",
+            "title": "Mathematics"
+          }
+        ],
+        "proofs": [
+          {
+            "artifactRef": "bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m",
+            "title": "A synthetic proof attempt",
+            "signerPublicKey": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+            "dependencies": [
+              {
+                "artifactRef": "bafkreifsotv5yjslolinaj64cbnhvhpdpupgpswbagjkjztfrswty4ba6e",
+                "title": "A synthetic counting lemma"
+              }
+            ],
+            "objections": [
+              {
+                "artifactRef": "bafkreihivkg62vplpsa65ekq2c3sckmyxsvp2c5ul6lvrvccx5ewpofi2m",
+                "title": "A synthetic objection"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "assertions": [
+      {
+        "artifactRef": "bafkreie2uqh6koriopwxlpcl2fdziey67lfnwlqwsfaheguszfxnhmy3zu",
+        "kind": "SUBAREA_OF",
+        "fromContributionRef": "bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi",
+        "toContributionRef": "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa",
+        "signerPublicKey": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "height": "1",
+        "transactionIndex": "1"
+      },
+      {
+        "artifactRef": "bafkreih3l7xirt3nhw4mpqlvbtezojwyxsmlgskeowyu2r2vivupcnax2y",
+        "kind": "ABOUT",
+        "fromContributionRef": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+        "toContributionRef": "bafkreicebdxx4hof5kfiqrvy2wvtknpdzkls2iyryvtbo47u7box36otdi",
+        "signerPublicKey": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "height": "2",
+        "transactionIndex": "0"
+      },
+      {
+        "artifactRef": "bafkreidtbipxlmpxfyvlbbzbqodekun6fbit3u6l7fyx2uflmhdu3rgilu",
+        "kind": "ABOUT",
+        "fromContributionRef": "bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m",
+        "toContributionRef": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+        "signerPublicKey": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+        "height": "2",
+        "transactionIndex": "1"
+      },
+      {
+        "artifactRef": "bafkreicm2sijrwv4may6zzxhejgduo5txtrnrm62oidxfoalatunwgvpfq",
+        "kind": "DEPENDS_ON",
+        "fromContributionRef": "bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m",
+        "toContributionRef": "bafkreifsotv5yjslolinaj64cbnhvhpdpupgpswbagjkjztfrswty4ba6e",
+        "signerPublicKey": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "height": "3",
+        "transactionIndex": "1"
+      },
+      {
+        "artifactRef": "bafkreicyrlmhgkcyi3ftzpdwsfn32dz6usazwwkai4i2fvgv6pr4ob5sky",
+        "kind": "ABOUT",
+        "fromContributionRef": "bafkreibmbkg6aisexcfwcirbxmj2wmkc366xkulpiv26ydyb4lvykcbomu",
+        "toContributionRef": "bafkreiahy6ytderbakmusoacu37epxkneedxs6omlspdjujzdxtqylvmwa",
+        "signerPublicKey": "29acbae141bccaf0b22e1a94d34d0bc7361e526d0bfe12c89794bc9322966dd7",
+        "height": "3",
+        "transactionIndex": "4"
+      },
+      {
+        "artifactRef": "bafkreicciy2b6kuh7fg6i7rc5ikqwtt7ve3ukklrpd6yqkhq3gschi2tfq",
+        "kind": "CONTRADICTS",
+        "fromContributionRef": "bafkreihivkg62vplpsa65ekq2c3sckmyxsvp2c5ul6lvrvccx5ewpofi2m",
+        "toContributionRef": "bafkreif6s6rcpfxnfcvtutjskl2ertemb7qiwpvbn2flem5oqetgsyez2m",
+        "signerPublicKey": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+        "height": "5",
+        "transactionIndex": "0"
+      }
+    ]
+  }
+}

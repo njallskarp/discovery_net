@@ -1,357 +1,262 @@
-# Implementation PR sequence: domains, identities, and canonical math topology
+# Six-PR implementation plan: domains and canonical math topology
 
-Integration branch: `codex/domain-topology-development`, starting at `652f4de`.
-This document replaces the coarse sequence in `domain-topology-development.md`.
-PR numbers below are sequence numbers, not GitHub issue numbers.
+Integration branch: `codex/domain-topology-development`, rebased onto main at
+`673c8b8` (including Siggi’s PR #58).
+This supersedes the earlier eighteen-PR sequence. The smaller implementation steps
+are commits inside the six PRs below, not separate review requests.
 
-## Delivery rules and initial decisions
+PRs 1–5 target the integration branch in order. PR 6 is the release PR from that
+branch to main, including the final rehearsal evidence and rollout instructions.
+Main and live nodes remain on the existing release during development. Keep the
+integration branch current with main and rebase each pending PR onto it. PR 6 is
+reviewed as one cumulative diff and squash-merged into main after validation.
 
-- Submit each PR against the integration branch, in the order below. Merge that PR
-  before branching the next from the updated integration head. Main and live nodes
-  remain on the existing release until the final release PR.
-- Each PR includes focused tests for its behavior. The first compatibility fixture
-  is immutable regression evidence, not something regenerated to make tests pass.
-- The release exposes one canonical topology and `discovery-net math ...`. Candidate
-  colors exist only in development tools. Preserve old signed envelopes and their
-  decoders; do not add metadata to existing contributions or resign them.
-- Consensus keys, operator governance keys, and research keys have separate roles.
-  Full nodes execute the same rules as validators, even when they do not vote.
-- Initial privileged grants require strictly more than two thirds of eligible
-  validator voting power, bound to an electorate epoch. One effective approval per
-  validator per proposal. Pending proposals expire on electorate changes. One
-  validator-set change may be scheduled at a time; admission requires key-control
-  proof and consent. Candidate power is bounded by the agreed admission policy.
-- Human recognition, credential standing, ontology curation, and validator membership
-  are independently revocable grants. Credentials alone never confer validator power.
-- Identity verification is an attestation backed by reviewed evidence, not proof of
-  unique humanity. Consensus never fetches an external profile or runs an LLM.
-- Reject unauthorized operations; do not automatically ban their sender. Scoped
-  revocation requires an authorized decision. IP rate limits remain local operations.
-- First-release canonical area curation uses explicit scoped curator grants. Keep
-  experimental trust scores out of consensus. This is a deliberate constrained
-  implementation of #60, not its full reputation/anti-automation system.
+Development isolation belongs in Git branches. Packages and class names describe
+their lasting responsibilities. A temporary parallel implementation must use a
+`V2` suffix and a nearby comment of this form:
 
-## 01 — Freeze legacy wire, replay, and graph behavior
+```python
+# TODO: remove versioning once migration is complete. Temporary replacement for
+# ClassName in discovery_net.module_name; promote this implementation and remove
+# the superseded implementation before the integration branch merges to main.
+```
 
+Use the actual class/module references in each comment. Record whether each new
+class is moved, refactored, or new in the PR description. PR 1 introduces permanent
+boundaries and needs no parallel V2 implementations.
+
+## Fixed boundaries
+
+- Preserve existing contribution envelopes, signatures, and hashes exactly.
+- Users see one canonical math topology. Candidate colors are development-only.
+- Validators and non-voting full nodes execute identical deterministic rules.
+- Separate human recognition, area standing, curator authority, and validator membership.
+- Initial governance requires strictly more than two thirds of eligible voting
+  power, explicit proposal approvals, candidate consent, and separate governance keys.
+- Reject unauthorized actions; do not automatically ban senders or use IP addresses
+  as global identities. Reputation scoring does not govern consensus.
+- Implement math and a second-domain contract test. A production security ontology,
+  automated sanctions, and advanced reputation are later work.
+
+## Direct artifact revocation
+
+Topology changes use independent new assertions and signed revocation contributions.
+A revocation carries a typed target artifact reference and an optional reason;
+chain and signer are bound by its signed envelope. It references no replacement,
+topology version, migration manifest, or proposal. The target must already exist.
+This requires a new structured artifact schema: a free-text body or an ordinary
+`supersedes` relation does not grant revocation semantics in the existing protocol.
+
+Authorization is deterministic and evaluated against previously committed state:
+
+- An author can withdraw their own ordinary research contribution or relation.
+  Signing an edge does not confer authority over either endpoint, and authoring an
+  endpoint does not confer authority over other people's incident edges.
+- Revoking another author's artifact requires an explicit grant covering the target
+  and action, or a direct threshold certificate over the exact revocation. The
+  certificate binds chain, target, action, electorate epoch, nonce, and expiry and
+  requires strictly more than two thirds of eligible voting power. Signatures can
+  be gathered before submission; no on-ledger proposal phase is required.
+- Reject unauthorized revocation transactions. Validators and non-voting full nodes
+  use the same checks. New grants in the transaction cannot authorize its revocations.
+- Authority records use their own governance/domain transition rules. Hiding a
+  contribution cannot revoke validator membership, erase a grant, or bypass the
+  identity/credential authorization state machines. Revocations themselves are not
+  targets of this initial mechanism; reinstatement is a separate future action.
+
+Once committed, an authorized revocation excludes its target from canonical views.
+Revoking a contribution also excludes incident edges from traversal; it does not
+revoke those edges or hide neighboring contributions. Raw history and evidence stay
+accessible. Historical views apply only revocations committed by the requested
+height. Query indexes must update existing records when revocations arrive, including
+counts, adjacency, and endpoint selection; restart/rebuild must produce the same view.
+
+The offline migration plan groups work for review and reproducible submission only.
+It is not a consensus dependency. Submit a replacement edge and an authorized
+revocation in one atomic transaction when needed and within transaction limits.
+For a large migration, publish replacement nodes/edges before revocations and accept
+explicitly documented intermediate overlap. This approach has no global atomic
+cutover across several blocks; it introduces no special adoption record or hidden
+staging semantics. Preflight authorization for each target before publication.
+
+## PR 1 — Separate core and math, with compatibility and snapshot tooling
+
+Review: [#62](https://github.com/njallskarp/discovery_net/pull/62).
 Branch: `codex/legacy-graph-contracts`. Depends on: none.
 
-Files: `tests/fixtures/legacy_graph/`, `tests/test_legacy_graph_contract.py`.
-
-Check in canonical signed transaction bytes generated once by the unmodified
-baseline, a manifest of artifact IDs, per-block transaction result codes and state
-hashes, and a representative GraphQL query with its expected result. Include two
-authors, area/subarea relationships, research dependencies, third-party assertions,
-same-transaction forward references, duplicate and invalid submissions, and an empty
-block. Replay through the real callback handler and SQLite store, then restart and
-query. No application changes.
-
-Acceptance: exact byte round trips and signature verification; fixed IDs/results/
-hashes through execution and restart; rejected transactions never enter the ledger;
-incremental and rebuilt indexes give the fixed expected graph results.
-
-## 02 — Export a verified offline baseline
-
-Branch: `codex/offline-ledger-baseline`. Depends on: 01.
-
-Files: new `src/discovery_net/development/ledger_baseline.py`, developer CLI module,
-`tests/test_ledger_baseline.py`. Add a development-only module entry point.
-
-Implement `python -m discovery_net.development baseline --ledger PATH --output DIR
---chain-id ID`. Read the source with SQLite `mode=ro`, use the backup API into a new
-destination, and verify the copy through replay. Write a manifest with chain ID,
-height, state hash, snapshot checksum, artifact counts, and source revision. Refuse
-existing output or source/destination aliasing. Publish the completed output only
-after verification; no source database writes or live submissions.
-
-Acceptance: backup remains internally consistent with concurrent WAL writes; source
-bytes/state are unmodified; corrupt/wrong-chain data and output collisions fail
-cleanly. Capture a local real baseline after the command passes fixture tests.
-
-## 03 — Extract the existing math domain without changing bytes
-
-Branch: `codex/extract-math-domain`. Depends on: 02.
-
-Files: new `src/discovery_net/domains/math/`, `knowledge_graph/{models,enums,
-identifiers,__init__}.py`, affected imports, domain contract tests.
-
-Move math vocabulary/models behind a domain package. Separate generic artifact
-references from mathematical vocabulary. Preserve public compatibility imports and
-legacy encoder/decoder behavior. Introduce a small domain interface for payload
-decoding and structural validation, exercised by a second-domain test fixture.
-Do not add production security contribution kinds yet.
-
-Acceptance: 01 unchanged, existing tests pass, no new payload is accepted on the
-network, no enum/string identity changes leak into existing APIs.
-
-## 04 — Separate artifact indexing from graph projection
-
-Branch: `codex/graph-projection-boundary`. Depends on: 03.
-
-Files: `indexing/`, `query/`, legacy math projection module, graph query tests.
-
-Keep one artifact/provenance lookup and let a projection choose domain nodes and
-relationships. Make current queries use a legacy math projection preserving current
-ordering and traversal behavior. Preserve atomic refresh and incremental append.
-Raw artifact lookup must still expose assertions omitted from a projection.
-
-Acceptance: 01 GraphQL result is unchanged; omitting an edge in a test projection
-affects forward/reverse traversals and counts consistently without changing raw
-artifacts, signatures, or the ledger hash.
-
-## 05 — Build an unsigned candidate area hierarchy
-
-Branch: `codex/math-topology-candidate`. Depends on: 04.
-
-Files: `development/topology_plan.py`, `domains/math/topology.py`, candidate fixture
-and development commands `topology build`, `topology inspect`, `topology compare`.
-
-Define a strict local plan format containing source-baseline digest, retained
-contribution IDs, proposed new area nodes, replacement edge records, and explicit
-old-area mappings. Support a pinned local taxonomy input with provenance; no live
-external lookup in generation. Use MSC-derived areas where reviewed mappings exist;
-retain ambiguous/unmapped items as explicit unresolved decisions. Do not silently
-map areas by title. Initially replace only organizational ABOUT/SUBAREA_OF assertions
-selected by the plan; retain scientific and discussion relationships.
-
-Acceptance: missing endpoints, area cycles, duplicate mappings, and baseline
-mismatches fail. Repeated builds from the same inputs produce the same plan digest.
-Contribution IDs do not change; all omitted/replaced edges are explained.
-
-## 06 — Validate the candidate against research queries
-
-Branch: `codex/math-topology-preview`. Depends on: 05.
-
-Files: development-only inspector launch/configuration, topology query fixtures,
-compact local comparison report (no bulk ledger in Git).
-
-Render the candidate with existing contribution bodies and attribution. Exercise
-problem-to-area, area-to-subarea, proof-to-problem, dependencies, and review queries.
-Compare counts, reachability, orphaned research, duplicate organizational paths,
-and bounded query cost. Record explicit decisions for unresolved mappings from 05.
-Candidate labels are developer configuration only.
-
-Acceptance: the concrete new graph has a reviewed plan and reproducible evidence.
-Keep iterating here if the topology is unsuitable. Do not proceed to its durable
-formats merely because a preview can render it.
-
-## 07 — Add domain artifact formats with legacy decoding
-
-Branch: `codex/domain-artifact-codec`. Depends on: 06.
-
-Files: `wire/{envelope,codec,signing}.py`, generic graph models, domain resolver,
-wire fixtures and transaction-validator tests.
-
-Add explicit new-format node and assertion payloads carrying a domain/schema
-identifier and typed data. Generic assertions may target node or assertion artifacts
-where the registered schema permits; this supports individual attestation withdrawal.
-Keep historical payload formats distinct and byte-for-byte stable. Domain rules
-resolve legacy math nodes as valid endpoints. Separate signature/format verification
-from stateful domain authorization. Keep new formats gated off in live acceptance
-until the activation machinery in 10.
-
-Acceptance: fixed signing vectors for new formats; unknown schemas fail predictably;
-legacy refs resolve; invalid endpoint types fail; changing domain/schema changes the
-signature/hash; 01 still passes unmodified.
-
-## 08 — Encode governance proposals and explicit approvals
-
-Branch: `codex/governance-wire`. Depends on: 07.
-
-Files: `wire/governance{,_codec,_signing}.py`, signing vector tests.
-
-Define a bounded proposal with chain, action, subject/payload digest, electorate
-epoch, nonce, expiry height, and sponsor; define approvals referring to its ID.
-Define validator candidate consent binding consensus and separate governance keys.
-Use distinct signing contexts for approvals, candidate consent, and research.
-Approvals are separately signed transactions, not multi-author envelopes forced
-into the current single-signer transaction format. Audit the older governance branch
-for reusable code; do not wholesale merge its outdated state/genesis assumptions.
-
-Acceptance: fixed vectors, cross-chain/action replay rejection, candidate key mismatch
-rejection, malformed fields/oversize rejection, and deterministic proposal IDs.
-
-## 09 — Implement deterministic approval and grant state
-
-Branch: `codex/governance-state`. Depends on: 08.
-
-Files: new `node/governance/` state/evaluator, grant and electorate models, pure
-transition tests. No live RPC/network side effects in this evaluator.
-
-Implement sponsor authorization, distinct approvals, `3*approved_power > 2*total_power`,
-expiry, electorate changes, one scheduled membership change, bounded pending state,
-and exact-once execution. Bind grants to subjects and scopes, with explicit revocation
-and authorization from state preceding the action. Define deterministic per-sponsor
-proposal bounds. A rejected proposal grants nothing and does not ban anyone.
-
-Acceptance: unequal powers, duplicate votes, six-validator boundary (four fail/five
-pass), removed voters, stale epochs, expired proposals, conflicting schedules, replay,
-and restart-state serialization all have explicit cases.
-
-## 10 — Bootstrap governance and activate the new application rules
-
-Branch: `codex/governance-activation-replay`. Depends on: 09.
-
-Files: `node/{application_state,cometbft_callback_handler,_ledger_from_snapshot}.py`,
-store schema/queries, runtime upgrade configuration, upgrade/replay fixtures.
-
-Define a chain-specific upgrade manifest binding activation height, old protocol
-identity, domain-rule identifiers, and initial validator-to-governance-key bindings.
-Require operator consent from the existing validator keys and a reviewed coordinated
-node rollout. Keep old application hashes before activation; commit governance and
-artifact state into a defined new application hash afterward. Replay selects rules
-by original block height and persists all state atomically. Unknown upgrade/rule
-identifiers fail startup or activation, never silently disable checks.
-
-Acceptance: old history reproduces 01; nodes configured with the same upgrade derive
-identical post-activation state; before/at/after activation, empty blocks, failed save,
-restart and replay match. Back up store migrations and document old-binary boundaries.
-
-## 11 — Connect approved membership to CometBFT
-
-Branch: `codex/dynamic-validator-execution`. Depends on: 10.
-
-Files: `node/abci.py`, callback result models, governance membership transition,
-`tests/integration/test_dynamic_validator_governance.py`.
-
-Emit validator additions/removals through `ResponseFinalizeBlock.validator_updates`.
-Respect the pinned CometBFT activation delay and prevent overlapping scheduled
-membership changes. Enforce configured power limits, unique keys, nonempty set, and
-the agreed membership-change bounds. New members cannot vote on their own admission.
-
-Acceptance: real multi-node test admits a synchronized non-validator after genesis,
-observes the effective validator set at the correct height, removes a member, and
-compares validator/full-node application hashes through restart and replay.
-
-## 12 — Add operator governance commands and deployment profiles
-
-Branch: `codex/governance-operator-cli`. Depends on: 11.
-
-Files: CLI/submission governance modules, runtime identity provisioning, localnet
-Compose profiles and operator documentation.
-
-Implement candidate prepare, proposal submit, proposal inspect, approval sign/submit,
-and membership status commands. Keep consensus/governance/research keys separate;
-ordinary approvals never require exposing the consensus key. Allow a post-genesis
-candidate to provision keys and synchronize before scheduled admission. Reuse one
-node image for full nodes and validators with role-specific startup configuration.
-
-Acceptance: CLI end-to-end admission using local test keys; wrong-chain and stale
-proposal errors are actionable; private keys never enter receipts; full-node startup
-does not require voting credentials. Do not execute live admission during this PR.
-
-## 13 — Add human identity claims, recognition, and key lifecycle
-
-Branch: `codex/recognized-identities`. Depends on: 12.
-
-Files: shared identity domain, grant action handlers, identity submission/query API,
-identity security and historical-attribution tests.
-
-Add signed identity applications referencing evidence and candidate key consent.
-Only threshold-approved recognition enters the recognized-identity projection;
-pending claims remain distinguishable. Bind keys to stable identity subjects without
-rewriting historical artifacts. Add key rotation, compromised-key revocation, and
-threshold-governed recovery with explicit effective heights and key-control proofs.
-Store reviewable evidence references/digests, not sensitive identity documents.
-
-Acceptance: self-assertion cannot mint recognition, possession is required, double
-counted attestations fail, key rotation preserves historical attribution, revoked
-keys cannot authorize new privileged actions, and live HTTP is never consulted by
-consensus. Existing research remains accessible without recognized-human status.
-
-## 14 — Add scoped math credentials and ontology curation
-
-Branch: `codex/math-credentials-curation`. Depends on: 13.
-
-Files: math credential/assertion schemas, area-curator grants, effective ontology
-projection, authorization/withdrawal tests.
-
-Implement credentials attached to an identity and a specific area; keep recognition,
-standing, and curator authority separate. Initial curator grants require governance
-approval and explicitly enumerate their allowed scope. An area placement is proposed
-first and becomes canonical only after an authorized approval. Top-level additions
-require governance. A claim cannot manufacture the parent authority used to approve
-it. Revocation targets an exact signed attestation, with issuer withdrawal and
-governance revocation distinguished. No automatic broader-area authority from a
-floating-point reputation score.
-
-Acceptance: fabricated subarea paths, unauthorized third-party attestations,
-self-authorizing cycles, scope escape, and withdrawal of another issuer's assertion
-fail. Canonical hierarchy remains acyclic; unrelated independent endorsements and
-research evidence survive a targeted revocation.
-
-## 15 — Publish and adopt a complete topology migration
-
-Branch: `codex/topology-migration-adoption`. Depends on: 14.
-
-Files: migration manifest/builder/submission modules, adoption governance action,
-canonical projection selector, migration/recovery tests.
-
-Turn the reviewed plan into signed new nodes/assertions with fixed recorded
-timestamps and provenance. Produce expected IDs and a resumable receipt map. Stage
-across bounded transactions. A threshold-approved adoption proposal commits to the
-complete manifest and replacement scope, and becomes effective only after required
-artifacts are committed and verified. Define subsequent contributions to use approved
-area links; keep unaffected legacy research edges. Reconcile changes since the pinned
-baseline explicitly rather than silently excluding new work.
-
-Acceptance: unchanged contribution IDs, idempotent retries, missing batches cannot
-activate, snapshot drift is detected, future edges enter the intended projection,
-and changing query selection never rewrites the ledger or attributes migration edges
-to the original contribution author.
-
-## 16 — Expose canonical domain commands and query surfaces
-
-Branch: `codex/canonical-math-interface`. Depends on: 15.
-
-Files: CLI, submission, GraphQL, inspector, help/docs and API integration tests.
-
-Expose `discovery-net math submit/query/...` using the adopted model. Preserve old
-command aliases where their meaning remains unambiguous. Route all normal graph
-traversals, counts, area queries, credentials, and provenance through one canonical
-projection. Keep raw history available for audit. Provide a domain registration
-boundary for a later security implementation, with a second-domain test adapter;
-do not ship a placeholder security command that cannot do useful work.
-
-Acceptance: CLI/API/inspector agree on active topology and identity/credential status;
-no public version/color switches; orphaned references and hidden-edge traversal leaks
-fail tests; development candidate controls are absent from release surfaces.
-
-## 17 — Rehearse the live-chain upgrade and migration
-
-Branch: `codex/topology-release-rehearsal`. Depends on: 16.
-
-Files: isolated rehearsal tooling, integration scenarios, compact evidence report,
-operator rollout/recovery runbook.
-
-Replay a fresh baseline offline under its original chain context, without production
-validator signing keys or live peers. Separately exercise active voting in a local
-network with test keys. Test activation, admission/removal, identity/key revocation,
-partial migration, adoption, concurrent new research, restart, and a non-voting
-full node. Record exact code/config/manifest hashes and query comparisons. Run full
-CI including the pinned CometBFT and Docker checks. Bound changes to those needed
-to address concrete failures; split any substantial fix into its own preceding PR.
-
-Acceptance: complete reproducible evidence, no production-key use, consistent state
-hashes, migration reconciliation, acceptable query/runtime costs, and an explicit
-recovery procedure that does not promise old binaries can read new formats.
-
-## 18 — Release the validated integration branch
-
-Branch: integration branch; PR base: `main`. Depends on: 17.
-
-One release PR contains the reviewed sequence and links its evidence/runbook. Rebase
-or merge current main into integration before the final rehearsal if main has moved;
-resolve changes and rerun affected evidence. Publish compatible node software first,
-coordinate activation, stage migration artifacts, verify completeness, and promote
-canonical queries according to the tested procedure. Live deployment/adoption is a
-separate explicit operator action after the release PR, not automatic on merge.
-
-Acceptance: reviewed release commit, reproducible builds and manifests, all executing
-nodes prepared for activation, and a single canonical user-facing math topology.
-
-## Deferred work
-
-Production security ontology, delegated identity-attestation committees, adaptive
-reputation/max-flow scoring, automatic bans/slashing, passkey-based human-review
-claims, and fine-grained new research-lane node kinds are separate follow-ups. The
-interfaces support extension without making these prerequisites for this release.
+Commit order:
+
+1. Freeze existing bytes, signatures, IDs, transaction results, replay hashes, and
+   representative graph queries.
+2. Add an offline baseline export command: SQLite read-only connection,
+   backup to a new destination, replay verification, and a manifest containing
+   chain, height, state hash, checksum, artifact counts, and source revision.
+3. Move mathematical models and vocabulary into `domains/math`, retaining
+   compatibility imports and exact payload codecs.
+4. Separate raw artifact/provenance indexing from graph projection. Route existing
+   queries through `MathProjection` and exercise the domain boundary with
+   a small second-domain test fixture.
+
+Primary files: `knowledge_graph/`, new `domains/math/` and `snapshots/`,
+`indexing/`, `query/`, compatibility and snapshot tests.
+
+Merge gate: historical fixtures stay unchanged; source ledger is untouched; backup
+works with concurrent WAL writes; rebuilt/incremental indexes agree; current CLI
+and GraphQL behavior remains identical. No new live protocol behavior.
+
+## PR 2 — Build and validate the candidate math topology locally
+
+Branch: `codex/math-topology-candidate`. Depends on: PR 1.
+
+Commit order:
+
+1. Define an unsigned topology plan with a pinned baseline digest, retained
+   contribution IDs, new area nodes, explicit old-area mappings, and selected
+   replacement organizational edges, and individual revocation targets. Use MSC2020
+   subject labels, source references, and relevant scope notes; add prose only where
+   a concrete mapping ambiguity needs clarification.
+2. Implement deterministic build/inspect/compare commands. Reject missing endpoints,
+   cycles, duplicate mappings, and baseline mismatches. Report ambiguous mappings
+   as unresolved; do not infer identity from matching titles.
+3. Add a development preview using the existing inspector and the new projection
+   boundary. Compare area navigation, problem placement, dependencies, objections,
+   orphaned research, and bounded query cost.
+4. Record and resolve mapping decisions against the real copied ledger. Retain
+   scientific and discussion edges while replacing the organizational links named
+   in the plan.
+
+Primary files: `domains/math/topology.py`, snapshot tooling,
+inspector configuration, candidate fixtures and comparison tests.
+
+Merge gate: the concrete candidate topology works on real data; reruns produce
+the same plan digest; unchanged contributions retain their IDs; every omitted or
+replacement edge has provenance. No signed publication or consensus upgrade yet.
+
+## PR 3 — Implement threshold governance and post-genesis validators
+
+Branch: `codex/validator-governance`. Depends on: PR 2.
+
+Commit order:
+
+1. Add proposal, approval, and candidate-consent formats with separate signing
+   contexts. Bind chain, action, exact subject, electorate epoch, nonce, and expiry.
+   Review and selectively port the old dynamic-governance branch.
+2. Implement the pure governance state machine: authorized sponsorship, distinct
+   weighted votes, strictly greater-than-two-thirds threshold, bounded pending
+   proposals, expiration, exactly-once execution, and one scheduled membership
+   change at a time. Expire unresolved proposals when the electorate changes.
+3. Add a coordinated activation manifest and initial validator/governance-key
+   bindings. Persist governance with artifact state atomically; replay historical
+   rules by original block height and define the application-hash transition.
+4. Emit actual CometBFT validator updates at the correct activation height. Enforce
+   unique keys, a nonempty validator set, power limits, and candidate consent.
+5. Add candidate preparation, proposal, approval, and status CLI commands plus
+   full-node/validator startup profiles using the same image and separate keys.
+
+Primary files: `wire/governance*`, `node/governance/`, callback handler, ABCI,
+snapshot replay/store, runtime provisioning, CLI and submission modules.
+
+Merge gate: signature replay/substitution tests, unequal voting power, duplicate
+approvals, stale epochs, activation/restart tests, and a real multi-node test that
+adds and removes validators while full nodes derive the same application hash.
+Operator commands use test keys during development; no live admission.
+
+## PR 4 — Add identities, scoped credentials, and approved area relationships
+
+Branch: `codex/identity-and-math-authority`. Depends on: PR 3.
+
+Commit order:
+
+1. Add the minimum new domain node/assertion formats needed by identities and math.
+   Keep existing wire formats untouched. Allow individually identifiable attestations
+   and withdrawal targets; validate endpoint types through registered domain rules.
+2. Add identity applications, evidence references, candidate key consent, and
+   threshold-approved recognition. Separate pending claims from recognized identities.
+3. Implement key bindings, rotation, revocation, and governed recovery, preserving
+   historical authorship. Consensus checks signed evidence references, never live
+   web pages or claims of unique humanity.
+4. Add area-scoped credentials and separately governed curator grants. New area
+   placements remain provisional until approved by an authorized curator; top-level
+   structural changes require governance.
+5. Implement direct revocation contributions with typed artifact targets, author
+   withdrawal, scoped grants, and direct threshold certificates as specified above.
+   Keep identity/credential state transitions explicit. Test unauthorized targets,
+   signature substitution, stale authority, incident-edge filtering, historical
+   queries, and equivalence of incremental indexing and replay.
+
+Primary files: shared identity domain, `domains/math/`, domain wire resolver,
+governance grant handlers, identity/credential queries, authorization tests.
+
+Merge gate: self-issued claims cannot create recognition or authority; key rotation
+does not change old contribution IDs; forged subarea paths and scope escape fail;
+targeted revocation preserves independent attestations and research evidence.
+Ordinary research remains possible without human recognition.
+
+## PR 5 — Publish the migration and expose one canonical math interface
+
+Branch: `codex/canonical-math-migration`. Depends on: PR 4.
+
+Commit order:
+
+1. Convert the reviewed offline plan to signed new nodes/assertions and independent
+   revocations with fixed timestamps, provenance, expected artifact IDs, and a
+   resumable receipt manifest. Verify authority for each revocation target.
+2. Publish bounded transactions, atomically pairing a replacement and revocation
+   when required and feasible. For larger batches, publish replacements first;
+   verify receipts before revoking old edges and document intermediate overlap.
+   The manifest coordinates the submitter, not ledger validation or query selection.
+3. Reconcile submissions since the baseline. Apply committed revocations to old and
+   new artifacts uniformly; no topology adoption action or timestamp filter exists.
+4. Expose `discovery-net math ...`; route CLI, GraphQL, inspector, counts, and
+   traversals through the same canonical projection. Preserve raw historical lookup
+   and compatible old command aliases.
+5. Remove candidate color/version controls from the release-facing UI and CLI.
+
+Primary files: migration builder/submitter, revocation query state, canonical
+projection selector, CLI, GraphQL, inspector, migration and interface tests.
+
+Merge gate: unchanged contribution IDs, safe repeated/interrupted publication,
+revocation authorization, baseline-delta reconciliation, correct future edges, and
+agreement across every query surface. Old edges remain attributable in history.
+
+## PR 6 — Rehearse and release the complete change to main
+
+PR: `codex/domain-topology-development` → `main`. Depends on: PRs 1–5.
+
+Commit order:
+
+1. Reconcile integration with current main. Capture a fresh baseline and replay it
+   offline with its original chain context, without production validator keys or
+   connections to live peers.
+2. Run active consensus separately with test keys: upgrade activation, validator
+   admission/removal, identity/key and artifact revocation, interrupted migration,
+   concurrent research, restart, and non-voting full-node verification.
+3. Record exact source/config/manifest hashes, topology comparisons, query costs,
+   and full test results, including pinned CometBFT and Docker integration checks.
+4. Add the operator rollout and recovery runbook: compatible software first,
+   coordinated activation, ordered replacement/revocation batches, and receipt
+   reconciliation. Document that old binaries may not replay new formats.
+5. Remove temporary V2 replacements, version selectors, migration-only scaffolding,
+   and their removal TODOs. Promote the validated topology under canonical names.
+   Preserve historical decoding and intentional public import aliases as needed.
+6. Present the cumulative release diff with links to PRs 1–5 and their evidence;
+   squash-merge the validated integration branch into main.
+
+Merge gate: reproducible full rehearsal, passing required checks, reconciled
+migration, and an exact rollout/recovery procedure. Live activation and publication
+remain explicit operator actions after release, not automatic effects of merging.
+
+## Mapping from the previous plan
+
+| New PR | Former implementation steps |
+|---|---|
+| 1 — Core/math separation | 01–04 |
+| 2 — Local topology | 05–06 |
+| 3 — Governance/validators | 08–12 |
+| 4 — Identity/math authority | 07, 13–14 |
+| 5 — Migration/interfaces | 15–16 |
+| 6 — Rehearsal/release | 17–18 |
+
+Governance transaction formats in PR 3 are independent of domain assertion formats
+in PR 4. This ordering lets the approval engine be tested before it is used to
+recognize humans or authorize topology changes.

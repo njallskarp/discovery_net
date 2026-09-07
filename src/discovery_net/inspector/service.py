@@ -8,6 +8,8 @@ from ipaddress import IPv4Address, ip_address
 from threading import RLock
 from typing import final
 
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import Contribution, ContributionRelation
 from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
 from discovery_net.inspector.models import (
     InspectorContribution,
@@ -28,7 +30,6 @@ from discovery_net.inspector.sources import (
     ArtifactLedgerUpdate,
     NodeObservationSource,
 )
-from discovery_net.knowledge_graph import ArtifactRef, Contribution, ContributionRelation
 
 _DEFAULT_FEED_LIMIT = 20
 _MAX_FEED_LIMIT = 50

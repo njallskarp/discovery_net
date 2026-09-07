@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
-from functools import lru_cache
 
 from multiformats import CID, multihash
 from pydantic import (
-    AwareDatetime,
     BaseModel,
     ConfigDict,
     StrictStr,
@@ -16,40 +13,19 @@ from pydantic import (
     field_validator,
 )
 
-from discovery_net.knowledge_graph.enums import ContributionKind, RelationKind
-from discovery_net.knowledge_graph.identifiers import ArtifactRef
-from discovery_net.knowledge_graph.models import Artifact, Contribution, ContributionRelation
+from discovery_net.artifacts.encoding import CodecError as CodecError
+from discovery_net.artifacts.encoding import canonical_json as _canonical_json
+from discovery_net.artifacts.identifiers import ArtifactRef
+from discovery_net.artifacts.identifiers import parse_artifact_ref as parse_artifact_ref
+from discovery_net.domains.math.codec import MATH_DOMAIN
+from discovery_net.domains.math.models import Artifact
 from discovery_net.wire.envelope import PayloadType, SignedEnvelope, SignedTransaction
 
 type JSONObject = dict[str, object]
 
 
-class CodecError(ValueError):
-    """Raised when application bytes do not follow the canonical wire format."""
-
-
 class _WireModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-
-class _ContributionPayload(_WireModel):
-    body: StrictStr
-    created_at: AwareDatetime
-    kind: ContributionKind
-    title: StrictStr
-
-
-class _RelationPayload(_WireModel):
-    created_at: AwareDatetime
-    from_contribution: StrictStr
-    kind: RelationKind
-    to_contribution: StrictStr
-
-    @field_validator("from_contribution", "to_contribution")
-    @classmethod
-    def validate_contribution_ref(cls, value: str) -> str:
-        parse_artifact_ref(value)
-        return value
 
 
 class _EnvelopePayload(_WireModel):
@@ -91,68 +67,18 @@ class _TransactionPayload(_WireModel):
 
 
 def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
-    """Encode a supported knowledge-graph artifact into canonical JSON bytes."""
-
-    try:
-        if isinstance(artifact, Contribution):
-            model = _ContributionPayload(
-                body=artifact.body,
-                created_at=artifact.created_at,
-                kind=artifact.kind,
-                title=artifact.title,
-            )
-            return PayloadType.CONTRIBUTION, _canonical_json(_contribution_value(model))
-
-        if isinstance(artifact, ContributionRelation):
-            relation = _RelationPayload(
-                created_at=artifact.created_at,
-                from_contribution=artifact.from_contribution,
-                kind=artifact.kind,
-                to_contribution=artifact.to_contribution,
-            )
-            return PayloadType.CONTRIBUTION_RELATION, _canonical_json(_relation_value(relation))
-    except ValidationError as error:
-        raise CodecError("artifact fields are invalid") from error
-
-    raise TypeError("artifact must be a Contribution or ContributionRelation")
+    """Encode the one domain supported by the current network protocol."""
+    payload_type, encoded = MATH_DOMAIN.encode(artifact)
+    return PayloadType(payload_type), encoded
 
 
 def decode_payload(payload_type: PayloadType, data: bytes) -> Artifact:
-    """Decode one canonical knowledge-graph payload."""
-
+    """Validate a math payload without enabling additional wire types."""
     if not isinstance(data, bytes):
         raise TypeError("payload data must be bytes")
-
-    try:
-        if payload_type is PayloadType.CONTRIBUTION:
-            model = _ContributionPayload.model_validate_json(data)
-            artifact: Artifact = Contribution(
-                kind=model.kind,
-                title=model.title,
-                body=model.body,
-                created_at=model.created_at,
-            )
-        elif payload_type is PayloadType.CONTRIBUTION_RELATION:
-            relation = _RelationPayload.model_validate_json(data)
-            artifact = ContributionRelation(
-                from_contribution=ArtifactRef(relation.from_contribution),
-                to_contribution=ArtifactRef(relation.to_contribution),
-                kind=relation.kind,
-                created_at=relation.created_at,
-            )
-        else:
-            raise CodecError("payload type is not supported")
-    except ValidationError as error:
-        raise CodecError("payload fields are invalid") from error
-    except (TypeError, ValueError) as error:
-        if isinstance(error, CodecError):
-            raise
-        raise CodecError("payload fields are invalid") from error
-
-    _, canonical = encode_payload(artifact)
-    if canonical != data:
-        raise CodecError("payload is not canonical")
-    return artifact
+    if not isinstance(payload_type, PayloadType):
+        raise CodecError("payload type is not supported")
+    return MATH_DOMAIN.decode(payload_type.value, data)
 
 
 def encode_signing_payload(envelope: SignedEnvelope) -> bytes:
@@ -224,59 +150,10 @@ def artifact_ref(envelope: SignedEnvelope) -> ArtifactRef:
     return ArtifactRef(str(CID("base32", 1, "raw", digest)))
 
 
-def parse_artifact_ref(value: str) -> ArtifactRef:
-    """Validate and return a canonical Discovery Net artifact reference."""
-
-    if not isinstance(value, str):
-        raise TypeError("artifact reference must be a string")
-    return _parse_artifact_ref(value)
-
-
-@lru_cache(maxsize=8192)
-def _parse_artifact_ref(value: str) -> ArtifactRef:
-    try:
-        cid = CID.decode(value)
-    except (KeyError, ValueError) as error:
-        raise ValueError("artifact reference must be a valid CID") from error
-    if (
-        cid.version != 1
-        or cid.base.name != "base32"
-        or cid.codec.name != "raw"
-        or cid.hashfun.name != "sha2-256"
-        or str(cid) != value
-    ):
-        raise ValueError("artifact reference must be canonical CIDv1 raw sha2-256 base32")
-    return ArtifactRef(value)
-
-
-def _contribution_value(model: _ContributionPayload) -> JSONObject:
-    return {
-        "body": model.body,
-        "created_at": _encode_datetime(model.created_at),
-        "kind": model.kind.value,
-        "title": model.title,
-    }
-
-
-def _relation_value(model: _RelationPayload) -> JSONObject:
-    return {
-        "created_at": _encode_datetime(model.created_at),
-        "from_contribution": model.from_contribution,
-        "kind": model.kind.value,
-        "to_contribution": model.to_contribution,
-    }
-
-
 def _envelope_value(envelope: SignedEnvelope, *, include_signature: bool) -> JSONObject:
     artifact = decode_payload(envelope.payload_type, envelope.payload)
-    if isinstance(artifact, Contribution):
-        payload_type, payload = encode_payload(artifact)
-        payload_model = _ContributionPayload.model_validate_json(payload)
-        payload_value = _contribution_value(payload_model)
-    else:
-        payload_type, payload = encode_payload(artifact)
-        relation_model = _RelationPayload.model_validate_json(payload)
-        payload_value = _relation_value(relation_model)
+    payload_type, payload = encode_payload(artifact)
+    payload_value: JSONObject = json.loads(payload)
 
     model = _EnvelopePayload(
         chain_id=envelope.chain_id,
@@ -323,26 +200,8 @@ def _envelope_from_model(model: _EnvelopePayload) -> SignedEnvelope:
     return envelope
 
 
-def _canonical_json(value: object) -> bytes:
-    try:
-        encoded = json.dumps(
-            value,
-            allow_nan=False,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-    except (TypeError, ValueError) as error:
-        raise CodecError("value cannot be represented as canonical JSON") from error
-    return encoded.encode("utf-8")
-
-
 def _validate_lower_hex(value: str, field_name: str, byte_length: int) -> None:
     if len(value) != byte_length * 2 or any(
         character not in "0123456789abcdef" for character in value
     ):
         raise ValueError(f"{field_name} must be lowercase hexadecimal for {byte_length} bytes")
-
-
-def _encode_datetime(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")

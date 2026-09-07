@@ -8,6 +8,13 @@ from typing import Final, final
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import (
+    Contribution,
+    ContributionKind,
+    ContributionRelation,
+    RelationKind,
+)
 from discovery_net.inspector.models import (
     ConnectionDirection,
     NodeObservation,
@@ -15,13 +22,6 @@ from discovery_net.inspector.models import (
 )
 from discovery_net.inspector.service import InspectorService
 from discovery_net.inspector.sources import ArtifactLedgerUpdate
-from discovery_net.knowledge_graph import (
-    ArtifactRef,
-    Contribution,
-    ContributionKind,
-    ContributionRelation,
-    RelationKind,
-)
 from discovery_net.node import ArtifactLedgerEntry, ArtifactLedgerSnapshot
 from discovery_net.wire import artifact_ref, sign_artifact, sign_transaction
 

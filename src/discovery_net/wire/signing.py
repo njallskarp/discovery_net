@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from discovery_net.knowledge_graph import Artifact
+from discovery_net.domains.math import Artifact
 from discovery_net.wire.codec import (
     decode_payload,
     encode_payload,

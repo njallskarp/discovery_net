@@ -1,6 +1,6 @@
 # Application messages shared by artifact submitters and nodes.
 
-from discovery_net.knowledge_graph.models import Artifact
+from discovery_net.domains.math import Artifact
 from discovery_net.wire.codec import (
     CodecError,
     artifact_ref,

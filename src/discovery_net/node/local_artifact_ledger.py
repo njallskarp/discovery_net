@@ -7,7 +7,7 @@ from enum import StrEnum
 from hashlib import sha256
 from typing import Final, Protocol, final
 
-from discovery_net.knowledge_graph import ArtifactRef
+from discovery_net.artifacts import ArtifactRef
 from discovery_net.wire import SignedEnvelope, SignedTransaction, artifact_ref, encode_transaction
 
 _LEDGER_HASH_DOMAIN: Final = b"discovery-net:artifact-ledger:\x00"

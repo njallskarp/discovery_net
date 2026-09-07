@@ -9,13 +9,13 @@ from typing import cast, final
 import strawberry
 from strawberry.types import Info
 
-from discovery_net.indexing import IndexedArtifact
-from discovery_net.knowledge_graph import (
+from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
     ContributionRelation,
     RelationKind,
 )
+from discovery_net.indexing import IndexedArtifact
 from discovery_net.query import KnowledgeGraphQueries
 from discovery_net.wire import parse_artifact_ref
 
