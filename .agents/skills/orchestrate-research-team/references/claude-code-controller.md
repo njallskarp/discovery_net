@@ -100,6 +100,14 @@ key rather than the operator's default identity; the clone records it in
 as well as by their `$name`, and give the absolute paths of the Discovery Net CLI, the
 node's ledger, and the agent's signing key under the controller's `keys/` directory.
 
+## Stopping a pass
+
+The CLI runs in its own session with its output captured to files, so background jobs an
+agent leaves running cannot hold a pass open or signal the controller worker. `stop`
+ends an in-flight pass: the worker terminates the CLI, records the interruption in
+`failures.jsonl` and `last-run.json`, and exits. A pass ended this way is redone on the
+next `start`; the session transcript is kept, so the agent sees where it stopped.
+
 ## Usage records
 
 Each pass appends the usual usage record plus `runner: claude-code` and `cost_usd`, the

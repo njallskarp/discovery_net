@@ -17,8 +17,10 @@ argv = sys.argv[1:]
 prompt = sys.stdin.read()
 log = os.environ["FAKE_CLAUDE_LOG"]
 inherited = sorted(k for k in os.environ if k.startswith("CLAUDE") and k != "CLAUDE_CONFIG_DIR")
+own_session = os.getsid(0) != os.getsid(os.getppid())
 with open(log, "a") as handle:
-    record = {"argv": argv, "prompt": prompt, "cwd": os.getcwd(), "inherited": inherited}
+    record = {"argv": argv, "prompt": prompt, "cwd": os.getcwd(), "inherited": inherited,
+              "own_session": own_session}
     handle.write(json.dumps(record) + "\\n")
 if argv == ["--version"]:
     print("9.9.9 (Claude Code)")
@@ -34,6 +36,12 @@ if "--resume" in argv and marker and not os.path.exists(marker):
     sys.exit(1)
 flag = "--session-id" if "--session-id" in argv else "--resume"
 session = argv[argv.index(flag) + 1]
+if os.environ.get("FAKE_CLAUDE_LINGER"):
+    import subprocess
+    subprocess.Popen(["sleep", os.environ["FAKE_CLAUDE_LINGER"]])  # inherits stdout/stderr
+if os.environ.get("FAKE_CLAUDE_HANG"):
+    import time
+    time.sleep(float(os.environ["FAKE_CLAUDE_HANG"]))
 print("[claude-code:telemetry] {\\"noise\\": true}")
 print(json.dumps({
     "type": "result", "subtype": "success", "is_error": False, "num_turns": 3,
@@ -324,3 +332,74 @@ def test_failure_detail_prefers_the_cli_error_result_over_log_noise() -> None:
 
     no_result = subprocess.CompletedProcess(["claude"], 1, stdout="", stderr="boom\n")
     assert claude_code.failure_detail(no_result) == "boom"
+
+
+def test_invoke_returns_when_cli_exits_despite_lingering_background_child(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    import time
+
+    _install_fake_claude(tmp_path, monkeypatch)
+    monkeypatch.setenv("FAKE_CLAUDE_LINGER", "8")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    started = time.monotonic()
+    result = claude_code.run_pass(
+        prompt="ignored",
+        fresh_prompt="FULL MANDATE",
+        workspace=workspace,
+        model=None,
+        effort="high",
+        permissions="workspace-write",
+        web_search="live",
+        session_id=None,
+        max_pass_usd=None,
+    )
+    assert time.monotonic() - started < 4, "a lingering child held the pass open"
+    assert result.response == "pass complete: FULL MANDATE"
+
+
+def test_cli_runs_in_its_own_session_and_terminate_active_stops_it(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    import threading
+    import time
+
+    log = _install_fake_claude(tmp_path, monkeypatch)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    common: dict[str, Any] = {
+        "prompt": "ignored",
+        "fresh_prompt": "FULL MANDATE",
+        "workspace": workspace,
+        "model": None,
+        "effort": "high",
+        "permissions": "workspace-write",
+        "web_search": "live",
+        "session_id": None,
+        "max_pass_usd": None,
+    }
+    claude_code.run_pass(**common)
+    assert _calls(log)[-1]["own_session"] is True
+
+    monkeypatch.setenv("FAKE_CLAUDE_HANG", "30")
+    errors: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            claude_code.run_pass(**common)
+        except BaseException as exc:  # the test inspects the error
+            errors.append(exc)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not claude_code._ACTIVE and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert claude_code._ACTIVE, "the CLI pass did not start"
+    started = time.monotonic()
+    assert claude_code.terminate_active(grace_seconds=2) == 1
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert time.monotonic() - started < 8
+    assert errors and "exited" in str(errors[0])

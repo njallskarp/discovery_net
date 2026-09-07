@@ -78,6 +78,22 @@ class ControllerError(RuntimeError):
     """A user-facing controller error."""
 
 
+class WorkerStopped(Exception):
+    """Raised inside a worker when the controller asks it to stop."""
+
+
+def _handle_worker_signal(signum: int, frame: object) -> None:
+    # Stop the CLI first: asyncio.run() only re-raises once its worker thread returns, and
+    # that thread is blocked on the CLI process. Ending the CLI here lets the exception
+    # reach the pass loop within seconds so the interruption is recorded as a failure.
+    claude_code.terminate_active(grace_seconds=5.0)
+    raise WorkerStopped(f"worker received signal {signum} while a pass was running")
+
+
+def current_pass_path(name: str) -> Path:
+    return state_path("work", name, "current-pass.json")
+
+
 @dataclass(frozen=True)
 class PromptConfig:
     role: str
@@ -535,6 +551,7 @@ def spawn_worker(name: str) -> int | None:
     if running_runtime(name) is not None:
         raise ControllerError(f"agent is already running: {name}")
     last_run_path(name).unlink(missing_ok=True)
+    current_pass_path(name).unlink(missing_ok=True)
     nonce = secrets.token_hex(16)
     if TESTING:
         with state_path("launches.log").open("a") as log:
@@ -597,10 +614,11 @@ def stop_worker(name: str, *, quiet: bool = False) -> bool:
     except ProcessLookupError:
         runtime_path(name).unlink(missing_ok=True)
         return False
-    deadline = time.monotonic() + 15
+    deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if not process_matches(name, runtime):
             runtime_path(name).unlink(missing_ok=True)
+            current_pass_path(name).unlink(missing_ok=True)
             return True
         time.sleep(0.1)
     with contextlib.suppress(ProcessLookupError):
@@ -609,6 +627,7 @@ def stop_worker(name: str, *, quiet: bool = False) -> bool:
         else:
             os.kill(pid, signal.SIGKILL)
     runtime_path(name).unlink(missing_ok=True)
+    current_pass_path(name).unlink(missing_ok=True)
     return True
 
 
@@ -716,6 +735,7 @@ def status_records() -> list[dict[str, Any]]:
                 "usage": usage,
                 "limit_reason": limit_reason(name, config),
                 "last_run": read_last_run(name),
+                "stale_pass_marker": runtime is None and current_pass_path(name).exists(),
             }
         )
     return records
@@ -1101,76 +1121,90 @@ def worker(name: str, nonce: str) -> None:
         time.sleep(0.02)
     else:
         raise ControllerError("worker runtime registration is missing")
+    signal.signal(signal.SIGTERM, _handle_worker_signal)
     with hold_worker_lock(name):
         try:
-            while True:
-                config = parse_prompt(require_agent(name))
-                reason = limit_reason(name, config)
-                if reason is not None:
-                    record_change(f"stopped {name}; {reason}")
-                    print(f"{iso_timestamp()} stopping: {reason}", flush=True)
-                    return
-                print(
-                    f"{iso_timestamp()} starting pass (runner={config.runner}, "
-                    f"effort={config.effort}, tier={config.tier}, mode={config.mode})",
-                    flush=True,
-                )
-                pass_started_at = iso_timestamp()
-                atomic_write(
-                    state_path("work", name, "current-pass.json"),
-                    json.dumps(
-                        {
-                            "agent": name,
-                            "role": config.role,
-                            "started_at": pass_started_at,
-                        },
-                        indent=2,
-                        sort_keys=True,
-                    )
-                    + "\n",
-                )
-                try:
-                    config = asyncio.run(run_one_pass(name))
-                    print(f"{iso_timestamp()} pass completed", flush=True)
-                except Exception as exc:
-                    finished_at = iso_timestamp()
-                    append_json(
-                        state_path("work", name, "failures.jsonl"),
-                        {
-                            "timestamp": iso_timestamp(),
-                            "agent": name,
-                            "role": config.role,
-                            "started_at": pass_started_at,
-                            "finished_at": finished_at,
-                            "error": f"{type(exc).__name__}: {exc}",
-                        },
-                    )
-                    print(
-                        f"{iso_timestamp()} pass failed: {type(exc).__name__}: {exc}",
-                        flush=True,
-                    )
-                    write_last_run(
-                        name,
-                        {
-                            "status": "failed",
-                            "started_at": pass_started_at,
-                            "finished_at": finished_at,
-                            "error": f"{type(exc).__name__}: {exc}",
-                        },
-                    )
-                finally:
-                    state_path("work", name, "current-pass.json").unlink(missing_ok=True)
-                if config.mode == "oneshot":
-                    return
-                reason = limit_reason(name, config)
-                if reason is not None:
-                    record_change(f"stopped {name}; {reason}")
-                    print(f"{iso_timestamp()} stopping: {reason}", flush=True)
-                    return
-                time.sleep(config.restart_seconds)
+            _worker_loop(name)
+        except WorkerStopped as exc:
+            print(f"{iso_timestamp()} {exc}; exiting", flush=True)
         finally:
             if runtime_belongs_to_worker(name, nonce):
                 runtime_path(name).unlink(missing_ok=True)
+
+
+def _worker_loop(name: str) -> None:
+    while True:
+        config = parse_prompt(require_agent(name))
+        reason = limit_reason(name, config)
+        if reason is not None:
+            record_change(f"stopped {name}; {reason}")
+            print(f"{iso_timestamp()} stopping: {reason}", flush=True)
+            return
+        print(
+            f"{iso_timestamp()} starting pass (runner={config.runner}, "
+            f"effort={config.effort}, tier={config.tier}, mode={config.mode})",
+            flush=True,
+        )
+        pass_started_at = iso_timestamp()
+        stopped = False
+        atomic_write(
+            current_pass_path(name),
+            json.dumps(
+                {
+                    "agent": name,
+                    "role": config.role,
+                    "started_at": pass_started_at,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+        )
+        try:
+            config = asyncio.run(run_one_pass(name))
+            print(f"{iso_timestamp()} pass completed", flush=True)
+        except Exception as exc:
+            stopped = isinstance(exc, WorkerStopped)
+            if stopped:
+                claude_code.terminate_active()
+            finished_at = iso_timestamp()
+            append_json(
+                state_path("work", name, "failures.jsonl"),
+                {
+                    "timestamp": iso_timestamp(),
+                    "agent": name,
+                    "role": config.role,
+                    "started_at": pass_started_at,
+                    "finished_at": finished_at,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            print(
+                f"{iso_timestamp()} pass failed: {type(exc).__name__}: {exc}",
+                flush=True,
+            )
+            write_last_run(
+                name,
+                {
+                    "status": "failed",
+                    "started_at": pass_started_at,
+                    "finished_at": finished_at,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+        finally:
+            current_pass_path(name).unlink(missing_ok=True)
+        if stopped:
+            record_change(f"stopped {name} during a pass")
+            return
+        if config.mode == "oneshot":
+            return
+        reason = limit_reason(name, config)
+        if reason is not None:
+            record_change(f"stopped {name}; {reason}")
+            print(f"{iso_timestamp()} stopping: {reason}", flush=True)
+            return
+        time.sleep(config.restart_seconds)
 
 
 def build_parser() -> argparse.ArgumentParser:

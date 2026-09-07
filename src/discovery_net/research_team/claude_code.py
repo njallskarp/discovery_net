@@ -8,10 +8,14 @@ existing Claude Code login; no API key is read or written here.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
+import signal
 import subprocess
+import tempfile
+import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -150,18 +154,60 @@ def _integer(value: Any) -> int:
         return 0
 
 
+_ACTIVE: set[subprocess.Popen[str]] = set()
+
+
 def _invoke(
     command: list[str], *, prompt: str, workspace: Path
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        command,
-        input=prompt,
-        cwd=workspace,
-        env=runtime_environment(),
-        check=False,
-        text=True,
-        capture_output=True,
-    )
+    """Run one CLI pass and return its captured output.
+
+    Output goes to files rather than pipes: a background job the agent leaves running
+    would inherit a pipe and keep the pass open long after the CLI had exited. The CLI
+    also gets its own session so process-group signals from the agent's shell never
+    reach the controller worker, and ``terminate_active`` can stop it deliberately.
+    """
+    with tempfile.TemporaryDirectory(prefix="claude-pass-") as directory:
+        stdout_path = Path(directory) / "stdout"
+        stderr_path = Path(directory) / "stderr"
+        with stdout_path.open("w") as stdout, stderr_path.open("w") as stderr:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=stdout,
+                stderr=stderr,
+                cwd=workspace,
+                env=runtime_environment(),
+                text=True,
+                start_new_session=True,
+            )
+            _ACTIVE.add(process)
+            try:
+                process.communicate(prompt)
+            finally:
+                _ACTIVE.discard(process)
+        return subprocess.CompletedProcess(
+            command,
+            process.returncode,
+            stdout_path.read_text(errors="replace"),
+            stderr_path.read_text(errors="replace"),
+        )
+
+
+def terminate_active(grace_seconds: float = 10.0) -> int:
+    """Stop every CLI pass this process started; returns how many were signalled."""
+    processes = [process for process in _ACTIVE if process.poll() is None]
+    for process in processes:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+    deadline = time.monotonic() + grace_seconds
+    for process in processes:
+        while process.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.1)
+        if process.poll() is None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+    return len(processes)
 
 
 def failure_detail(completed: subprocess.CompletedProcess[str]) -> str:

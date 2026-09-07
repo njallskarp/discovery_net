@@ -189,6 +189,8 @@ def impact_prompt(context: ImpactContext) -> str:
         "Use `substantial` or `major` only when the evidence packet supports it. If there are no "
         "runs, return an empty "
         "assessments array and explain that there was no new completed work.\n"
+        "Coverage is checked exactly: `assessments` must contain one entry per `run_id` in "
+        "`runs`, each copied verbatim, with no omissions, duplicates, or invented ids. "
         "Hard length limits, enforced by the controller: `lane_title` at most 120 characters, "
         "`summary` at most 500, `rationale` and `portfolio_summary` at most 1500, and at most "
         "8 entries each in `evidence` and `caveats`. A response over any limit is rejected "
