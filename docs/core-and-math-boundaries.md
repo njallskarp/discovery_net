@@ -1,8 +1,9 @@
 # Core and math boundaries
 
-This refactor preserves the existing network format and default graph behavior.
-It does not register additional domains with the running network or introduce a
-new topology, validator role, or public version selector.
+Math payloads retain their original network encodings and identifiers. The shared
+[edge revocation primitive](edge-revocation.md) adds authorized edge withdrawal from the
+canonical graph while preserving raw signed history. No public topology version
+selector or additional research domain is registered.
 
 | Package | Responsibility |
 |---|---|
@@ -24,7 +25,7 @@ does not make its payload type admissible in the live wire protocol.
 
 `ArtifactIndex` stores `IndexedEnvelope` records and original ledger provenance.
 Its updates return a new index, preserving existing records. `GraphProjection`
-interprets each record as a `GraphNode`, a `GraphEdge`, or an omitted artifact.
+interprets each record as a `GraphNode`, a `GraphEdge`, a `GraphEdgeRevocation`, or an omitted artifact.
 `ProjectedGraph` builds direction and kind indexes over that selection. Edges to
 nodes excluded by the projection do not participate in traversal. Raw lookup still
 returns every original record.

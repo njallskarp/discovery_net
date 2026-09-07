@@ -33,6 +33,10 @@ class KnowledgeGraphQueries:
         """Return an artifact by reference, if it is indexed."""
         return self._index.get(artifact_ref)
 
+    def revocations(self, target: ArtifactRef | None = None) -> tuple[IndexedArtifact, ...]:
+        """Return signed withdrawal records without filtering their historical targets."""
+        return self._index.revocations(target)
+
     def contributions(self) -> tuple[IndexedArtifact, ...]:
         """Return all indexed contributions."""
         return self._index.contributions()
@@ -62,16 +66,18 @@ class KnowledgeGraphQueries:
             and text in indexed.artifact.title.casefold()
         )
 
-    def relations(self) -> tuple[IndexedArtifact, ...]:
-        """Return all indexed contribution relations."""
-        return self._index.relations()
+    def relations(self, *, include_revoked: bool = False) -> tuple[IndexedArtifact, ...]:
+        """Return active edges, optionally including permanently revoked edges for audit."""
+        return self._index.relations(include_revoked=include_revoked)
 
     def relations_by_kind(
         self,
         kind: RelationKind,
+        *,
+        include_revoked: bool = False,
     ) -> tuple[IndexedArtifact, ...]:
         """Return contribution relations of one kind."""
-        return self._index.relations(kind)
+        return self._index.relations(kind, include_revoked=include_revoked)
 
     def outgoing_relations_by_ref(
         self,

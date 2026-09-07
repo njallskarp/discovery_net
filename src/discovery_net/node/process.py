@@ -9,6 +9,7 @@ from pathlib import Path
 from discovery_net.node.abci import CometBFTABCIAdapter
 from discovery_net.node.abci_grpc_server import ABCIGRPCServer
 from discovery_net.node.cometbft_callback_handler import CometBFTCallbackHandler
+from discovery_net.node.genesis_authority import load_voting_power
 from discovery_net.node.store.sqlite_store import SQLiteArtifactLedgerStore
 from discovery_net.node.transaction_validator import TransactionValidator
 
@@ -21,7 +22,14 @@ def main() -> None:
     server = ABCIGRPCServer(
         adapter=CometBFTABCIAdapter(
             handler=CometBFTCallbackHandler(
-                validator=TransactionValidator(expected_chain_id=arguments.chain_id),
+                validator=TransactionValidator(
+                    expected_chain_id=arguments.chain_id,
+                    voting_power=load_voting_power(
+                        chain_id=arguments.chain_id,
+                        genesis=arguments.genesis,
+                        genesis_sha256=arguments.genesis_sha256,
+                    ),
+                ),
                 store=SQLiteArtifactLedgerStore(path=arguments.ledger_path),
             )
         ),
@@ -52,6 +60,12 @@ def _argument_parser() -> argparse.ArgumentParser:
         "--abci-listen-address",
         default=_DEFAULT_ABCI_LISTEN_ADDRESS,
         help=f"gRPC address exposed to CometBFT (default: {_DEFAULT_ABCI_LISTEN_ADDRESS})",
+    )
+    parser.add_argument(
+        "--genesis", type=Path, help="trusted CometBFT genesis for revocation authority"
+    )
+    parser.add_argument(
+        "--genesis-sha256", help="trusted SHA-256 of the same genesis used by CometBFT"
     )
     return parser
 

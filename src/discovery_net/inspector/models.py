@@ -170,6 +170,17 @@ class InspectorKnowledgeGraph(_InspectorModel):
     relations: tuple[InspectorRelationSummary, ...]
 
 
+class InspectorRevocation(_InspectorModel):
+    """A signed withdrawal retained in the historical transaction feed."""
+
+    artifact_ref: StrictStr
+    target: StrictStr
+    reason: StrictStr
+    created_at: AwareDatetime
+    signer_public_key: StrictStr
+    signature: StrictStr
+
+
 class InspectorFeedTransaction(_InspectorModel):
     """One committed transaction rendered as an atomic feed item."""
 
@@ -177,6 +188,7 @@ class InspectorFeedTransaction(_InspectorModel):
     transaction_index: NonNegativeInt
     contributions: tuple[InspectorContribution, ...]
     relations: tuple[InspectorRelation, ...]
+    revocations: tuple[InspectorRevocation, ...] = ()
 
 
 class InspectorFeedPage(_InspectorModel):

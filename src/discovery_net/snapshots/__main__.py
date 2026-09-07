@@ -18,12 +18,16 @@ def main(arguments: Sequence[str] | None = None) -> int:
     baseline.add_argument("--ledger", type=Path, required=True)
     baseline.add_argument("--output", type=Path, required=True)
     baseline.add_argument("--chain-id", required=True)
+    baseline.add_argument("--genesis", type=Path)
+    baseline.add_argument("--genesis-sha256")
     parsed = parser.parse_args(arguments)
     try:
         manifest = export_baseline(
             ledger=parsed.ledger,
             output=parsed.output,
             chain_id=parsed.chain_id,
+            genesis=parsed.genesis,
+            genesis_sha256=parsed.genesis_sha256,
         )
     except (OSError, sqlite3.Error, TypeError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)

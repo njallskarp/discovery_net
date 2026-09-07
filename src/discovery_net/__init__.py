@@ -4,6 +4,7 @@
 # Peers ↔ CometBFT → CometBFTABCIAdapter → CometBFTCallbackHandler → LocalArtifactLedger
 
 from discovery_net.artifacts import ArtifactRef
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
@@ -16,5 +17,6 @@ __all__ = [
     "Contribution",
     "ContributionKind",
     "ContributionRelation",
+    "EdgeRevocation",
     "RelationKind",
 ]

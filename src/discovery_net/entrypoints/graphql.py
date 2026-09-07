@@ -9,6 +9,7 @@ from typing import cast, final
 import strawberry
 from strawberry.types import Info
 
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
@@ -152,6 +153,10 @@ class _ContributionNode(_ArtifactNode):
 
 @strawberry.type(name="Relation")
 class _RelationNode(_ArtifactNode):
+    @strawberry.field
+    def revoked(self, info: Info[_GraphQLContext, None]) -> bool:
+        return bool(info.context.queries.revocations(self._indexed.artifact_ref))
+
     @property
     def _relation(self) -> ContributionRelation:
         artifact = self._indexed.artifact
@@ -184,8 +189,37 @@ class _RelationNode(_ArtifactNode):
         )
 
 
+@strawberry.type(name="EdgeRevocation")
+class _EdgeRevocationNode(_ArtifactNode):
+    @property
+    def _revocation(self) -> EdgeRevocation:
+        artifact = self._indexed.artifact
+        assert isinstance(artifact, EdgeRevocation)
+        return artifact
+
+    @strawberry.field
+    def target_ref(self) -> strawberry.ID:
+        return strawberry.ID(self._revocation.target)
+
+    @strawberry.field
+    def reason(self) -> str:
+        return self._revocation.reason
+
+
 @strawberry.type(name="Query")
 class _Query:
+    @strawberry.field
+    def revocations(
+        self,
+        info: Info[_GraphQLContext, None],
+        target: strawberry.ID | None = None,
+    ) -> list[_EdgeRevocationNode]:
+        reference = None if target is None else parse_artifact_ref(str(target))
+        return [
+            _EdgeRevocationNode(_indexed=value)
+            for value in info.context.queries.revocations(reference)
+        ]
+
     @strawberry.field
     def indexed_height(self, info: Info[_GraphQLContext, None]) -> str:
         return str(info.context.queries.indexed_height)
@@ -227,18 +261,19 @@ class _Query:
         self,
         info: Info[_GraphQLContext, None],
         kind: RelationKind | None = None,
+        include_revoked: bool = False,
     ) -> list[_RelationNode]:
         indexed = (
-            info.context.queries.relations()
+            info.context.queries.relations(include_revoked=include_revoked)
             if kind is None
-            else info.context.queries.relations_by_kind(kind)
+            else info.context.queries.relations_by_kind(kind, include_revoked=include_revoked)
         )
         return _relation_nodes(indexed)
 
 
 _SCHEMA = strawberry.Schema(
     query=_Query,
-    types=(_ContributionNode, _RelationNode),
+    types=(_ContributionNode, _RelationNode, _EdgeRevocationNode),
 )
 
 
@@ -282,6 +317,8 @@ def _artifact_node(indexed: IndexedArtifact | None) -> _ArtifactNode | None:
         return None
     if isinstance(indexed.artifact, Contribution):
         return _ContributionNode(_indexed=indexed)
+    if isinstance(indexed.artifact, EdgeRevocation):
+        return _EdgeRevocationNode(_indexed=indexed)
     return _RelationNode(_indexed=indexed)
 
 

@@ -29,6 +29,10 @@ services:
       - discovery-node
       - --chain-id
       - ${CHAIN_ID:?Set the trusted genesis chain ID}
+      - --genesis
+      - /run/discovery-net/genesis.json
+      - --genesis-sha256
+      - ${GENESIS_SHA256:?Set the trusted genesis SHA-256 digest}
       - --ledger-path
       - /var/lib/discovery-net/artifact-ledger.sqlite
       - --abci-listen-address
@@ -46,6 +50,10 @@ services:
       - type: bind
         source: ${LEDGER_DATA_DIRECTORY:?Set an absolute ledger data directory}
         target: /var/lib/discovery-net
+      - type: bind
+        source: ${GENESIS_FILE:?Set an absolute trusted genesis file}
+        target: /run/discovery-net/genesis.json
+        read_only: true
     networks:
       private:
         aliases:

@@ -38,38 +38,42 @@ boundaries and needs no parallel V2 implementations.
 - Implement math and a second-domain contract test. A production security ontology,
   automated sanctions, and advanced reputation are later work.
 
-## Direct artifact revocation
+## Direct edge revocation
 
-Topology changes use independent new assertions and signed revocation contributions.
-A revocation carries a typed target artifact reference and an optional reason;
+Topology changes use independent new assertions and signed edge revocation records.
+An `EdgeRevocation` carries an existing edge reference and a required nonblank reason;
 chain and signer are bound by its signed envelope. It references no replacement,
-topology version, migration manifest, or proposal. The target must already exist.
+topology version, migration manifest, or proposal. The target must already exist
+and be a relation; contributions cannot be revoked.
 This requires a new structured artifact schema: a free-text body or an ordinary
 `supersedes` relation does not grant revocation semantics in the existing protocol.
 
 Authorization is deterministic and evaluated against previously committed state:
 
-- An author can withdraw their own ordinary research contribution or relation.
-  Signing an edge does not confer authority over either endpoint, and authoring an
-  endpoint does not confer authority over other people's incident edges.
-- Revoking another author's artifact requires an explicit grant covering the target
-  and action, or a direct threshold certificate over the exact revocation. The
-  certificate binds chain, target, action, electorate epoch, nonce, and expiry and
-  requires strictly more than two thirds of eligible voting power. Signatures can
-  be gathered before submission; no on-ledger proposal phase is required.
-- Reject unauthorized revocation transactions. Validators and non-voting full nodes
-  use the same checks. New grants in the transaction cannot authorize its revocations.
-- Authority records use their own governance/domain transition rules. Hiding a
-  contribution cannot revoke validator membership, erase a grant, or bypass the
-  identity/credential authorization state machines. Revocations themselves are not
-  targets of this initial mechanism; reinstatement is a separate future action.
+- Only an authenticated signer with positive validator voting power can revoke.
+  One validator is sufficient. Authors, area experts, and other contributors receive
+  no special permission. There are no proposal, certificate, or role frameworks.
+- `node.authorization.can_revoke` contains the complete policy as a pure function.
+  A future change may add domain expertise or ownership only with concrete authority
+  data and consensus tests; this PR introduces neither placeholder roles nor grants.
+- The current protocol has a fixed electorate and emits no validator updates.
+  Load voting power from hash-verified genesis on validators and non-voting nodes;
+  compare it against InitChain and reload it before replay on restart. Missing
+  authority fails closed. Dynamic membership must supply height-correct committed
+  voting power before that feature is enabled.
+- Reject unauthorized revocation transactions atomically. Validators and non-voting
+  full nodes execute the same checks. Running a node confers no signing privileges.
+- Authority records use their own governance/domain transition rules. Edge revocation
+  cannot revoke validator membership, erase a grant, or bypass identity/credential
+  authorization. Contributions and revocations cannot be targets. There is no
+  reinstatement operation; a new signed edge can assert the same relationship.
 
-Once committed, an authorized revocation excludes its target from canonical views.
-Revoking a contribution also excludes incident edges from traversal; it does not
-revoke those edges or hide neighboring contributions. Raw history and evidence stay
-accessible. Historical views apply only revocations committed by the requested
-height. Query indexes must update existing records when revocations arrive, including
-counts, adjacency, and endpoint selection; restart/rebuild must produce the same view.
+Once committed, an authorized revocation permanently excludes its exact edge from
+default graph views. Contributions and other edges are unaffected. Raw history and
+explicit audit queries retain revoked edges. Historical views apply only revocations
+committed by the requested height. Query indexes update graph selection when
+revocations arrive, including counts and adjacency, without modifying recorded
+artifacts; restart/rebuild must produce the same view.
 
 The offline migration plan groups work for review and reproducible submission only.
 It is not a consensus dependency. Submit a replacement edge and an authorized
@@ -103,6 +107,11 @@ Primary files: `knowledge_graph/`, new `domains/math/` and `snapshots/`,
 Merge gate: historical fixtures stay unchanged; source ledger is untouched; backup
 works with concurrent WAL writes; rebuilt/incremental indexes agree; current CLI
 and GraphQL behavior remains identical. No new live protocol behavior.
+
+A focused follow-up to PR 1, `codex/validator-artifact-revocation`, implements
+validator-only revocations before the topology work. It is stacked on PR #62 while
+that PR remains open. This extracts the revocation foundation originally planned
+inside PR 4; the remaining topology/governance sequence is unchanged.
 
 ## PR 2 — Build and validate the candidate math topology locally
 
@@ -178,11 +187,9 @@ Commit order:
 4. Add area-scoped credentials and separately governed curator grants. New area
    placements remain provisional until approved by an authorized curator; top-level
    structural changes require governance.
-5. Implement direct revocation contributions with typed artifact targets, author
-   withdrawal, scoped grants, and direct threshold certificates as specified above.
-   Keep identity/credential state transitions explicit. Test unauthorized targets,
-   signature substitution, stale authority, incident-edge filtering, historical
-   queries, and equivalence of incremental indexing and replay.
+5. Keep edge revocation restricted to validator signers unless a separately
+   reviewed policy change authorizes more roles. Identity/credential state transitions
+   remain explicit; update the voting-power source when membership becomes dynamic.
 
 Primary files: shared identity domain, `domains/math/`, domain wire resolver,
 governance grant handlers, identity/credential queries, authorization tests.
@@ -206,7 +213,7 @@ Commit order:
    verify receipts before revoking old edges and document intermediate overlap.
    The manifest coordinates the submitter, not ledger validation or query selection.
 3. Reconcile submissions since the baseline. Apply committed revocations to old and
-   new artifacts uniformly; no topology adoption action or timestamp filter exists.
+   new edges uniformly; no topology adoption action or timestamp filter exists.
 4. Expose `discovery-net math ...`; route CLI, GraphQL, inspector, counts, and
    traversals through the same canonical projection. Preserve raw historical lookup
    and compatible old command aliases.
@@ -229,7 +236,7 @@ Commit order:
    offline with its original chain context, without production validator keys or
    connections to live peers.
 2. Run active consensus separately with test keys: upgrade activation, validator
-   admission/removal, identity/key and artifact revocation, interrupted migration,
+   admission/removal, identity/key and edge revocation, interrupted migration,
    concurrent research, restart, and non-voting full-node verification.
 3. Record exact source/config/manifest hashes, topology comparisons, query costs,
    and full test results, including pinned CometBFT and Docker integration checks.

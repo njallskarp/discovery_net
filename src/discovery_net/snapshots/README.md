@@ -29,3 +29,9 @@ no signed chain identity, so its manifest sets `chain_id_verified` to false.
 
 The command runs offline and does not submit artifacts, connect to network
 peers, or change node startup behavior. Keep real baselines out of source control.
+
+For a ledger containing revocations, supply `--genesis /path/to/genesis.json` and
+`--genesis-sha256 TRUSTED_DIGEST`. Replay derives validator authority from that
+hash-verified public genesis and records its digest in the manifest. Without it,
+revocations fail authorization and the export is rejected. Retain the matching
+public genesis alongside the backup for future verification.

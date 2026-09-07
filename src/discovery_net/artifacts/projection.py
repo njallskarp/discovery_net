@@ -23,10 +23,19 @@ class GraphEdge:
     target: ArtifactRef
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class GraphEdgeRevocation:
+    """Permanently exclude one edge from a view of an already validated ledger."""
+
+    target: ArtifactRef
+
+
 class GraphProjection(Protocol):
     """A fixed, deterministic policy for a view; changing policy requires a rebuild."""
 
-    def project(self, record: IndexedEnvelope) -> GraphNode | GraphEdge | None: ...
+    def project(
+        self, record: IndexedEnvelope
+    ) -> GraphNode | GraphEdge | GraphEdgeRevocation | None: ...
 
 
 class ProjectedGraph:
@@ -62,11 +71,14 @@ class ProjectedGraph:
         *,
         raw: ArtifactIndex,
         projection: GraphProjection,
-        selected: dict[ArtifactRef, GraphNode | GraphEdge | None],
+        selected: dict[ArtifactRef, GraphNode | GraphEdge | GraphEdgeRevocation | None],
     ) -> None:
         self._raw = raw
         self._projection = projection
         self._selected = selected
+        revoked = {
+            shape.target for shape in selected.values() if isinstance(shape, GraphEdgeRevocation)
+        }
         self._nodes = {
             ref: shape for ref, shape in selected.items() if isinstance(shape, GraphNode)
         }
@@ -75,6 +87,7 @@ class ProjectedGraph:
             ref: shape
             for ref, shape in selected.items()
             if isinstance(shape, GraphEdge)
+            and ref not in revoked
             and shape.source in self._nodes
             and shape.target in self._nodes
         }
@@ -107,7 +120,20 @@ class ProjectedGraph:
     def nodes(self, kind: str | None = None) -> tuple[IndexedEnvelope, ...]:
         return self._records(tuple(self._nodes) if kind is None else self._node_kinds.get(kind, ()))
 
-    def edges(self, kind: str | None = None) -> tuple[IndexedEnvelope, ...]:
+    def edges(
+        self, kind: str | None = None, *, include_revoked: bool = False
+    ) -> tuple[IndexedEnvelope, ...]:
+        if include_revoked:
+            return self._records(
+                tuple(
+                    ref
+                    for ref, shape in self._selected.items()
+                    if isinstance(shape, GraphEdge)
+                    and shape.source in self._nodes
+                    and shape.target in self._nodes
+                    and (kind is None or shape.kind == kind)
+                )
+            )
         return self._records(tuple(self._edges) if kind is None else self._edge_kinds.get(kind, ()))
 
     def incoming(

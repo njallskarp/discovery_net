@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict
 from discovery_net.inspector.sqlite_ledger_reader import SQLiteArtifactLedgerReader
 from discovery_net.node import ArtifactLedgerSnapshot, TransactionValidator
 from discovery_net.node._ledger_from_snapshot import ledger_from_snapshot
+from discovery_net.node.genesis_authority import load_voting_power
 
 
 class BaselineManifest(BaseModel):
@@ -39,16 +40,29 @@ class BaselineManifest(BaseModel):
     source_revision: str | None
     source_dirty: bool | None
     captured_at: datetime
+    genesis_sha256: str | None = None
 
 
-def export_baseline(*, ledger: Path, output: Path, chain_id: str) -> BaselineManifest:
+def export_baseline(
+    *,
+    ledger: Path,
+    output: Path,
+    chain_id: str,
+    genesis: Path | None = None,
+    genesis_sha256: str | None = None,
+) -> BaselineManifest:
     """Verify a backup, then publish its files with manifest.json as completion marker.
 
     An existing output is never reused, including one created during the backup.
     All source transactions are read from a pinned SQLite snapshot. The copied
     ledger is verified without initializing or modifying its application schema.
     """
-    validator = TransactionValidator(expected_chain_id=chain_id)
+    validator = TransactionValidator(
+        expected_chain_id=chain_id,
+        voting_power=load_voting_power(
+            chain_id=chain_id, genesis=genesis, genesis_sha256=genesis_sha256
+        ),
+    )
     source = ledger.resolve(strict=True)
     if not source.is_file():
         raise ValueError("ledger must be a regular file")
@@ -87,6 +101,7 @@ def export_baseline(*, ledger: Path, output: Path, chain_id: str) -> BaselineMan
             source_revision=revision,
             source_dirty=dirty,
             captured_at=datetime.now(UTC),
+            genesis_sha256=genesis_sha256.lower() if genesis_sha256 is not None else None,
         )
         manifest_path = staging / "manifest.json"
         manifest_path.write_text(manifest.model_dump_json(indent=2) + "\n", encoding="utf-8")

@@ -106,6 +106,8 @@ def test_transaction_codes_are_stable() -> None:
         "MISSING_REFERENCE": TransactionCode(5),
         "TRANSACTION_TOO_LARGE": TransactionCode(6),
         "TOO_MANY_ARTIFACTS": TransactionCode(7),
+        "UNAUTHORIZED_REVOCATION": TransactionCode(8),
+        "INVALID_REVOCATION_TARGET": TransactionCode(9),
     }
 
 

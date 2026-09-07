@@ -11,6 +11,7 @@ SIGNATURE_LENGTH: Final = 64
 class PayloadType(StrEnum):
     """The application-level type of an envelope payload."""
 
+    EDGE_REVOCATION = "edge_revocation"
     CONTRIBUTION = "contribution"
     CONTRIBUTION_RELATION = "contribution_relation"
 
