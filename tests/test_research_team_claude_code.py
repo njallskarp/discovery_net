@@ -479,9 +479,10 @@ def test_impact_assessor_pass_feeds_the_previous_rejection_back(
         asyncio.run(controller.run_one_pass("impact-assessor-1"))
     assert "not in the packet: researcher-1:2026-09-05T17:56:56.728969+00:00" in str(excinfo.value)
     assert "## Previous pass rejected" not in prompts[0]
-    controller.write_last_run(
-        "impact-assessor-1", {"status": "failed", "error": f"ControllerError: {excinfo.value}"}
-    )
+    failures = controller.state_path("work", "impact-assessor-1", "failures.jsonl")
+    error = f"ControllerError: {excinfo.value}"
+    failure = {"finished_at": "2026-09-07T15:00:00+00:00", "error": error}
+    failures.write_text(json.dumps(failure) + "\n")
 
     asyncio.run(controller.run_one_pass("impact-assessor-1"))
     assert "## Previous pass rejected" in prompts[1]
@@ -489,3 +490,7 @@ def test_impact_assessor_pass_feeds_the_previous_rejection_back(
     assert prompts[1].index("Previous pass rejected") < prompts[1].index("impact-assessment packet")
     annotations = controller.state_path("impact", "annotations.jsonl").read_text()
     assert "728989" in annotations
+    assert controller.last_impact_rejection("impact-assessor-1") is None
+
+    asyncio.run(controller.run_one_pass("impact-assessor-1"))
+    assert "## Previous pass rejected" not in prompts[2]

@@ -1037,6 +1037,41 @@ def run_claude_code_pass(config: PromptConfig, prompt: str, session_id: str | No
     )
 
 
+def _last_jsonl_record(path: Path) -> dict[str, Any] | None:
+    try:
+        lines = path.read_text().splitlines()
+    except FileNotFoundError:
+        return None
+    for line in reversed(lines):
+        if line.strip():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                return None
+            return value if isinstance(value, dict) else None
+    return None
+
+
+def last_impact_rejection(name: str) -> str | None:
+    """Return the reason the assessor's latest pass was rejected, if nothing succeeded since.
+
+    Read from the durable failure log rather than ``last-run.json``, which every worker
+    start clears; a rejection must survive a restart or the assessor repeats it.
+    """
+    failure = _last_jsonl_record(state_path("work", name, "failures.jsonl"))
+    if failure is None:
+        return None
+    error = str(failure.get("error") or "")
+    if IMPACT_REJECTION_PREFIX not in error:
+        return None
+    success = _last_jsonl_record(state_path("work", name, "usage.jsonl"))
+    if success is not None and str(success.get("finished_at") or "") >= str(
+        failure.get("finished_at") or ""
+    ):
+        return None
+    return error.split(IMPACT_REJECTION_PREFIX, 1)[1]
+
+
 async def run_one_pass(name: str) -> PromptConfig:
     config = parse_prompt(require_agent(name))
     id_path = conversation_id_path(config, name)
@@ -1047,11 +1082,9 @@ async def run_one_pass(name: str) -> PromptConfig:
         if config.ledger_path is None:
             raise ControllerError("impact-assessor prompt has no ledger-path")
         impact_context = build_impact_context(state_root(), config.ledger_path)
-        last_run = read_last_run(name)
-        if last_run is not None and last_run.get("status") == "failed":
-            error = str(last_run.get("error") or "")
-            if IMPACT_REJECTION_PREFIX in error:
-                prompt += rejection_note(error.split(IMPACT_REJECTION_PREFIX, 1)[1])
+        rejection = last_impact_rejection(name)
+        if rejection is not None:
+            prompt += rejection_note(rejection)
         prompt += impact_prompt(impact_context)
     started_at = iso_timestamp()
     if config.runner == "claude-code":
