@@ -34,6 +34,7 @@ from discovery_net.research_team.impact import (
     impact_prompt,
     parse_impact_batch,
     record_impact_batch,
+    rejection_note,
     run_identifier,
 )
 
@@ -76,6 +77,9 @@ TESTING = os.environ.get("DISCOVERY_RESEARCH_TEAM_TESTING") == "1"
 
 class ControllerError(RuntimeError):
     """A user-facing controller error."""
+
+
+IMPACT_REJECTION_PREFIX = "invalid impact-assessor response: "
 
 
 class WorkerStopped(Exception):
@@ -1043,6 +1047,11 @@ async def run_one_pass(name: str) -> PromptConfig:
         if config.ledger_path is None:
             raise ControllerError("impact-assessor prompt has no ledger-path")
         impact_context = build_impact_context(state_root(), config.ledger_path)
+        last_run = read_last_run(name)
+        if last_run is not None and last_run.get("status") == "failed":
+            error = str(last_run.get("error") or "")
+            if IMPACT_REJECTION_PREFIX in error:
+                prompt += rejection_note(error.split(IMPACT_REJECTION_PREFIX, 1)[1])
         prompt += impact_prompt(impact_context)
     started_at = iso_timestamp()
     if config.runner == "claude-code":
@@ -1059,7 +1068,7 @@ async def run_one_pass(name: str) -> PromptConfig:
         try:
             impact_batch = parse_impact_batch(response, impact_context.run_ids)
         except ValueError as exc:
-            raise ControllerError(f"invalid impact-assessor response: {exc}") from exc
+            raise ControllerError(f"{IMPACT_REJECTION_PREFIX}{exc}") from exc
         record_impact_batch(
             state_root(),
             name,

@@ -403,3 +403,89 @@ def test_cli_runs_in_its_own_session_and_terminate_active_stops_it(
     assert not thread.is_alive()
     assert time.monotonic() - started < 8
     assert errors and "exited" in str(errors[0])
+
+
+def test_impact_assessor_pass_feeds_the_previous_rejection_back(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    from discovery_net.research_team.impact import ImpactContext
+
+    _install_fake_claude(tmp_path, monkeypatch)
+    monkeypatch.setenv("DISCOVERY_RESEARCH_TEAM_ROOT", str(tmp_path / "state"))
+    controller.ensure_state()
+    ledger = tmp_path / "ledger.sqlite"
+    ledger.touch()
+    _write_prompt(
+        controller.prompt_path("impact-assessor-1"),
+        tmp_path / "workspace",
+        role="impact-assessor",
+        model="claude-sonnet-5",
+        **{"ledger-path": str(ledger), "restart-seconds": "3600"},
+    )
+    controller.state_path("work", "impact-assessor-1", "reports").mkdir(parents=True)
+    context = ImpactContext(
+        payload={
+            "runs": [
+                {
+                    "run_id": "researcher-1:2026-09-05T17:56:56.728989+00:00",
+                    "agent": "researcher-1",
+                    "started_at": "2026-09-05T17:56:56.728989+00:00",
+                    "finished_at": "2026-09-05T18:00:00+00:00",
+                }
+            ]
+        },
+        run_ids=("researcher-1:2026-09-05T17:56:56.728989+00:00",),
+        latest_finished_at="2026-09-05T18:00:00+00:00",
+        indexed_height=1,
+    )
+    monkeypatch.setattr(controller, "build_impact_context", lambda *args, **kwargs: context)
+    prompts: list[str] = []
+
+    def fake_pass(config: Any, prompt: str, session_id: str | None) -> controller.PassOutcome:
+        prompts.append(prompt)
+        run_id = "researcher-1:2026-09-05T17:56:56.728969+00:00"
+        if len(prompts) > 1:
+            run_id = "researcher-1:2026-09-05T17:56:56.728989+00:00"
+        body = {
+            "portfolio_summary": "One run.",
+            "assessments": [
+                {
+                    "run_id": run_id,
+                    "lane_title": "R(5,5)",
+                    "change_type": "continuation",
+                    "impact": "routine",
+                    "novelty": "not_assessed",
+                    "paper_potential": "low",
+                    "confidence": "medium",
+                    "summary": "Routine.",
+                    "rationale": "Routine.",
+                    "evidence": [],
+                    "caveats": [],
+                }
+            ],
+        }
+        return controller.PassOutcome(
+            response="Same run again.\n\n```json\n" + json.dumps(body) + "\n```",
+            conversation_id="session",
+            input_tokens=1,
+            cached_input_tokens=0,
+            output_tokens=1,
+            cost_usd=0.1,
+        )
+
+    monkeypatch.setattr(controller, "run_claude_code_pass", fake_pass)
+
+    with pytest.raises(controller.ControllerError) as excinfo:
+        asyncio.run(controller.run_one_pass("impact-assessor-1"))
+    assert "not in the packet: researcher-1:2026-09-05T17:56:56.728969+00:00" in str(excinfo.value)
+    assert "## Previous pass rejected" not in prompts[0]
+    controller.write_last_run(
+        "impact-assessor-1", {"status": "failed", "error": f"ControllerError: {excinfo.value}"}
+    )
+
+    asyncio.run(controller.run_one_pass("impact-assessor-1"))
+    assert "## Previous pass rejected" in prompts[1]
+    assert "728969" in prompts[1]
+    assert prompts[1].index("Previous pass rejected") < prompts[1].index("impact-assessment packet")
+    annotations = controller.state_path("impact", "annotations.jsonl").read_text()
+    assert "728989" in annotations

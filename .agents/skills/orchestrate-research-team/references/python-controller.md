@@ -75,7 +75,10 @@ Only one configured impact assessor may be active. Each pass receives at most
 twelve completed researcher runs after the durable impact cursor and a bounded recent
 graph neighborhood loaded through the read-only GraphQL executor. The
 controller validates its JSON response before recording annotations or moving
-the cursor. Use a 1,800-to-3,600-second cadence. Start from
+the cursor; commentary around the object is tolerated, but a coverage error names
+every missing or unexpected `run_id`, and the next pass opens with that rejection so
+the assessor corrects it rather than repeating it from a resumed session. Use a
+1,800-to-3,600-second cadence. Start from
 `research-team/impact-assessor.prompt.example.md`; the assessor is advisory and
 must not research, publish, submit to the graph, or manage agents.
 

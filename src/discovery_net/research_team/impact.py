@@ -199,19 +199,63 @@ def impact_prompt(context: ImpactContext) -> str:
     )
 
 
-def parse_impact_batch(response: str, expected_run_ids: tuple[str, ...]) -> ImpactBatch:
-    """Validate an assessor response and require complete incremental coverage."""
+_FENCED_JSON = re.compile(r"```(?:json)?\s*\n(.*?)\n\s*```", re.DOTALL)
+
+
+def extract_impact_json(response: str) -> str:
+    """Return the JSON object text from an assessor response.
+
+    The response should be one JSON object, but a resumed session sometimes wraps it in
+    a code fence or prefixes a sentence of commentary. Prefer a fenced block, then the
+    outermost braces, so such a response still counts when its object is valid.
+    """
     value = response.strip()
-    if value.startswith("```") and value.endswith("```"):
-        lines = value.splitlines()
-        value = "\n".join(lines[1:-1])
-    batch = ImpactBatch.model_validate_json(value)
+    if value.startswith("{"):
+        return value
+    fenced = [match.group(1).strip() for match in _FENCED_JSON.finditer(value)]
+    for candidate in fenced:
+        if candidate.startswith("{"):
+            return candidate
+    start = value.find("{")
+    end = value.rfind("}")
+    if start != -1 and end > start:
+        return value[start : end + 1]
+    return value
+
+
+def parse_impact_batch(response: str, expected_run_ids: tuple[str, ...]) -> ImpactBatch:
+    """Validate an assessor response and require complete incremental coverage.
+
+    The coverage error names every missing and unexpected id: the assessor works in a
+    resumed session and otherwise repeats the same mistaken id pass after pass.
+    """
+    batch = ImpactBatch.model_validate_json(extract_impact_json(response))
     observed = [assessment.run_id for assessment in batch.assessments]
     if len(observed) != len(set(observed)):
         raise ValueError("impact response contains duplicate run_id values")
-    if set(observed) != set(expected_run_ids):
-        raise ValueError("impact response must assess every supplied run_id exactly once")
+    expected = set(expected_run_ids)
+    missing = sorted(expected - set(observed))
+    unexpected = sorted(set(observed) - expected)
+    if missing or unexpected:
+        detail = "impact response must assess every supplied run_id exactly once"
+        if missing:
+            detail += "; missing: " + ", ".join(missing)
+        if unexpected:
+            detail += "; not in the packet: " + ", ".join(unexpected)
+        raise ValueError(detail)
     return batch
+
+
+def rejection_note(error: str) -> str:
+    """Tell the assessor why its previous response was rejected, before the new packet."""
+    return (
+        "\n\n## Previous pass rejected\n"
+        "Your last response was rejected by the controller and nothing from it was "
+        "recorded. Reason:\n"
+        f"{error.strip()}\n"
+        "Reply with the JSON object only, no commentary, and copy every `run_id` "
+        "character for character from the packet below rather than from memory."
+    )
 
 
 def record_impact_batch(

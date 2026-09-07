@@ -112,3 +112,49 @@ def test_impact_prompt_states_the_enforced_length_limits() -> None:
     prompt = impact_prompt(context)
     assert "`lane_title` at most 120 characters" in prompt
     assert "`rationale` and `portfolio_summary` at most 1500" in prompt
+
+
+def _assessment(run_id: str) -> dict[str, object]:
+    return {
+        "run_id": run_id,
+        "lane_title": "R(5,5)",
+        "change_type": "continuation",
+        "impact": "routine",
+        "novelty": "not_assessed",
+        "paper_potential": "low",
+        "confidence": "medium",
+        "summary": "Routine progress.",
+        "rationale": "Nothing new.",
+        "evidence": [],
+        "caveats": [],
+    }
+
+
+def test_impact_response_tolerates_commentary_around_a_fenced_object() -> None:
+    body = json.dumps({"portfolio_summary": "Same runs.", "assessments": [_assessment("a:1")]})
+    response = "Same 12 runs, identical graph. Returning the unchanged assessment.\n\n```json\n"
+    response += body + "\n```\n"
+    batch = parse_impact_batch(response, ("a:1",))
+    assert [item.run_id for item in batch.assessments] == ["a:1"]
+    bare = "Note first.\n" + body + "\nTrailing remark."
+    assert parse_impact_batch(bare, ("a:1",)).portfolio_summary == "Same runs."
+
+
+def test_impact_coverage_error_names_missing_and_unexpected_ids() -> None:
+    response = json.dumps(
+        {"portfolio_summary": "x", "assessments": [_assessment("a:1"), _assessment("b:2-typo")]}
+    )
+    with pytest.raises(ValueError) as excinfo:
+        parse_impact_batch(response, ("a:1", "b:2"))
+    message = str(excinfo.value)
+    assert "missing: b:2" in message
+    assert "not in the packet: b:2-typo" in message
+
+
+def test_rejection_note_repeats_the_error_and_demands_verbatim_ids() -> None:
+    from discovery_net.research_team.impact import rejection_note
+
+    note = rejection_note("impact response must assess every supplied run_id exactly once")
+    assert note.startswith("\n\n## Previous pass rejected")
+    assert "exactly once" in note
+    assert "character for character" in note
