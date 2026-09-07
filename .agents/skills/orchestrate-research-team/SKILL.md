@@ -183,6 +183,16 @@ shared problem. Two agents on one target are justified only by real
 independence: different method, different implementation, or a stronger
 certificate. Say which it is when you assign it.
 
+Give researchers bounded awareness of the wider active graph, not only their
+named teammates. At the start of each pass, have them inspect new graph
+contributions, team reports, and repository commits since their last durable
+checkpoint that are plausibly relevant to the assigned frontier. For a long
+pass, refresh once before publishing a major claim so a newly committed result
+is not unknowingly duplicated or contradicted. Build on and cite useful durable
+discoveries, and record important dependencies in the checkpoint. Do not turn
+this into repeated whole-graph scanning, open-ended agent chatter, or permission
+to leave the assigned problem merely because unrelated work appeared.
+
 Prefer problems with a finite, certifiable frontier where a single pass can
 produce a checkable result. A famous problem is acceptable when it has such a
 frontier; a problem whose only outcome is an unverifiable claim is not.
@@ -291,6 +301,11 @@ chain, or commission a genuinely independent implementation. Prefer durable
 handoffs through committed artifacts and graph relations. Record who owns the
 next step and what output is expected. Do not create open-ended agent chatter,
 and never let researcher coordination compromise reviewer independence.
+
+On each evaluation cycle, include any newly relevant cross-team discoveries in
+the affected coordination brief. Keep the relay high level: identify the result,
+why it may matter, and where its durable evidence lives; let the researcher
+decide whether and how to use it.
 
 ## Boundaries
 
