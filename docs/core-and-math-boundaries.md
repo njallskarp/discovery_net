@@ -20,29 +20,6 @@ enum values, signing bytes, IDs, and raw GraphQL provenance remain supported.
 `ArtifactDomain` is a code contract, not a plugin registry: implementing an adapter
 does not make its payload type admissible in the live wire protocol.
 
-## What moved, what changed, and what is new
-
-| Symbols | Classification and source |
-|---|---|
-| `Contribution`, `ContributionRelation`, `Artifact` | Moved from `knowledge_graph.models` to [`domains.math.models`](../src/discovery_net/domains/math/models.py); same fields and validation |
-| `ContributionKind`, `RelationKind` | Moved from `knowledge_graph.enums` to [`domains.math.enums`](../src/discovery_net/domains/math/enums.py), including all twelve kinds from PR #58 |
-| `ArtifactRef` | Moved from `knowledge_graph.identifiers` to `artifacts.identifiers` |
-| CID parsing, `CodecError`, canonical JSON | Moved from `wire.codec` to `artifacts.identifiers` / `artifacts.encoding` |
-| Payload schemas and codec helpers | Extracted from `wire.codec` to `domains.math.codec`; the signed wire layer delegates to them |
-| `ArtifactDomain`, `MathDomain` | New contract and adapter; the adapter uses extracted codecs and node/reference rules formerly in `node.transaction_validator` |
-| `IndexedEnvelope`, `ArtifactIndex` | Refactored provenance, raw lookup, and append checks from `IndexedArtifact` / `KnowledgeGraphIndex` in `indexing.knowledge_graph_index` |
-| `GraphNode`, `GraphEdge`, `GraphProjection` | New domain-independent selection contracts |
-| `ProjectedGraph` | Refactored adjacency/kind indexing from `_GraphState`, `_build_state`, `_append_state`, and `_connect` in `indexing.knowledge_graph_index`, with new selection semantics |
-| `MathProjection` | Extracted contribution/relation classification from that index into its permanent math policy |
-| `KnowledgeGraphIndex`, `IndexedArtifact` | Refactored in place; retain public query and decoded-record APIs while delegating raw storage and traversal |
-| `BaselineManifest`, snapshot exporter | New offline backup, verification, and manifest tooling in `snapshots` |
-
-There is one implementation of the math models and codecs. `knowledge_graph`
-imports are intentional public aliases, not copied classes or temporary versions.
-The new components above are permanent boundaries, so none has a V2 suffix.
-Future temporary replacements must identify their original class/module and carry
-a removal TODO under the [integration and release rules](domain-topology-pr-plan.md).
-
 ## Raw artifacts and projected structure
 
 `ArtifactIndex` stores `IndexedEnvelope` records and original ledger provenance.

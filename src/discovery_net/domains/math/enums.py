@@ -1,4 +1,4 @@
-"""Vocabulary moved unchanged from discovery_net.knowledge_graph.enums."""
+# Enumerations describing knowledge-graph concepts and relationships.
 
 from enum import StrEnum
 

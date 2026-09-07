@@ -1,7 +1,4 @@
-"""Math classification extracted from discovery_net.indexing.knowledge_graph_index.
-
-MathProjection is the permanent math implementation of GraphProjection. It owns
-the contribution/relation classification formerly in _build_state and _append_state."""
+"""Project mathematical contributions and relations into graph structure."""
 
 from discovery_net.artifacts.index import IndexedEnvelope
 from discovery_net.artifacts.projection import GraphEdge, GraphNode

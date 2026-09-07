@@ -1,4 +1,4 @@
-"""Models moved from discovery_net.knowledge_graph.models without changing their fields."""
+# Immutable models representing knowledge-graph entities.
 
 from __future__ import annotations
 

@@ -1,8 +1,4 @@
-"""Raw indexing extracted from discovery_net.indexing.knowledge_graph_index.
-
-IndexedEnvelope extracts the provenance portion of IndexedArtifact; ArtifactIndex
-extracts raw lookup and append checks from KnowledgeGraphIndex. These are the
-permanent domain-independent components, with math decoding kept in indexing."""
+"""Immutable indexing of signed envelopes and their ledger provenance."""
 
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
-"""ArtifactRef moved from discovery_net.knowledge_graph.identifiers.
-
-CID parsing moved from discovery_net.wire.codec with the same validation rules."""
+"""Artifact identifiers and canonical CID validation."""
 
 from functools import lru_cache
 from typing import NewType

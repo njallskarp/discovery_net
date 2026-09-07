@@ -1,4 +1,4 @@
-"""Canonical JSON and CodecError moved from discovery_net.wire.codec."""
+"""Shared canonical JSON encoding and validation errors."""
 
 import json
 
