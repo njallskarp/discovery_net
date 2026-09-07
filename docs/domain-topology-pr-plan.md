@@ -38,6 +38,47 @@ boundaries and needs no parallel V2 implementations.
 - Implement math and a second-domain contract test. A production security ontology,
   automated sanctions, and advanced reputation are later work.
 
+## Direct artifact revocation
+
+Topology changes use independent new assertions and signed revocation contributions.
+A revocation carries a typed target artifact reference and an optional reason;
+chain and signer are bound by its signed envelope. It references no replacement,
+topology version, migration manifest, or proposal. The target must already exist.
+This requires a new structured artifact schema: a free-text body or an ordinary
+`supersedes` relation does not grant revocation semantics in the existing protocol.
+
+Authorization is deterministic and evaluated against previously committed state:
+
+- An author can withdraw their own ordinary research contribution or relation.
+  Signing an edge does not confer authority over either endpoint, and authoring an
+  endpoint does not confer authority over other people's incident edges.
+- Revoking another author's artifact requires an explicit grant covering the target
+  and action, or a direct threshold certificate over the exact revocation. The
+  certificate binds chain, target, action, electorate epoch, nonce, and expiry and
+  requires strictly more than two thirds of eligible voting power. Signatures can
+  be gathered before submission; no on-ledger proposal phase is required.
+- Reject unauthorized revocation transactions. Validators and non-voting full nodes
+  use the same checks. New grants in the transaction cannot authorize its revocations.
+- Authority records use their own governance/domain transition rules. Hiding a
+  contribution cannot revoke validator membership, erase a grant, or bypass the
+  identity/credential authorization state machines. Revocations themselves are not
+  targets of this initial mechanism; reinstatement is a separate future action.
+
+Once committed, an authorized revocation excludes its target from canonical views.
+Revoking a contribution also excludes incident edges from traversal; it does not
+revoke those edges or hide neighboring contributions. Raw history and evidence stay
+accessible. Historical views apply only revocations committed by the requested
+height. Query indexes must update existing records when revocations arrive, including
+counts, adjacency, and endpoint selection; restart/rebuild must produce the same view.
+
+The offline migration plan groups work for review and reproducible submission only.
+It is not a consensus dependency. Submit a replacement edge and an authorized
+revocation in one atomic transaction when needed and within transaction limits.
+For a large migration, publish replacement nodes/edges before revocations and accept
+explicitly documented intermediate overlap. This approach has no global atomic
+cutover across several blocks; it introduces no special adoption record or hidden
+staging semantics. Preflight authorization for each target before publication.
+
 ## PR 1 — Separate core and math, with compatibility and snapshot tooling
 
 Review: [#62](https://github.com/njallskarp/discovery_net/pull/62).
@@ -71,7 +112,9 @@ Commit order:
 
 1. Define an unsigned topology plan with a pinned baseline digest, retained
    contribution IDs, new area nodes, explicit old-area mappings, and selected
-   replacement organizational edges. Use reviewed taxonomy input with provenance.
+   replacement organizational edges, and individual revocation targets. Use MSC2020
+   subject labels, source references, and relevant scope notes; add prose only where
+   a concrete mapping ambiguity needs clarification.
 2. Implement deterministic build/inspect/compare commands. Reject missing endpoints,
    cycles, duplicate mappings, and baseline mismatches. Report ambiguous mappings
    as unresolved; do not infer identity from matching titles.
@@ -135,8 +178,11 @@ Commit order:
 4. Add area-scoped credentials and separately governed curator grants. New area
    placements remain provisional until approved by an authorized curator; top-level
    structural changes require governance.
-5. Add individual issuer withdrawal and governed revocation. Derive authorization
-   from previously committed authority so a proposed edge cannot approve itself.
+5. Implement direct revocation contributions with typed artifact targets, author
+   withdrawal, scoped grants, and direct threshold certificates as specified above.
+   Keep identity/credential state transitions explicit. Test unauthorized targets,
+   signature substitution, stale authority, incident-edge filtering, historical
+   queries, and equivalence of incremental indexing and replay.
 
 Primary files: shared identity domain, `domains/math/`, domain wire resolver,
 governance grant handlers, identity/credential queries, authorization tests.
@@ -152,23 +198,25 @@ Branch: `codex/canonical-math-migration`. Depends on: PR 4.
 
 Commit order:
 
-1. Convert the reviewed offline plan to signed new nodes/assertions with fixed
-   timestamps, provenance, expected artifact IDs, and a resumable receipt manifest.
-2. Stage migration artifacts across bounded transactions. Add a threshold-approved
-   adoption action committing to the complete manifest and replacement scope.
-   Adoption cannot activate while required artifacts are missing.
-3. Reconcile submissions since the baseline and define how subsequent area links
-   enter the adopted graph. Canonical selection is explicit, not a timestamp filter.
+1. Convert the reviewed offline plan to signed new nodes/assertions and independent
+   revocations with fixed timestamps, provenance, expected artifact IDs, and a
+   resumable receipt manifest. Verify authority for each revocation target.
+2. Publish bounded transactions, atomically pairing a replacement and revocation
+   when required and feasible. For larger batches, publish replacements first;
+   verify receipts before revoking old edges and document intermediate overlap.
+   The manifest coordinates the submitter, not ledger validation or query selection.
+3. Reconcile submissions since the baseline. Apply committed revocations to old and
+   new artifacts uniformly; no topology adoption action or timestamp filter exists.
 4. Expose `discovery-net math ...`; route CLI, GraphQL, inspector, counts, and
    traversals through the same canonical projection. Preserve raw historical lookup
    and compatible old command aliases.
 5. Remove candidate color/version controls from the release-facing UI and CLI.
 
-Primary files: migration builder/submitter, adoption governance handler, canonical
+Primary files: migration builder/submitter, revocation query state, canonical
 projection selector, CLI, GraphQL, inspector, migration and interface tests.
 
 Merge gate: unchanged contribution IDs, safe repeated/interrupted publication,
-complete adoption checks, baseline-delta reconciliation, correct future edges, and
+revocation authorization, baseline-delta reconciliation, correct future edges, and
 agreement across every query surface. Old edges remain attributable in history.
 
 ## PR 6 — Rehearse and release the complete change to main
@@ -181,13 +229,13 @@ Commit order:
    offline with its original chain context, without production validator keys or
    connections to live peers.
 2. Run active consensus separately with test keys: upgrade activation, validator
-   admission/removal, identity/key revocation, interrupted migration, adoption,
+   admission/removal, identity/key and artifact revocation, interrupted migration,
    concurrent research, restart, and non-voting full-node verification.
 3. Record exact source/config/manifest hashes, topology comparisons, query costs,
    and full test results, including pinned CometBFT and Docker integration checks.
 4. Add the operator rollout and recovery runbook: compatible software first,
-   coordinated activation, migration staging, completeness checks, then canonical
-   query promotion. Document that old binaries may not replay new formats.
+   coordinated activation, ordered replacement/revocation batches, and receipt
+   reconciliation. Document that old binaries may not replay new formats.
 5. Remove temporary V2 replacements, version selectors, migration-only scaffolding,
    and their removal TODOs. Promote the validated topology under canonical names.
    Preserve historical decoding and intentional public import aliases as needed.
