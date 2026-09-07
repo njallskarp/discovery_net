@@ -3,7 +3,8 @@
 from dataclasses import dataclass
 from enum import IntEnum
 
-from discovery_net.knowledge_graph import ArtifactRef, Contribution, ContributionRelation
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math.codec import MATH_DOMAIN
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerLookup
 from discovery_net.wire import (
     TRANSACTION_LIMITS,
@@ -88,20 +89,12 @@ class TransactionValidator:
         included_contributions = {
             reference
             for reference, artifact in zip(references, decoded_artifacts, strict=True)
-            if isinstance(artifact, Contribution)
+            if MATH_DOMAIN.is_node(artifact)
         }
         for artifact in decoded_artifacts:
-            if isinstance(artifact, ContributionRelation) and (
-                not _is_contribution(
-                    artifact.from_contribution,
-                    artifacts,
-                    included_contributions,
-                )
-                or not _is_contribution(
-                    artifact.to_contribution,
-                    artifacts,
-                    included_contributions,
-                )
+            if any(
+                not _is_contribution(reference, artifacts, included_contributions)
+                for reference in MATH_DOMAIN.references(artifact)
             ):
                 return TransactionResult(code=TransactionCode.MISSING_REFERENCE)
         return TransactionResult(code=TransactionCode.ACCEPTED)
@@ -117,4 +110,4 @@ def _is_contribution(
     envelope = artifacts.envelope_by_ref(reference)
     if envelope is None:
         return False
-    return isinstance(decode_payload(envelope.payload_type, envelope.payload), Contribution)
+    return MATH_DOMAIN.is_node(decode_payload(envelope.payload_type, envelope.payload))

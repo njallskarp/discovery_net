@@ -3,8 +3,8 @@
 #                                               ↓
 # Peers ↔ CometBFT → CometBFTABCIAdapter → CometBFTCallbackHandler → LocalArtifactLedger
 
-from discovery_net.knowledge_graph import (
-    ArtifactRef,
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
     ContributionRelation,

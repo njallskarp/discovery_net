@@ -2,7 +2,8 @@
 
 from dataclasses import dataclass
 
-from discovery_net.knowledge_graph import ArtifactRef, RelationKind
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import RelationKind
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

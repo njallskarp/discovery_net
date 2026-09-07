@@ -3,14 +3,14 @@
 from collections.abc import Iterable
 from typing import final
 
-from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
-from discovery_net.knowledge_graph import (
-    ArtifactRef,
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
     ContributionRelation,
     RelationKind,
 )
+from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
 
 
 @final

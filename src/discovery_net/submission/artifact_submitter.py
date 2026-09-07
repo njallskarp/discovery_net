@@ -5,7 +5,8 @@ from typing import final
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from discovery_net.knowledge_graph import ArtifactRef, Contribution, ContributionRelation
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import Contribution, ContributionRelation
 from discovery_net.submission._cometbft_rpc_client import _CometBFTRPCClient
 from discovery_net.submission.incoming_relation import IncomingRelation
 from discovery_net.submission.outgoing_relation import OutgoingRelation

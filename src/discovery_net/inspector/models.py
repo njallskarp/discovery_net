@@ -16,7 +16,7 @@ from pydantic import (
     field_validator,
 )
 
-from discovery_net.knowledge_graph import ContributionKind, RelationKind
+from discovery_net.domains.math import ContributionKind, RelationKind
 
 type NonNegativeInt = Annotated[int, Field(strict=True, ge=0)]
 type PositiveInt = Annotated[int, Field(strict=True, gt=0)]

@@ -14,15 +14,15 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import BaseModel, ConfigDict
 
-from discovery_net.entrypoints.graphql import GraphQLQueryExecutor
-from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
-from discovery_net.knowledge_graph import (
-    ArtifactRef,
+from discovery_net.artifacts import ArtifactRef
+from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
     ContributionRelation,
     RelationKind,
 )
+from discovery_net.entrypoints.graphql import GraphQLQueryExecutor
+from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
 from discovery_net.node import SQLiteArtifactLedgerStore
 from discovery_net.query import KnowledgeGraphQueries
 from discovery_net.submission import (

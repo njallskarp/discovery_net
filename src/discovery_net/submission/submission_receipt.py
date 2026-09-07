@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from discovery_net.knowledge_graph import ArtifactRef
+from discovery_net.artifacts import ArtifactRef
 
 _MAX_UINT32 = (1 << 32) - 1
 
