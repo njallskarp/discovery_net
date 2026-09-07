@@ -31,6 +31,7 @@ class CometBFTABCIAdapter:
             chain_id=request.chain_id,
             initial_height=request.initial_height,
             genesis_state=request.app_state_bytes,
+            voting_power=_voting_power(request),
         )
         return _abci.ResponseInitChain(app_hash=app_hash)
 
@@ -88,3 +89,15 @@ class CometBFTABCIAdapter:
 def _require_message(message: object, message_type: type[object]) -> None:
     if not isinstance(message, message_type):
         raise TypeError(f"request must be a {message_type.__name__}")
+
+
+def _voting_power(request: _abci.RequestInitChain) -> dict[bytes, int]:
+    powers: dict[bytes, int] = {}
+    for validator in request.validators:
+        if validator.pub_key.WhichOneof("sum") != "ed25519":
+            raise ValueError("validator must have an Ed25519 public key")
+        key = validator.pub_key.ed25519
+        if len(key) != 32 or key in powers or validator.power <= 0:
+            raise ValueError("InitChain validators must have unique keys and positive power")
+        powers[key] = validator.power
+    return powers

@@ -585,7 +585,7 @@
         position.textContent = `Block ${group.height} · transaction ${group.transaction_index}`;
         const count = document.createElement("span");
         count.className = "artifact-count";
-        const artifactCount = group.contributions.length + group.relations.length;
+        const artifactCount = group.contributions.length + group.relations.length + (group.revocations?.length ?? 0);
         count.textContent = `${artifactCount} atomic artifact${artifactCount === 1 ? "" : "s"}`;
         heading.append(position, count);
         const content = document.createElement("div");
@@ -596,6 +596,19 @@
         if (group.relations.length > 0) {
           content.append(relationContext(group.relations, viewModel));
         }
+        (group.revocations ?? []).forEach((revocation) => {
+          const withdrawal = document.createElement("article");
+          withdrawal.className = "feed-contribution";
+          const target = document.createElement("strong");
+          target.textContent = `Revoked edge ${revocation.target}`;
+          const reason = document.createElement("p");
+          reason.textContent = revocation.reason;
+          const signer = document.createElement("small");
+          signer.className = "signer-line mono";
+          signer.textContent = `Signed ${revocation.signer_public_key} · ${revocation.artifact_ref}`;
+          withdrawal.append(target, reason, signer);
+          content.append(withdrawal);
+        });
         article.append(heading, content);
         return article;
       }),

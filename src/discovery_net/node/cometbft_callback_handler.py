@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
 from typing import Final, final
@@ -98,6 +98,7 @@ class CometBFTCallbackHandler:
         chain_id: str,
         initial_height: int,
         genesis_state: bytes,
+        voting_power: Mapping[bytes, int] | None = None,
     ) -> bytes:
         """Validate this node's supported genesis and return its initial state hash."""
         if not isinstance(chain_id, str):
@@ -113,6 +114,8 @@ class CometBFTCallbackHandler:
                 raise ValueError("chain_id does not match the configured chain")
             if initial_height != 1:
                 raise ValueError("only an initial height of 1 is supported")
+            if self._validator.voting_power and voting_power != self._validator.voting_power:
+                raise ValueError("InitChain validators do not match the pinned genesis electorate")
             if genesis_state:
                 raise ValueError("genesis application state is not supported")
             return self._committed_ledger.state_hash()

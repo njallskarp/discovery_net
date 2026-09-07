@@ -99,11 +99,22 @@ class IntegrationNode:
         """Return the persistent-peer address used by other CometBFT nodes."""
         return f"{self._node_id}@{self._p2p_address}"
 
-    def start_application(self) -> None:
+    def start_application(self, *, with_genesis_authority: bool = False) -> None:
         """Start the Discovery Net process and wait for its ABCI listener."""
         if self._application_process is not None:
             raise RuntimeError("the Discovery Net application is already running")
         self._application_generation += 1
+        genesis_path = self._home / "config" / "genesis.json"
+        authority_arguments = (
+            (
+                "--genesis",
+                str(genesis_path),
+                "--genesis-sha256",
+                hashlib.sha256(genesis_path.read_bytes()).hexdigest(),
+            )
+            if with_genesis_authority
+            else ()
+        )
         process = BackgroundProcess(
             command=(
                 sys.executable,
@@ -115,6 +126,7 @@ class IntegrationNode:
                 str(self._ledger_path),
                 "--abci-listen-address",
                 self._application_address,
+                *authority_arguments,
             ),
             log_path=self._log_directory
             / f"{self._name}-application-{self._application_generation}.log",

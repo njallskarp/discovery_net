@@ -6,6 +6,7 @@ from typing import final
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from discovery_net.artifacts import ArtifactRef
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.domains.math import Contribution, ContributionRelation
 from discovery_net.submission._cometbft_rpc_client import _CometBFTRPCClient
 from discovery_net.submission.incoming_relation import IncomingRelation
@@ -92,6 +93,17 @@ class ArtifactSubmitter:
         envelope = sign_artifact(
             chain_id=chain_id,
             artifact=relation,
+            private_key=self._private_key,
+        )
+        return self._submit(sign_transaction(envelopes=(envelope,), private_key=self._private_key))
+
+    def submit_revocation(self, revocation: EdgeRevocation) -> SubmissionReceipt:
+        """Permanently withdraw an edge from graph views under validator authority."""
+        if not isinstance(revocation, EdgeRevocation):
+            raise TypeError("revocation must be an EdgeRevocation")
+        envelope = sign_artifact(
+            chain_id=self._rpc_client.fetch_chain_id(),
+            artifact=revocation,
             private_key=self._private_key,
         )
         return self._submit(sign_transaction(envelopes=(envelope,), private_key=self._private_key))

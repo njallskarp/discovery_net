@@ -1,6 +1,5 @@
 # Application messages shared by artifact submitters and nodes.
 
-from discovery_net.domains.math import Artifact
 from discovery_net.wire.codec import (
     CodecError,
     artifact_ref,
@@ -15,6 +14,7 @@ from discovery_net.wire.codec import (
     parse_artifact_ref,
 )
 from discovery_net.wire.envelope import PayloadType, SignedEnvelope, SignedTransaction
+from discovery_net.wire.payload import Artifact
 from discovery_net.wire.signing import (
     sign_artifact,
     sign_transaction,

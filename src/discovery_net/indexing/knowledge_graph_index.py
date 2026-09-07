@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import final
 
 from discovery_net.artifacts import ArtifactRef
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.artifacts.index import ArtifactIndex, IndexedEnvelope
 from discovery_net.artifacts.projection import GraphProjection, ProjectedGraph
-from discovery_net.domains.math import Artifact, ContributionKind, RelationKind
+from discovery_net.domains.math import ContributionKind, RelationKind
 from discovery_net.domains.math.projection import MathProjection
 from discovery_net.node.local_artifact_ledger import ArtifactLedgerEntry
 from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.wire import SignedEnvelope, decode_payload
 from discovery_net.wire import artifact_ref as envelope_artifact_ref
+from discovery_net.wire.payload import Artifact
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -71,6 +74,25 @@ class IndexedArtifact:
 class _GraphState:
     graph: ProjectedGraph
     decoded: dict[ArtifactRef, IndexedArtifact]
+    revocations: tuple[IndexedArtifact, ...] = field(init=False)
+    revocations_by_target: dict[ArtifactRef, tuple[IndexedArtifact, ...]] = field(init=False)
+
+    def __post_init__(self) -> None:
+        revocations = tuple(
+            record
+            for record in self.decoded.values()
+            if isinstance(record.artifact, EdgeRevocation)
+        )
+        by_target: defaultdict[ArtifactRef, list[IndexedArtifact]] = defaultdict(list)
+        for record in revocations:
+            assert isinstance(record.artifact, EdgeRevocation)
+            by_target[record.artifact.target].append(record)
+        object.__setattr__(self, "revocations", revocations)
+        object.__setattr__(
+            self,
+            "revocations_by_target",
+            {target: tuple(records) for target, records in by_target.items()},
+        )
 
 
 @final
@@ -122,16 +144,28 @@ class KnowledgeGraphIndex:
         """Retrieve raw provenance even for an artifact excluded from the view."""
         return self._state.decoded.get(artifact_ref)
 
+    def revocations(self, target: ArtifactRef | None = None) -> tuple[IndexedArtifact, ...]:
+        """Audit revocations, optionally restricted to one target."""
+        state = self._state
+        return state.revocations if target is None else state.revocations_by_target.get(target, ())
+
     def contributions(self, kind: ContributionKind | None = None) -> tuple[IndexedArtifact, ...]:
         if kind is not None and not isinstance(kind, ContributionKind):
             raise TypeError("kind must be a ContributionKind")
         state = self._state
         return _decoded(state, state.graph.nodes(kind.value if kind is not None else None))
 
-    def relations(self, kind: RelationKind | None = None) -> tuple[IndexedArtifact, ...]:
+    def relations(
+        self, kind: RelationKind | None = None, *, include_revoked: bool = False
+    ) -> tuple[IndexedArtifact, ...]:
         _require_relation_kind(kind)
         state = self._state
-        return _decoded(state, state.graph.edges(kind.value if kind is not None else None))
+        return _decoded(
+            state,
+            state.graph.edges(
+                kind.value if kind is not None else None, include_revoked=include_revoked
+            ),
+        )
 
     def incoming_relations(
         self,

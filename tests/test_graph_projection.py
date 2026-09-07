@@ -9,7 +9,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from discovery_net.artifacts import ArtifactRef
 from discovery_net.artifacts.index import ArtifactIndex, IndexedEnvelope
-from discovery_net.artifacts.projection import GraphEdge, GraphNode, ProjectedGraph
+from discovery_net.artifacts.projection import (
+    GraphEdge,
+    GraphEdgeRevocation,
+    GraphNode,
+    ProjectedGraph,
+)
 from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
@@ -115,7 +120,9 @@ def _fixture() -> _Fixture:
 class _Exclude:
     references: frozenset[ArtifactRef]
 
-    def project(self, record: IndexedEnvelope) -> GraphNode | GraphEdge | None:
+    def project(
+        self, record: IndexedEnvelope
+    ) -> GraphNode | GraphEdge | GraphEdgeRevocation | None:
         if record.artifact_ref in self.references:
             return None
         return MathProjection().project(record)
@@ -191,7 +198,7 @@ def test_failed_projection_preserves_both_the_raw_and_decoded_index(refresh: boo
     rejected = artifact_ref(next_entry.transaction.envelopes[0])
 
     class FailingProjection:
-        def project(self, record: IndexedEnvelope) -> GraphNode | GraphEdge:
+        def project(self, record: IndexedEnvelope) -> GraphNode | GraphEdge | GraphEdgeRevocation:
             if record.artifact_ref == rejected:
                 raise ValueError("cannot project candidate")
             return MathProjection().project(record)

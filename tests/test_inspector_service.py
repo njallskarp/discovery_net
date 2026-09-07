@@ -262,3 +262,56 @@ def _node(
             ),
         ),
     )
+
+
+def test_feed_exposes_revocation_while_graph_excludes_its_target() -> None:
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    from discovery_net.artifacts.edge_revocation import EdgeRevocation
+    from discovery_net.node import ArtifactLedgerEntry
+    from discovery_net.wire import PayloadType, artifact_ref, sign_artifact, sign_transaction
+
+    snapshot = seed_ledger_snapshot()
+    target = next(
+        artifact_ref(envelope)
+        for entry in snapshot.entries
+        for envelope in entry.transaction.envelopes
+        if envelope.payload_type is PayloadType.CONTRIBUTION_RELATION
+    )
+    key = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+    envelope = sign_artifact(
+        chain_id="discovery-net-demo",
+        artifact=EdgeRevocation(target=target, reason="Incorrect classification", created_at=NOW),
+        private_key=key,
+    )
+    # The inspector consumes the local committed ledger; authority is checked at ingestion.
+    updated = ArtifactLedgerSnapshot(
+        height=9,
+        entries=(
+            *snapshot.entries,
+            ArtifactLedgerEntry(
+                transaction=sign_transaction(envelopes=(envelope,), private_key=key),
+                height=9,
+                transaction_index=0,
+            ),
+        ),
+    )
+    reader = _MutableLedgerReader(snapshot)
+    service = InspectorService(
+        node_source=SeedNodeObservationSource(
+            observation=_node(chain_id="discovery-net-demo", height=9)
+        ),
+        ledger_reader=reader,
+    )
+    before = service.snapshot().knowledge_graph
+    assert any(r.artifact_ref == target for r in before.relations)
+    reader.snapshot = updated
+    graph = service.snapshot().knowledge_graph
+    assert graph.contributions == before.contributions
+    assert graph.relations == tuple(r for r in before.relations if r.artifact_ref != target)
+    feed = service.feed_page()
+    revocation = feed.transactions[0].revocations[0]
+    assert revocation.target == target
+    assert revocation.reason == "Incorrect classification"
+    assert revocation.signer_public_key == envelope.signer_public_key.hex()
+    assert revocation.signature == envelope.signature.hex()

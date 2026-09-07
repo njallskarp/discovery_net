@@ -9,6 +9,7 @@ from threading import RLock
 from typing import final
 
 from discovery_net.artifacts import ArtifactRef
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.domains.math import Contribution, ContributionRelation
 from discovery_net.indexing import IndexedArtifact, KnowledgeGraphIndex
 from discovery_net.inspector.models import (
@@ -22,6 +23,7 @@ from discovery_net.inspector.models import (
     InspectorPeer,
     InspectorRelation,
     InspectorRelationSummary,
+    InspectorRevocation,
     InspectorSnapshot,
     NodeObservation,
 )
@@ -286,6 +288,18 @@ def _feed_transaction(
     return InspectorFeedTransaction(
         height=position[0],
         transaction_index=position[1],
+        revocations=tuple(
+            InspectorRevocation(
+                artifact_ref=indexed.artifact_ref,
+                target=indexed.artifact.target,
+                reason=indexed.artifact.reason,
+                created_at=indexed.artifact.created_at,
+                signer_public_key=indexed.envelope.signer_public_key.hex(),
+                signature=indexed.envelope.signature.hex(),
+            )
+            for indexed in artifacts
+            if isinstance(indexed.artifact, EdgeRevocation)
+        ),
         contributions=tuple(
             _contribution_view(indexed)
             for indexed in artifacts

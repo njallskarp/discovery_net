@@ -9,7 +9,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from discovery_net.domains.math import Artifact
 from discovery_net.wire.codec import (
     decode_payload,
     encode_payload,
@@ -17,6 +16,7 @@ from discovery_net.wire.codec import (
     encode_transaction_signing_payload,
 )
 from discovery_net.wire.envelope import SignedEnvelope, SignedTransaction
+from discovery_net.wire.payload import Artifact
 
 SIGNATURE_DOMAIN: Final = b"discovery-net:signed-envelope:\x00"
 TRANSACTION_SIGNATURE_DOMAIN: Final = b"discovery-net:signed-transaction:\x00"

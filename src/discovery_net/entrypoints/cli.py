@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key
 from pydantic import BaseModel, ConfigDict
 
 from discovery_net.artifacts import ArtifactRef
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.domains.math import (
     Contribution,
     ContributionKind,
@@ -32,6 +33,7 @@ from discovery_net.submission import (
     SubmissionError,
 )
 from discovery_net.wire import PayloadType, parse_artifact_ref
+from discovery_net.wire.payload import Artifact
 
 _DEFAULT_COMETBFT_RPC_URL = "http://127.0.0.1:26657"
 
@@ -50,7 +52,7 @@ class _ArtifactOutput(BaseModel):
 
     artifact_ref: ArtifactRef
     payload_type: PayloadType
-    artifact: Contribution | ContributionRelation
+    artifact: Artifact
     chain_id: str
     signer_public_key: str
     signature: str
@@ -126,6 +128,12 @@ def _submit(arguments: argparse.Namespace) -> int:
                 ),
             ),
         )
+    elif arguments.submission == "revocation":
+        receipt = submitter.submit_revocation(
+            EdgeRevocation(
+                target=arguments.target, reason=arguments.reason, created_at=datetime.now(UTC)
+            )
+        )
     else:
         receipt = submitter.submit_relation(
             ContributionRelation(
@@ -195,6 +203,8 @@ def _execute_query(
         if artifact is None:
             raise ValueError(f"artifact is not indexed: {arguments.artifact_ref}")
         return (artifact,)
+    if arguments.query == "revocations":
+        return queries.revocations(arguments.target)
     if arguments.query == "contributions":
         return (
             queries.contributions()
@@ -203,9 +213,11 @@ def _execute_query(
         )
     if arguments.query == "relations":
         return (
-            queries.relations()
+            queries.relations(include_revoked=arguments.include_revoked)
             if arguments.kind is None
-            else queries.relations_by_kind(arguments.kind)
+            else queries.relations_by_kind(
+                arguments.kind, include_revoked=arguments.include_revoked
+            )
         )
     if arguments.query == "outgoing-relations":
         return queries.outgoing_relations_by_ref(arguments.artifact_ref, kind=arguments.kind)
@@ -297,6 +309,13 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="destination contribution reference",
     )
 
+    revocation = submissions.add_parser(
+        "revocation", help="permanently revoke an edge using a validator signer"
+    )
+    _add_submission_arguments(revocation)
+    revocation.add_argument("--target", required=True, type=_artifact_reference)
+    revocation.add_argument("--reason", required=True)
+
     query = commands.add_parser(
         "query",
         help="query committed knowledge",
@@ -309,6 +328,8 @@ def _argument_parser() -> argparse.ArgumentParser:
         help="path to the local SQLite artifact ledger",
     )
     queries = query.add_subparsers(dest="query", required=True)
+    revocations = queries.add_parser("revocations", help="inspect signed edge revocations")
+    revocations.add_argument("--target", type=_artifact_reference)
 
     artifact = queries.add_parser("artifact", help="get an artifact by reference")
     artifact.add_argument("artifact_ref", type=_artifact_reference)
@@ -323,6 +344,9 @@ def _argument_parser() -> argparse.ArgumentParser:
 
     relations = queries.add_parser("relations", help="list contribution relations")
     _add_relation_kind_argument(relations)
+    relations.add_argument(
+        "--include-revoked", action="store_true", help="include permanently revoked edges for audit"
+    )
 
     outgoing = queries.add_parser(
         "outgoing-relations",

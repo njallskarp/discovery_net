@@ -13,13 +13,15 @@ from pydantic import (
     field_validator,
 )
 
+from discovery_net.artifacts.edge_revocation import EdgeRevocation
 from discovery_net.artifacts.encoding import CodecError as CodecError
 from discovery_net.artifacts.encoding import canonical_json as _canonical_json
 from discovery_net.artifacts.identifiers import ArtifactRef
 from discovery_net.artifacts.identifiers import parse_artifact_ref as parse_artifact_ref
 from discovery_net.domains.math.codec import MATH_DOMAIN
-from discovery_net.domains.math.models import Artifact
+from discovery_net.wire.edge_revocation import decode_revocation, encode_revocation
 from discovery_net.wire.envelope import PayloadType, SignedEnvelope, SignedTransaction
+from discovery_net.wire.payload import Artifact
 
 type JSONObject = dict[str, object]
 
@@ -67,17 +69,21 @@ class _TransactionPayload(_WireModel):
 
 
 def encode_payload(artifact: Artifact) -> tuple[PayloadType, bytes]:
-    """Encode the one domain supported by the current network protocol."""
+    """Encode a supported application artifact."""
+    if isinstance(artifact, EdgeRevocation):
+        return PayloadType.EDGE_REVOCATION, encode_revocation(artifact)
     payload_type, encoded = MATH_DOMAIN.encode(artifact)
     return PayloadType(payload_type), encoded
 
 
 def decode_payload(payload_type: PayloadType, data: bytes) -> Artifact:
-    """Validate a math payload without enabling additional wire types."""
+    """Validate a supported payload in its canonical representation."""
     if not isinstance(data, bytes):
         raise TypeError("payload data must be bytes")
     if not isinstance(payload_type, PayloadType):
         raise CodecError("payload type is not supported")
+    if payload_type is PayloadType.EDGE_REVOCATION:
+        return decode_revocation(data)
     return MATH_DOMAIN.decode(payload_type.value, data)
 
 
