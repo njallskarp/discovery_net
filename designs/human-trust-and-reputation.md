@@ -320,6 +320,29 @@ contributions' own status. A contribution shouldn't be treated as
 automatically wrong just because a reviewer's credential was later revoked;
 that's a prompt to re-examine it, not a verdict.
 
+**Flag, 2026-09-07: this section's foundation has changed since it was
+written.** `retraction`/`retracts` merged in PR #58 with no authorization
+semantics at all — `transaction_validator.py` doesn't check `kind`, so
+anyone can submit a `retracts` edge against anyone else's contribution today.
+Njall's PR #63 ("Add permanent validator-authorized edge revocations",
+stacked on #62) is building the real, enforced mechanism, and its actual
+shape conflicts with what this section assumes in a specific way, not just
+an enforcement gap: `EdgeRevocation` targets **the hash of an existing
+relation only** — its own description states "Contributions and revocations
+cannot be revoked." This section's whole scheme depends on revoking the
+`identity`/`credential` *contributions themselves* ("only contributions are
+valid `retracts` targets under that PR's model"). If PR #63's relation-only
+scope is what ships, this design's revocation story needs to be rebuilt
+around revoking the `endorses`/`attests_identity` **edge** into an identity
+or credential, not the contribution — which is likely fine for the live
+trust computation (removing the edge already drops the path), but changes
+what a "revoked identity" or "revoked credential" concretely means (the
+contribution itself would remain, only its incoming vouching edges could be
+struck), and needs to be re-checked against the notification behavior
+described above. Read PR #63 and Njall's own #61 (`trust-adoption-plan.md`,
+`trust-policies-and-graph-views.md` — a companion analysis of this doc) before
+extending this section further.
+
 ## Implementation follow-ups
 
 Not open design questions — things to verify or decide once the relevant
@@ -330,3 +353,5 @@ pieces land, rather than assumptions still up for debate:
 - Decide the concrete UI surface for the "standing behind this changed"
   notification (in-app flag vs. digest vs. something else) — a product
   decision, not a graph-design one.
+- Reconcile the Revocation section above with whatever `EdgeRevocation`
+  scope actually ships in PR #63.
