@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -108,6 +109,11 @@ def test_independent_docker_nodes_are_isolated_durable_and_convergent(tmp_path: 
         wait_for_matching_entries((validator, peer), minimum_entries=2)
 
         peer.stop()
+        peer = replace(
+            peer,
+            persistent_peers=f"{validator.node_id()}@{validator.p2p_alias}:26656",
+        )
+        nodes[2] = peer
         peer.start()
         peer.wait_for_peers(frozenset({validator.project}))
         assert peer.node_id() == peer_id

@@ -6,9 +6,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
+from discovery_net.node.runtime.cometbft_genesis_writer import CometBFTGenesisWriter
 from discovery_net.node.runtime.formation_process import main
+from discovery_net.node.runtime.genesis_validator import GenesisValidator
 from tests.runtime_test_support import write_generated_home, write_validator_identity
 
 
@@ -37,6 +41,12 @@ def test_cli_initializes_exports_forms_and_installs(
     home = tmp_path / "validator"
     descriptor = tmp_path / "validator.json"
     genesis = tmp_path / "genesis.json"
+    governance_member = tmp_path / "governance-member.pem"
+    governance_member.write_bytes(
+        Ed25519PrivateKey.from_private_bytes(bytes([31]) * 32)
+        .public_key()
+        .public_bytes(Encoding.PEM, PublicFormat.SubjectPublicKeyInfo)
+    )
 
     with (
         patch.object(
@@ -62,6 +72,8 @@ def test_cli_initializes_exports_forms_and_installs(
                     str(descriptor),
                     "--name",
                     "validator-a",
+                    "--governance-public-key",
+                    str(governance_member),
                 )
             )
             == 0
@@ -106,3 +118,49 @@ def test_cli_initializes_exports_forms_and_installs(
     assert outputs[1]["descriptor"] == str(descriptor)
     assert outputs[2]["genesis_sha256"] == digest
     assert (home / "config" / "genesis.json").read_bytes() == genesis.read_bytes()
+    document = json.loads(genesis.read_bytes())
+    governance = document["app_state"]["validator_governance"]
+    assert len(governance["operators"]) == 1
+    assert governance["operators"][0]["governance_public_key"]
+
+
+def test_genesis_rejects_mixed_governed_and_legacy_descriptors(tmp_path: Path) -> None:
+    governed = tmp_path / "governed.json"
+    legacy = tmp_path / "legacy.json"
+    governed.write_text(
+        GenesisValidator(
+            name="governed",
+            public_key=bytes([1]) * 32,
+            governance_public_key=bytes([2]) * 32,
+            voting_power=10,
+        ).model_dump_json()
+    )
+    legacy.write_text(
+        GenesisValidator(
+            name="legacy",
+            public_key=bytes([3]) * 32,
+            voting_power=10,
+        ).model_dump_json()
+    )
+
+    with (
+        patch.object(CometBFTGenesisWriter, "write", autospec=True) as write,
+        pytest.raises(ValueError, match="every validator descriptor"),
+    ):
+        main(
+            (
+                "create-genesis",
+                "--output",
+                str(tmp_path / "genesis.json"),
+                "--chain-id",
+                "discovery-1",
+                "--genesis-time",
+                "2026-08-27T12:00:00Z",
+                "--validator",
+                str(governed),
+                "--validator",
+                str(legacy),
+            )
+        )
+
+    write.assert_not_called()

@@ -5,14 +5,14 @@ import pytest
 
 from discovery_net.inspector.seed import seed_ledger_snapshot
 from discovery_net.inspector.sqlite_ledger_reader import SQLiteArtifactLedgerReader
-from discovery_net.node import SQLiteArtifactLedgerStore
+from discovery_net.node import SQLiteApplicationStateStore
 
 
 def test_reader_checks_height_before_loading_the_committed_snapshot(tmp_path: Path) -> None:
     # The inspector decodes only entries committed after its indexed height.
     path = tmp_path / "artifact-ledger.sqlite"
     snapshot = seed_ledger_snapshot()
-    SQLiteArtifactLedgerStore(path=path).save(snapshot)
+    SQLiteApplicationStateStore(path=path).save_artifact_ledger(snapshot)
     reader = SQLiteArtifactLedgerReader(path=path)
 
     initial = reader.updates_after(0)

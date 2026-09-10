@@ -8,21 +8,34 @@ from threading import RLock
 from typing import Final, final
 
 from discovery_net.node._ledger_from_snapshot import ledger_from_snapshot
+from discovery_net.node.application_state import ApplicationStateSnapshot, ApplicationStateStore
 from discovery_net.node.local_artifact_ledger import (
     AppendOutcome,
     ArtifactLedgerEntry,
     LocalArtifactLedger,
 )
-from discovery_net.node.store.artifact_ledger_store import (
-    ArtifactLedgerSnapshot,
-    ArtifactLedgerStore,
-)
+from discovery_net.node.store.artifact_ledger_store import ArtifactLedgerSnapshot
 from discovery_net.node.transaction_validator import (
     TransactionCode,
     TransactionResult,
     TransactionValidator,
 )
-from discovery_net.wire import decode_transaction
+from discovery_net.node.validator_governance import (
+    GovernanceDecision,
+    ValidatorGovernanceState,
+    ValidatorPowerUpdate,
+)
+from discovery_net.node.validator_governance_codec import decode_genesis_application_state
+from discovery_net.wire import (
+    TRANSACTION_LIMITS,
+    CodecError,
+    TransactionLimitError,
+    decode_transaction,
+)
+from discovery_net.wire.validator_governance import ValidatorGovernanceTransaction
+from discovery_net.wire.validator_governance_codec import (
+    decode_validator_governance_transaction,
+)
 
 _MAX_INT64: Final = (1 << 63) - 1
 
@@ -33,11 +46,12 @@ class FinalizeBlockResult:
 
     transaction_results: tuple[TransactionResult, ...]
     state_hash: bytes
+    validator_updates: tuple[ValidatorPowerUpdate, ...] = ()
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class ArtifactLedgerHead:
-    """The block height and state hash most recently persisted by this node."""
+class ApplicationHead:
+    """The block height and application hash most recently persisted by this node."""
 
     height: int
     state_hash: bytes
@@ -47,6 +61,7 @@ class ArtifactLedgerHead:
 class _PendingBlock:
     height: int
     ledger: LocalArtifactLedger
+    validator_governance: ValidatorGovernanceState | None
     new_entries: tuple[ArtifactLedgerEntry, ...]
 
 
@@ -61,35 +76,43 @@ class CometBFTCallbackHandler:
         "_pending_block",
         "_store",
         "_validator",
+        "_validator_governance",
     )
 
     def __init__(
         self,
         *,
         validator: TransactionValidator,
-        store: ArtifactLedgerStore,
+        store: ApplicationStateStore,
     ) -> None:
-        snapshot = store.load()
-        if snapshot is None:
+        application_state = store.load()
+        if application_state is None:
             committed_height = 0
             committed_ledger = LocalArtifactLedger()
+            validator_governance = None
         else:
-            committed_height = snapshot.height
-            committed_ledger = ledger_from_snapshot(snapshot, validator)
+            committed_height = application_state.height
+            committed_ledger = ledger_from_snapshot(application_state.artifact_ledger, validator)
+            validator_governance = application_state.validator_governance
 
         self._validator = validator
         self._store = store
         self._committed_height = committed_height
         self._committed_ledger = committed_ledger
+        self._validator_governance = validator_governance
         self._pending_block: _PendingBlock | None = None
         self._lock = RLock()
 
-    def committed_head(self) -> ArtifactLedgerHead:
-        """Return one consistent view of the latest committed ledger state."""
+    def committed_head(self) -> ApplicationHead:
+        """Return one consistent view of the latest committed application state."""
         with self._lock:
-            return ArtifactLedgerHead(
+            return ApplicationHead(
                 height=self._committed_height,
-                state_hash=self._committed_ledger.state_hash(),
+                state_hash=_application_state(
+                    height=self._committed_height,
+                    ledger=self._committed_ledger,
+                    validator_governance=self._validator_governance,
+                ).state_hash(self._committed_ledger.state_hash()),
             )
 
     def initialize_chain(
@@ -98,6 +121,7 @@ class CometBFTCallbackHandler:
         chain_id: str,
         initial_height: int,
         genesis_state: bytes,
+        genesis_validators: Sequence[ValidatorPowerUpdate],
     ) -> bytes:
         """Validate this node's supported genesis and return its initial state hash."""
         if not isinstance(chain_id, str):
@@ -105,6 +129,9 @@ class CometBFTCallbackHandler:
         _require_block_height(initial_height)
         if not isinstance(genesis_state, bytes):
             raise TypeError("genesis_state must be bytes")
+        validator_updates = tuple(genesis_validators)
+        if any(not isinstance(update, ValidatorPowerUpdate) for update in validator_updates):
+            raise TypeError("genesis_validators must contain ValidatorPowerUpdate values")
 
         with self._lock:
             if self._committed_height != 0 or self._pending_block is not None:
@@ -113,14 +140,56 @@ class CometBFTCallbackHandler:
                 raise ValueError("chain_id does not match the configured chain")
             if initial_height != 1:
                 raise ValueError("only an initial height of 1 is supported")
-            if genesis_state:
-                raise ValueError("genesis application state is not supported")
-            return self._committed_ledger.state_hash()
+            if not genesis_state:
+                if self._validator_governance is not None:
+                    raise ValueError("genesis application state does not match persisted state")
+                return self._committed_ledger.state_hash()
+
+            try:
+                validator_governance = decode_genesis_application_state(genesis_state)
+            except (CodecError, TypeError) as error:
+                raise ValueError("genesis application state is not supported") from error
+            if not isinstance(validator_governance, ValidatorGovernanceState):
+                raise AssertionError("decoded genesis state has an unexpected type")
+            if validator_governance.proposals or validator_governance.scheduled_change is not None:
+                raise ValueError("genesis validator-governance state must be pristine")
+            if tuple(sorted(update.public_key for update in validator_updates)) != (
+                tuple(operator.consensus_public_key for operator in validator_governance.operators)
+            ) or any(
+                update.voting_power != validator_governance.validator_power
+                for update in validator_updates
+            ):
+                raise ValueError(
+                    "genesis validator governance does not match the CometBFT validator set"
+                )
+            if self._validator_governance is not None:
+                if validator_governance != self._validator_governance:
+                    raise ValueError("genesis application state does not match persisted state")
+            else:
+                self._store.save(
+                    _application_state(
+                        height=0,
+                        ledger=self._committed_ledger,
+                        validator_governance=validator_governance,
+                    )
+                )
+                self._validator_governance = validator_governance
+            return self.committed_head().state_hash
 
     def check_tx(self, transaction: bytes) -> TransactionResult:
         """Validate a transaction against committed state without changing it."""
         with self._lock:
-            return self._validator.validate(transaction, self._committed_ledger)
+            result, _ = self._validate_transaction(
+                transaction,
+                self._committed_ledger,
+                (
+                    None
+                    if self._validator_governance is None
+                    else self._validator_governance.advance_to_height(self._committed_height + 1)
+                ),
+                height=self._committed_height + 1,
+            )
+            return result
 
     def prepare_proposal(
         self,
@@ -159,13 +228,42 @@ class CometBFTCallbackHandler:
                 raise ValueError("height must immediately follow the committed height")
 
             ledger = self._committed_ledger
+            validator_governance = (
+                None
+                if self._validator_governance is None
+                else self._validator_governance.advance_to_height(height)
+            )
+            committed_governance = validator_governance
             new_entries: list[ArtifactLedgerEntry] = []
             transaction_results: list[TransactionResult] = []
+            validator_updates: list[ValidatorPowerUpdate] = []
 
             for transaction_index, transaction in enumerate(transaction_bytes):
-                result = self._validator.validate(transaction, ledger)
+                result, governance_transaction = self._validate_transaction(
+                    transaction,
+                    ledger,
+                    committed_governance,
+                    height=height,
+                )
+                if governance_transaction is not None and result.code is TransactionCode.ACCEPTED:
+                    if validator_governance is None:
+                        raise AssertionError("governance transaction accepted without governance")
+                    decision, transition = validator_governance.evaluate(
+                        governance_transaction,
+                        expected_chain_id=self._validator.expected_chain_id,
+                        height=height,
+                    )
+                    if decision is not GovernanceDecision.ACCEPTED or transition is None:
+                        result = TransactionResult(code=_transaction_code(decision))
                 transaction_results.append(result)
                 if result.code is not TransactionCode.ACCEPTED:
+                    continue
+
+                if governance_transaction is not None:
+                    if transition is None:
+                        raise AssertionError("accepted governance transaction has no transition")
+                    validator_governance = transition.state
+                    validator_updates.extend(transition.validator_updates)
                     continue
 
                 entry = ArtifactLedgerEntry(
@@ -181,11 +279,18 @@ class CometBFTCallbackHandler:
             self._pending_block = _PendingBlock(
                 height=height,
                 ledger=ledger,
+                validator_governance=validator_governance,
                 new_entries=tuple(new_entries),
+            )
+            application_state = _application_state(
+                height=height,
+                ledger=ledger,
+                validator_governance=validator_governance,
             )
             return FinalizeBlockResult(
                 transaction_results=tuple(transaction_results),
-                state_hash=ledger.state_hash(),
+                state_hash=application_state.state_hash(ledger.state_hash()),
+                validator_updates=tuple(validator_updates),
             )
 
     def commit(self) -> tuple[ArtifactLedgerEntry, ...]:
@@ -196,15 +301,73 @@ class CometBFTCallbackHandler:
                 raise RuntimeError("no finalized block is awaiting commit")
 
             self._store.save(
-                ArtifactLedgerSnapshot(
+                _application_state(
                     height=pending_block.height,
-                    entries=pending_block.ledger.entries(),
+                    ledger=pending_block.ledger,
+                    validator_governance=pending_block.validator_governance,
                 )
             )
             self._committed_height = pending_block.height
             self._committed_ledger = pending_block.ledger
+            self._validator_governance = pending_block.validator_governance
             self._pending_block = None
             return pending_block.new_entries
+
+    def _validate_transaction(
+        self,
+        transaction: bytes,
+        ledger: LocalArtifactLedger,
+        validator_governance: ValidatorGovernanceState | None,
+        *,
+        height: int,
+    ) -> tuple[TransactionResult, ValidatorGovernanceTransaction | None]:
+        try:
+            TRANSACTION_LIMITS.require_encoded_size(transaction)
+        except TransactionLimitError:
+            return TransactionResult(code=TransactionCode.TRANSACTION_TOO_LARGE), None
+        except TypeError:
+            return TransactionResult(code=TransactionCode.INVALID_TRANSACTION), None
+
+        try:
+            governance_transaction = decode_validator_governance_transaction(transaction)
+        except (CodecError, TypeError):
+            return self._validator.validate(transaction, ledger), None
+        if validator_governance is None:
+            return (
+                TransactionResult(code=TransactionCode.GOVERNANCE_DISABLED),
+                governance_transaction,
+            )
+        decision, _ = validator_governance.evaluate(
+            governance_transaction,
+            expected_chain_id=self._validator.expected_chain_id,
+            height=height,
+        )
+        return TransactionResult(code=_transaction_code(decision)), governance_transaction
+
+
+def _application_state(
+    *,
+    height: int,
+    ledger: LocalArtifactLedger,
+    validator_governance: ValidatorGovernanceState | None,
+) -> ApplicationStateSnapshot:
+    return ApplicationStateSnapshot(
+        artifact_ledger=ArtifactLedgerSnapshot(height=height, entries=ledger.entries()),
+        validator_governance=validator_governance,
+    )
+
+
+def _transaction_code(decision: GovernanceDecision) -> TransactionCode:
+    return {
+        GovernanceDecision.ACCEPTED: TransactionCode.ACCEPTED,
+        GovernanceDecision.WRONG_CHAIN: TransactionCode.WRONG_CHAIN,
+        GovernanceDecision.BUSY: TransactionCode.GOVERNANCE_BUSY,
+        GovernanceDecision.UNAUTHORIZED: TransactionCode.UNAUTHORIZED,
+        GovernanceDecision.INVALID_SIGNATURE: TransactionCode.INVALID_SIGNATURE,
+        GovernanceDecision.INVALID_CHANGE: TransactionCode.INVALID_VALIDATOR_CHANGE,
+        GovernanceDecision.DUPLICATE: TransactionCode.DUPLICATE_GOVERNANCE_ACTION,
+        GovernanceDecision.UNKNOWN_PROPOSAL: TransactionCode.UNKNOWN_VALIDATOR_PROPOSAL,
+    }[decision]
 
 
 def _require_block_height(height: int) -> None:

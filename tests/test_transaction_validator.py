@@ -106,6 +106,12 @@ def test_transaction_codes_are_stable() -> None:
         "MISSING_REFERENCE": TransactionCode(5),
         "TRANSACTION_TOO_LARGE": TransactionCode(6),
         "TOO_MANY_ARTIFACTS": TransactionCode(7),
+        "GOVERNANCE_DISABLED": TransactionCode(8),
+        "UNAUTHORIZED": TransactionCode(9),
+        "GOVERNANCE_BUSY": TransactionCode(10),
+        "INVALID_VALIDATOR_CHANGE": TransactionCode(11),
+        "DUPLICATE_GOVERNANCE_ACTION": TransactionCode(12),
+        "UNKNOWN_VALIDATOR_PROPOSAL": TransactionCode(13),
     }
 
 

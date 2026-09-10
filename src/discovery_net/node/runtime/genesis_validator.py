@@ -20,6 +20,7 @@ class GenesisValidator(BaseModel):
 
     name: str
     public_key: bytes
+    governance_public_key: bytes | None = None
     voting_power: PositiveInt
 
     @field_validator("name")
@@ -45,6 +46,13 @@ class GenesisValidator(BaseModel):
             raise ValueError("public_key must contain one Ed25519 public key")
         return decoded
 
+    @field_validator("governance_public_key", mode="before")
+    @classmethod
+    def _decode_governance_public_key(cls, value: object) -> bytes | None:
+        if value is None:
+            return None
+        return cls._decode_public_key(value)
+
     @field_validator("voting_power")
     @classmethod
     def _limit_voting_power(cls, value: int) -> int:
@@ -55,6 +63,10 @@ class GenesisValidator(BaseModel):
     @field_serializer("public_key")
     def _encode_public_key(self, value: bytes) -> str:
         return base64.b64encode(value).decode("ascii")
+
+    @field_serializer("governance_public_key")
+    def _encode_governance_public_key(self, value: bytes | None) -> str | None:
+        return None if value is None else base64.b64encode(value).decode("ascii")
 
     @property
     def address(self) -> str:

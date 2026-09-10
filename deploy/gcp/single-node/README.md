@@ -310,6 +310,55 @@ discovery-net submit contribution \
 
 Only the signed transaction crosses the IAP tunnel.
 
+### Promote this synchronized node later
+
+Keep the candidate governance private key local. Copy only its public key to the VM, then let
+the VM's candidate consensus key produce the first half of the nomination:
+
+```bash
+# Local workstation
+openssl genpkey -algorithm ED25519 -out cloud-governance.pem
+chmod 600 cloud-governance.pem
+openssl pkey -in cloud-governance.pem -pubout -out cloud-governance.pub.pem
+gcloud compute scp --project PROJECT_ID --zone ZONE --tunnel-through-iap \
+  cloud-governance.pub.pem NODE_NAME:/tmp/cloud-governance.pub.pem
+
+# VM
+cd /opt/discovery-net
+DISCOVERY_NET_IMAGE="$(sudo sed -n 's/^DISCOVERY_NET_IMAGE=//p' \
+  /etc/discovery-net/node.env)"
+sudo docker run --rm \
+  --user 10001:10001 \
+  --mount type=bind,src=/srv/discovery-net/cometbft-data,dst=/candidate,readonly \
+  --mount type=bind,src=/tmp,dst=/public \
+  "$DISCOVERY_NET_IMAGE" \
+  discovery-net validator nominate-consensus \
+  --home /candidate/cometbft \
+  --chain-id CHAIN_ID \
+  --governance-public-key /public/cloud-governance.pub.pem \
+  --output /public/cloud-consensus-nomination.json
+```
+
+Copy the public nomination JSON back, delete both public staging files from `/tmp`, and add
+the governance signature locally:
+
+```bash
+gcloud compute scp --project PROJECT_ID --zone ZONE --tunnel-through-iap \
+  NODE_NAME:/tmp/cloud-consensus-nomination.json ./cloud-consensus-nomination.json
+
+discovery-net validator complete-nomination \
+  --consensus-nomination cloud-consensus-nomination.json \
+  --governance-private-key cloud-governance.pem \
+  --output cloud-nomination.json
+```
+
+A current validator operator then runs `validator propose-add`; the remaining operators run
+`validator approve` after the proposal commits, all through their private RPC tunnels. The
+strict threshold is `floor(2N/3)+1`, every admitted validator receives genesis power, and the
+change activates two heights after the threshold transaction. See the repository root
+runbook for the exact proposal, approval, and status commands. Neither private key crosses
+hosts.
+
 ## Troubleshooting
 
 | Symptom | Cause and action |

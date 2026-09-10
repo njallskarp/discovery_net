@@ -13,6 +13,9 @@ from pathlib import Path
 from types import TracebackType
 from typing import cast, final
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+
 from discovery_net.node import ArtifactLedgerSnapshot, LocalArtifactLedger
 from discovery_net.node.runtime import (
     CometBFTGenesisWriter,
@@ -26,6 +29,8 @@ from discovery_net.node.runtime._cometbft_config import _CometBFTConfig
 from discovery_net.node.runtime._cometbft_home import _CometBFTHome
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
 from discovery_net.node.runtime.genesis import _VerifiedGenesis
+from discovery_net.node.validator_governance import ValidatorGovernanceConfig
+from discovery_net.wire import ValidatorOperator
 from tests.integration._integration_node import IntegrationNode
 
 _CONVERGENCE_TIMEOUT_SECONDS = 20
@@ -157,7 +162,9 @@ class IntegrationNetwork:
         binary: Path,
         root: Path,
         validators: int,
+        non_validators: int = 0,
         chain_id: str = "discovery-formation-test",
+        governance_private_keys: tuple[Ed25519PrivateKey, ...] | None = None,
     ) -> IntegrationNetwork:
         """Form a validator network exclusively through the production provisioning API."""
         provisioner = CometBFTValidatorProvisioner(binary=binary)
@@ -166,20 +173,50 @@ class IntegrationNetwork:
             provisioner.initialize_home(home=homes_root / f"node{index}")
             for index in range(validators)
         )
+        if governance_private_keys is not None and len(governance_private_keys) != validators:
+            raise ValueError("governance_private_keys must contain one key per validator")
         genesis_validators = tuple(
             provisioner.genesis_validator(
                 identity,
                 name=f"node{index}",
                 voting_power=10,
+                governance_public_key=(
+                    None
+                    if governance_private_keys is None
+                    else governance_private_keys[index]
+                    .public_key()
+                    .public_bytes(Encoding.Raw, PublicFormat.Raw)
+                ),
             )
             for index, identity in enumerate(identities)
         )
         genesis_path = root / "genesis.json"
+        validator_governance = (
+            None
+            if governance_private_keys is None
+            else ValidatorGovernanceConfig(
+                operators=tuple(
+                    sorted(
+                        (
+                            ValidatorOperator(
+                                consensus_public_key=validator.public_key,
+                                governance_public_key=validator.governance_public_key,
+                            )
+                            for validator in genesis_validators
+                            if validator.governance_public_key is not None
+                        ),
+                        key=lambda operator: operator.consensus_public_key,
+                    )
+                ),
+                validator_power=10,
+            )
+        )
         trust_anchor = CometBFTGenesisWriter(binary=binary).write(
             path=genesis_path,
             chain_id=chain_id,
             genesis_time=datetime.now(UTC),
             validators=genesis_validators,
+            validator_governance=validator_governance,
         )
         for identity in identities:
             provisioner.install_genesis(
@@ -188,7 +225,18 @@ class IntegrationNetwork:
                 genesis_trust_anchor=trust_anchor,
             )
 
-        ports = _available_ports(validators * 3)
+        total_nodes = validators + non_validators
+        ports = _available_ports(total_nodes * 3)
+        if non_validators:
+            _prepare_joining_homes(
+                binary=binary,
+                homes_root=homes_root,
+                genesis_path=genesis_path,
+                chain_id=chain_id,
+                first_index=validators,
+                count=non_validators,
+                ports=ports,
+            )
         nodes = tuple(
             _node(
                 binary=binary,
@@ -199,7 +247,7 @@ class IntegrationNetwork:
                 ports=ports[index * 3 : index * 3 + 3],
                 log_directory=root / "logs",
             )
-            for index in range(validators)
+            for index in range(total_nodes)
         )
         return cls(
             chain_id=chain_id,

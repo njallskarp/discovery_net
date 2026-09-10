@@ -12,6 +12,7 @@ from discovery_net.node.runtime.node_launch_settings import NodeLaunchSettings
 from discovery_net.node.runtime.peer_address import PeerAddress
 from discovery_net.node.runtime.peer_admission_policy import PeerAdmissionPolicy
 from discovery_net.node.runtime.validator_identity import ValidatorIdentity
+from discovery_net.node.validator_governance import ValidatorGovernanceConfig
 
 __all__ = [
     "CometBFTGenesisWriter",
@@ -23,5 +24,6 @@ __all__ = [
     "NodeLaunchSettings",
     "PeerAddress",
     "PeerAdmissionPolicy",
+    "ValidatorGovernanceConfig",
     "ValidatorIdentity",
 ]

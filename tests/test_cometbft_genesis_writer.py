@@ -6,9 +6,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from discovery_net.node.runtime import CometBFTGenesisWriter, GenesisValidator
+from discovery_net.node.runtime import (
+    CometBFTGenesisWriter,
+    GenesisValidator,
+    ValidatorGovernanceConfig,
+)
 from discovery_net.node.runtime._cometbft_process import _CometBFTProcess
+from discovery_net.wire import ValidatorOperator
 
 
 def _initialize_template(_process: _CometBFTProcess, *, home: Path) -> None:
@@ -85,6 +92,64 @@ def test_writer_rejects_duplicates_before_invoking_cometbft(tmp_path: Path) -> N
         )
 
     initialize.assert_not_called()
+
+
+def test_writer_places_dynamic_governance_and_equal_validator_power_in_genesis(
+    tmp_path: Path,
+) -> None:
+    governance_key = (
+        Ed25519PrivateKey.from_private_bytes(bytes([1]) * 32)
+        .public_key()
+        .public_bytes(Encoding.Raw, PublicFormat.Raw)
+    )
+    validator = GenesisValidator(
+        name="a",
+        public_key=bytes(range(32)),
+        governance_public_key=governance_key,
+        voting_power=10,
+    )
+    path = tmp_path / "genesis.json"
+
+    with (
+        patch.object(
+            _CometBFTProcess,
+            "require_compatible_command_surface",
+            autospec=True,
+        ),
+        patch.object(
+            _CometBFTProcess,
+            "initialize",
+            autospec=True,
+            side_effect=_initialize_template,
+        ),
+    ):
+        CometBFTGenesisWriter().write(
+            path=path,
+            chain_id="discovery-1",
+            genesis_time=datetime(2026, 8, 27, 12, tzinfo=UTC),
+            validators=(validator,),
+            validator_governance=ValidatorGovernanceConfig(
+                operators=(
+                    ValidatorOperator(
+                        consensus_public_key=validator.public_key,
+                        governance_public_key=governance_key,
+                    ),
+                ),
+                validator_power=10,
+            ),
+        )
+
+    document = json.loads(path.read_bytes())
+    governance = document["app_state"]["validator_governance"]
+    assert governance["validator_power"] == 10
+    assert governance["operators"] == [
+        {
+            "consensus_public_key": validator.public_key.hex(),
+            "governance_public_key": governance_key.hex(),
+        }
+    ]
+    assert governance["proposals"] == []
+    assert governance["scheduled_change"] is None
 
 
 def test_writer_rejects_total_voting_power_overflow_before_invoking_cometbft(

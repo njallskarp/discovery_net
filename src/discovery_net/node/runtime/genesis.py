@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
 
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+
+from discovery_net.node.validator_governance import ValidatorGovernanceState
+from discovery_net.node.validator_governance_codec import decode_genesis_application_state
 
 _SHA256_HEX_LENGTH = 64
 
@@ -86,6 +91,50 @@ class _GenesisDocument(BaseModel):
                 keys.add((key_type, value))
         return frozenset(keys)
 
+    @property
+    def ed25519_validator_public_keys(self) -> tuple[bytes, ...]:
+        public_keys: list[bytes] = []
+        if not isinstance(self.validators, list | tuple):
+            return ()
+        for validator in self.validators:
+            if not isinstance(validator, dict):
+                return ()
+            public_key = validator.get("pub_key")
+            if not isinstance(public_key, dict):
+                return ()
+            if public_key.get("type") != "tendermint/PubKeyEd25519":
+                return ()
+            value = public_key.get("value")
+            if not isinstance(value, str):
+                return ()
+            try:
+                decoded = base64.b64decode(value, validate=True)
+            except ValueError:
+                return ()
+            if len(decoded) != 32:
+                return ()
+            public_keys.append(decoded)
+        return tuple(sorted(public_keys))
+
+    @property
+    def validator_powers(self) -> tuple[int, ...]:
+        powers: list[int] = []
+        if not isinstance(self.validators, list | tuple):
+            return ()
+        for validator in self.validators:
+            if not isinstance(validator, dict):
+                return ()
+            value = validator.get("power")
+            if isinstance(value, bool):
+                return ()
+            if isinstance(value, int):
+                powers.append(value)
+            elif isinstance(value, str) and value.isdecimal():
+                powers.append(int(value))
+            else:
+                return ()
+        return tuple(powers)
+
 
 @dataclass(frozen=True, slots=True)
 class _VerifiedGenesis:
@@ -112,5 +161,26 @@ class _VerifiedGenesis:
         if document.effective_initial_height != 1:
             raise ValueError("Discovery Net requires an effective initial height of 1")
         if document.app_state is not None:
-            raise ValueError("Discovery Net genesis app_state must be absent or null")
+            encoded_state = json.dumps(
+                document.app_state,
+                allow_nan=False,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+            try:
+                governance = decode_genesis_application_state(encoded_state)
+            except (TypeError, ValueError) as error:
+                raise ValueError("Discovery Net genesis app_state is not supported") from error
+            if not isinstance(governance, ValidatorGovernanceState):
+                raise AssertionError("decoded genesis state has an unexpected type")
+            if governance.proposals or governance.scheduled_change is not None:
+                raise ValueError("genesis validator-governance state must be pristine")
+            if (
+                tuple(operator.consensus_public_key for operator in governance.operators)
+                != document.ed25519_validator_public_keys
+            ):
+                raise ValueError("genesis governance must describe the genesis validator set")
+            if any(power != governance.validator_power for power in document.validator_powers):
+                raise ValueError("governed genesis validators must have equal configured power")
         return cls(content=content, document=document)
